@@ -187,3 +187,32 @@ struct ScrollObserver: UIViewRepresentable {
         }
     }
 }
+
+/// 系统级「点空白收键盘」：给窗口挂一只不吞触摸的点按识别器（SwiftUI 的 TapGesture 在滚动区里靠不住）。
+struct KeyboardDismisser: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero); v.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            guard let w = v.window, !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.dismiss" }) else { return }
+            let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
+            tap.name = "keep.dismiss"; tap.cancelsTouchesInView = false; tap.delegate = context.coordinator
+            w.addGestureRecognizer(tap)
+        }
+        return v
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        @objc func tap(_ g: UITapGestureRecognizer) {
+            // 点在输入框/按钮上不收（让它们自己处理）
+            var v = g.view?.hitTest(g.location(in: g.view), with: nil)
+            while let cur = v {
+                if let tv = cur as? UITextView, tv.isEditable { return }       // 只放过能打字的框；克正文那种只读文本照收
+                if cur is UITextField || cur is UIControl { return }
+                v = cur.superview
+            }
+            g.view?.endEditing(true)
+        }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
+    }
+}

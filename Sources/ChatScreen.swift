@@ -231,59 +231,10 @@ struct ChatScreen: View {
             header
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
-                    GeometryReader { g in
-                        Color.clear.onAppear { clawd.layout(area: g.size) }
-                            .onChange(of: g.size) { sz in clawd.layout(area: sz) }
-                    }
-                    ScrollView {
-                        LazyVStack(spacing: 22) {
-                            if model.renderFrom > 0 {
-                                Button { model.loadOlderDay() } label: {
-                                    Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
-                                }.buttonStyle(.plain).padding(.top, 4)
-                            }
-                            ForEach(model.items) { r in row(r.item) }
-                            if let live = model.live { liveView(live) }
-                            ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
-                                PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
-                            }
-                            Color.clear.frame(height: 1).id("bottom").padding(.top, -21)   // 末条到底＝网页 padding-bottom 10
-                                .onAppear { atBottom = true }.onDisappear { atBottom = false }
-                        }
-                        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
-                        .background(ScrollObserver { y, ch, vh in
-                            let total = max(ch, 1)
-                            scrollThumb = min(1, vh / total)
-                            scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
-                            farFromBottom = (total - y - vh) > 40
-                        })
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollDismissesKeyboard(.interactively)
-                    .refreshable { await model.load() }
-                    .overlay(alignment: .topTrailing) { scrollbar }
-                    .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
-                    .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
-                    .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
-                    .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
-                    .background(KeyboardDismisser())
-                    .onAppear { Task { await model.load() } }
-
+                    clawdProbe
+                    messageList(proxy)
                     ClawdView(m: clawd).zIndex(5)
-
-                    if farFromBottom && !atBottom {
-                        Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
-                            Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(Theme.jumpArrow)
-                                .frame(width: 38, height: 38)
-                                .background(Theme.jumpBg, in: Circle())
-                                .overlay(Circle().stroke(Theme.jumpRing, lineWidth: 1))
-                                .shadow(color: Color.black.opacity(0.10), radius: 9, y: 6)
-                                .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
-                        }
-                        .padding(.bottom, 10)
-                        .transition(.opacity.combined(with: .scale(scale: 0.82)))
-                    }
+                    if farFromBottom && !atBottom { jumpButton(proxy) }
                 }
                 .coordinateSpace(name: "clawdZone")
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
@@ -312,6 +263,66 @@ struct ChatScreen: View {
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }
+    }
+
+    /// 量 Clawd 活动区（消息区尺寸）
+    private var clawdProbe: some View {
+        GeometryReader { g in
+            Color.clear.onAppear { clawd.layout(area: g.size) }
+                .onChange(of: g.size) { sz in clawd.layout(area: sz) }
+        }
+    }
+
+    private var listContent: some View {
+        LazyVStack(spacing: 22) {
+            if model.renderFrom > 0 {
+                Button { model.loadOlderDay() } label: {
+                    Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
+                }.buttonStyle(.plain).padding(.top, 4)
+            }
+            ForEach(model.items) { r in row(r.item) }
+            if let live = model.live { liveView(live) }
+            ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
+                PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
+            }
+            Color.clear.frame(height: 1).id("bottom").padding(.top, -21)   // 末条到底＝网页 padding-bottom 10
+                .onAppear { atBottom = true }.onDisappear { atBottom = false }
+        }
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
+        .background(ScrollObserver { y, ch, vh in
+            let total = max(ch, 1)
+            scrollThumb = min(1, vh / total)
+            scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
+            farFromBottom = (total - y - vh) > 40
+        })
+    }
+
+    private func messageList(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView { listContent }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { await model.load() }
+            .overlay(alignment: .topTrailing) { scrollbar }
+            .background(KeyboardDismisser())
+            .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
+            .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
+            .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
+            .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+            .onAppear { Task { await model.load() } }
+    }
+
+    private func jumpButton(_ proxy: ScrollViewProxy) -> some View {
+        Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
+            Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
+                .foregroundColor(Theme.jumpArrow)
+                .frame(width: 38, height: 38)
+                .background(Theme.jumpBg, in: Circle())
+                .overlay(Circle().stroke(Theme.jumpRing, lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.10), radius: 9, y: 6)
+                .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+        }
+        .padding(.bottom, 10)
+        .transition(.opacity.combined(with: .scale(scale: 0.82)))
     }
 
     /// 自绘滚动条：5px 赤陶 40%，照网页 #messages::-webkit-scrollbar。
