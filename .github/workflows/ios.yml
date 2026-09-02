@@ -27,7 +27,7 @@ concurrency:
 
 env:
   SCHEME: Keep
-  SIM_NAME: iPhone 16
+  SIM_NAME: iPhone 17     # 打包机 Xcode 26.6 的模拟器清单只有 17 系（09-02 实测）
 
 jobs:
   build:
