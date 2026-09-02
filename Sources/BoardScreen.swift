@@ -106,7 +106,7 @@ struct BoardScreen: View {
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
 
                 // 照 #notesBody：padding 12 22 24、卡间 12、橙滚动条（只在滚时露）、没有下拉刷新
-                OrangeScroll(name: "board") {
+                OrangeScroll(name: "board", bounce: false) {   // 寻定：列表硬朗，不拉空回弹
                     LazyVStack(alignment: .leading, spacing: 12) { list }
                         .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 24)
                 }
@@ -260,13 +260,14 @@ struct SecTitle: View {
 struct OrangeScroll<Content: View>: View {
     var name: String
     var barX: CGFloat = 0
+    var bounce = true
     @ViewBuilder var content: () -> Content
     var body: some View {
         ScrollView {
-            content().background(ScrollObserver(name: name) { _, _, _ in })
+            content().background(ScrollObserver(name: name, bounce: bounce) { _, _, _ in })
         }
         .scrollIndicators(.visible)
-        .scrollBounceBehavior(.always, axes: .vertical)
+        .scrollBounceBehavior(bounce ? .always : .basedOnSize, axes: .vertical)
     }
 }
 
@@ -278,8 +279,14 @@ struct NotePop: View {
     @ObservedObject var model: BoardModel
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
-    @FocusState private var focused: Bool
+    @State private var focused = false
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
+
+    private func sendReply() {
+        let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !v.isEmpty { text = ""; focused = false; Task { await model.reply(note.id, v) } }
+        else if note.isTicket && !note.closed { Task { await model.closeTicket(note.id) } }
+    }
 
     /// 键盘让位交给系统：整个浮卡层不忽略键盘安全区，键盘一来可用高度就矮，卡在剩下的空间里居中、
     /// 太高就压到 可用高−40（照网页 fit 的意思）——和键盘同曲线同时长，没有自己的动画（寻验 39：先掉再上、卡顿）
@@ -327,19 +334,12 @@ struct NotePop: View {
     /// 跟帖输入排（照 .note-reply）：胶囊输入（主页输入卡的窄版：同底色、发丝圈、无阴影）＋赤陶圆钮；未结工单空输入时圆钮变 ✓＝结单
     private var replyRow: some View {
         HStack(spacing: 8) {
-            TextField("", text: $text, prompt: Text("Reply…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
-                .textFieldStyle(.plain)
-                .font(.system(size: 15)).foregroundColor(Theme.text)
-                .tint(Theme.scrollTint)
-                .focused($focused)
+            PlainField(text: $text, focused: $focused, placeholder: "Reply…", onSubmit: { sendReply() })
+                .frame(height: 20)
                 .padding(.vertical, 8).padding(.horizontal, 14)
-                .background(Theme.bg, in: Capsule())                         // 寻验 39：纸色芯，只留那一圈白（发丝圈），没有别的边
+                .background(Theme.bg, in: Capsule())                         // 纸色芯，只留那一圈白（发丝圈）；纯 UIKit 输入框没有玻璃晕
                 .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1.5))
-            Button {
-                let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !v.isEmpty { text = ""; focused = false; Task { await model.reply(note.id, v) } }
-                else if note.isTicket && !note.closed { Task { await model.closeTicket(note.id) } }
-            } label: {
+            Button { sendReply() } label: {
                 Text((note.isTicket && !note.closed && text.trimmingCharacters(in: .whitespaces).isEmpty) ? "✓" : "↑")
                     .font(.system(size: 15)).foregroundColor(.white)
                     .frame(width: 30, height: 30).background(Theme.accent, in: Circle())

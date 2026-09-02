@@ -167,14 +167,15 @@ struct ClawdView: View {
 /// 并在键盘升起时把内容跟着平移：原本钉着底就继续钉底。
 struct ScrollObserver: UIViewRepresentable {
     var name: String? = nil            // 登记名：外面按名拿到 UIScrollView（精确滚到底）
+    var bounce = true                  // 留言板列表要硬朗（寻定：不要拉空回弹）
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
     static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
-        let name = self.name
-        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v, name: name) } }
+        let name = self.name, bounce = self.bounce
+        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v, name: name, bounce: bounce) } }
         return v
     }
     func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onChange = onChange }
@@ -187,16 +188,17 @@ struct ScrollObserver: UIViewRepresentable {
         private var lastDist: CGFloat = 0    // 视口底边以下还有多少内容——一直记着「键盘来之前」那个数（底边锚定，iMessage 做法）
         private var lastH: CGFloat = 0
         private var kbBusy = false
+        private var bounce = true
         private weak var sv: UIScrollView? = nil
         private var name: String? = nil
         private var logged = 0
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
         deinit { kb.forEach { NotificationCenter.default.removeObserver($0) } }
-        func attach(from v: UIView, name: String?) {
+        func attach(from v: UIView, name: String?, bounce: Bool) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
-            self.sv = sv; self.name = name
+            self.sv = sv; self.name = name; self.bounce = bounce
             if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv) }
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
@@ -205,7 +207,7 @@ struct ScrollObserver: UIViewRepresentable {
             sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 12, right: 0)
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
-                if !sv.bounces || !sv.alwaysBounceVertical { sv.bounces = true; sv.alwaysBounceVertical = true }   // SwiftUI 会改回去，每次都按住
+                if sv.bounces != self.bounce || sv.alwaysBounceVertical != self.bounce { sv.bounces = self.bounce; sv.alwaysBounceVertical = self.bounce }   // SwiftUI 会改回去，每次都按住
                 self.tintIndicator(sv)
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
@@ -225,21 +227,11 @@ struct ScrollObserver: UIViewRepresentable {
                     guard let self, let sv = self.sv else { return }
                     let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                     let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt) ?? 7
-                    let dist = self.lastDist
+                    // 滚动本身交给 SwiftUI 的 scrollTo（ChatScreen 里做）：UIKit 改的 contentOffset 会被 SwiftUI 每帧布局写回抹掉（构建 43 快照实证）
+                    _ = (dur, curve)
                     self.kbBusy = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.15) { [weak self] in self?.kbBusy = false }
                     if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
-                    DispatchQueue.main.async { [weak sv] in      // 让 SwiftUI 先按新键盘排好版
-                        guard let sv else { return }
-                        let inset = sv.adjustedContentInset
-                        let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
-                        guard maxY > -inset.top else { return }
-                        let target = min(max(maxY - dist, -inset.top), maxY)
-                        guard abs(target - sv.contentOffset.y) > 0.5 else { return }
-                        UIView.animate(withDuration: dur, delay: 0, options: [UIView.AnimationOptions(rawValue: curve << 16), .beginFromCurrentState, .allowUserInteraction]) {
-                            sv.contentOffset.y = target
-                        }
-                    }
                 })
             }
             fire()
@@ -258,6 +250,12 @@ struct ScrollObserver: UIViewRepresentable {
                 for pill in v.subviews where pill.backgroundColor != Theme.uiScrollTint.withAlphaComponent(0.4) {
                     pill.backgroundColor = Theme.uiScrollTint.withAlphaComponent(0.4)
                 }
+                // 按住拖动时系统把条加粗一倍多——压回一半，右缘不动（寻验 43：太粗）
+                let w = v.bounds.width
+                if w > 4.5 {
+                    let s: CGFloat = 0.5
+                    v.transform = CGAffineTransform(translationX: w * (1 - s) / 2, y: 0).scaledBy(x: s, y: 1)
+                } else if v.transform != .identity { v.transform = .identity }
             }
         }
     }

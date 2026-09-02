@@ -62,12 +62,15 @@ enum MD {
         runs = split(s, 0)
         let m = NSMutableAttributedString()
         let para = NSMutableParagraphStyle()
-        // 行距用 lineSpacing 补到网页的 line-height（行框保持字体自然高：选字把手/光标才不会比字高一大截，
-        // 上下留白也对称——寻验 41）。自然行高取拉丁与中文回落字体里高的那个。
+        // 行框固定＝网页 line-height（用 lineSpacing 补的那版首行中文顶被吞、行距忽宽忽窄——寻验 43：
+        // 中文回落字体比拉丁基字高，行框按基字算就装不下）。固定行框里字会沉到底，用 baselineOffset 抬回正中。
         let natural = max(base.lineHeight, cjkLineHeight ?? 0)
-        para.lineSpacing = max(0, base.pointSize * lineHeight - natural)
+        let lh = base.pointSize * lineHeight
+        para.minimumLineHeight = lh
+        para.maximumLineHeight = lh
         para.paragraphSpacing = paraSpacing
-        let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para]
+        let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para,
+                                                        .baselineOffset: max(0, (lh - natural) / 2)]
         for r in runs {
             var at = baseAttrs
             switch r.kind {
@@ -362,7 +365,7 @@ enum MDWhole {
                     let ns = NSMutableAttributedString(attributedString: MD.keNS("•\t" + it, size: size))
                     let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
                     p.headIndent = 2 * size; p.firstLineHeadIndent = 0.9 * size
-                    p.lineSpacing = max(0, size * 1.6 - max(Theme.uiSerif(size, weight: .medium).lineHeight, Theme.uiCJK(size, weight: .medium).lineHeight))
+                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
                     p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
                     ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
                     out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }
@@ -372,7 +375,7 @@ enum MDWhole {
                     let ns = NSMutableAttributedString(attributedString: MD.keNS("\(it.0).\t" + it.1, size: size))
                     let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
                     p.headIndent = 2 * size; p.firstLineHeadIndent = 0.6 * size
-                    p.lineSpacing = max(0, size * 1.6 - max(Theme.uiSerif(size, weight: .medium).lineHeight, Theme.uiCJK(size, weight: .medium).lineHeight))
+                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
                     p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
                     ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
                     out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }

@@ -306,7 +306,7 @@ struct ChatScreen: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         // 键盘让位交给系统（与键盘同曲线同时长）；吃吃笺/抽屉/别的页开着时把宿主的让位关掉，主页不动
-        .onChange(of: showMeal || drawerOn || !path.isEmpty) { off in KeyboardAvoid.shared.on = !off }
+        .onChange(of: showMeal || drawerOn) { off in KeyboardAvoid.shared.on = !off }   // 留言板等页开着时让位要留着（浮卡靠它上移，寻验 43）
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
@@ -386,6 +386,13 @@ struct ChatScreen: View {
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
             .onChange(of: mealEchoes.count) { n in if n > 0, !farFromBottom { scrollBottom(proxy, animated: true) } }
+            // 键盘跟随只能走 SwiftUI 自己的 scrollTo（UIKit 改 offset 会被它每帧写回）：原本在底，键盘来/走都钉着最后一行，
+            // 时长取键盘的，曲线取系统键盘曲线的近似
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+                guard atBottom, path.isEmpty, !showMeal, !drawerOn, let id = lastId else { return }
+                let dur = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+                withAnimation(.timingCurve(0.38, 0.7, 0.125, 1.0, duration: dur)) { proxy.scrollTo(id, anchor: .bottom) }
+            }
             .onAppear { Task { await model.load() } }
     }
 
