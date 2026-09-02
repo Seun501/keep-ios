@@ -116,16 +116,17 @@ final class ClawdModel: ObservableObject {
 
 struct ClawdView: View {
     @ObservedObject var m: ClawdModel
-    @GestureState private var pressing = false
+    @GestureState private var holding = false     // 手势被系统取消（滚动抢走等）也复位 → 一定放手
     var body: some View {
         ClawdWeb(state: m.state, flip: m.flip)
             .frame(width: 150, height: 150)
             .offset(y: m.hop ? -12 : 0)
-            .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸；position 容器铺满整片消息区，手势不能挂它上面（构建 14 的抓蟹 bug）
+            .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸；position 容器铺满整片消息区，手势不能挂它上面
             .onTapGesture { m.tap() }
             .gesture(
                 LongPressGesture(minimumDuration: 0.32)
                     .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("clawdZone")))
+                    .updating($holding) { _, st, _ in st = true }
                     .onChanged { v in
                         switch v {
                         case .first(true): m.grab()
@@ -135,34 +136,54 @@ struct ClawdView: View {
                     }
                     .onEnded { _ in m.release() }
             )
+            .onChange(of: holding) { h in if !h { m.release() } }
             .position(x: m.pos.x + 75, y: m.pos.y + 75)
     }
 }
 
-/// 系统级「点空白收键盘」：给窗口挂一只不吞触摸的点按识别器（SwiftUI 的 TapGesture 在滚动区里靠不住）。
-struct KeyboardDismisser: UIViewRepresentable {
+/// 读真实滚动位置（放在滚动内容的 background 里，往上找到 UIScrollView 观察 contentOffset/contentSize），
+/// 并在滚动区因键盘变矮/变高时把内容跟着平移：原本钉着底就继续钉底（治「点开输入框整页跳上去再下来」）。
+struct ScrollObserver: UIViewRepresentable {
+    var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
     func makeUIView(context: Context) -> UIView {
-        let v = UIView(frame: .zero); v.isUserInteractionEnabled = false
-        DispatchQueue.main.async {
-            guard let w = v.window, !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.dismiss" }) else { return }
-            let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
-            tap.name = "keep.dismiss"; tap.cancelsTouchesInView = false; tap.delegate = context.coordinator
-            w.addGestureRecognizer(tap)
-        }
+        let v = UIView(); v.isUserInteractionEnabled = false
+        DispatchQueue.main.async { context.coordinator.attach(from: v) }
         return v
     }
-    func updateUIView(_ uiView: UIView, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        @objc func tap(_ g: UITapGestureRecognizer) {
-            // 点在输入框/按钮上不收（让它们自己处理）
-            var v = g.view?.hitTest(g.location(in: g.view), with: nil)
-            while let cur = v {
-                if cur is UITextView || cur is UITextField || cur is UIControl { return }
-                v = cur.superview
+    func updateUIView(_ uiView: UIView, context: Context) { context.coordinator.onChange = onChange }
+    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
+    final class Coordinator: NSObject {
+        var onChange: (CGFloat, CGFloat, CGFloat) -> Void
+        private var obs: [NSKeyValueObservation] = []
+        private var lastViewport: CGFloat = 0
+        private var atBottom = true
+        init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
+        func attach(from v: UIView) {
+            var s: UIView? = v
+            while let cur = s, !(cur is UIScrollView) { s = cur.superview }
+            guard let sv = s as? UIScrollView, obs.isEmpty else { return }
+            let fire = { [weak self, weak sv] in
+                guard let self, let sv else { return }
+                let inset = sv.adjustedContentInset
+                let vh = sv.bounds.height - inset.top - inset.bottom
+                let y = sv.contentOffset.y + inset.top
+                self.atBottom = (sv.contentSize.height - y - vh) < 40
+                self.onChange(y, sv.contentSize.height, vh)
             }
-            g.view?.endEditing(true)
+            obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
+            obs.append(sv.observe(\.contentSize) { _, _ in fire() })
+            obs.append(sv.observe(\.bounds) { [weak self] sv, _ in
+                guard let self else { return }
+                let inset = sv.adjustedContentInset
+                let vh = sv.bounds.height - inset.top - inset.bottom
+                defer { self.lastViewport = vh }
+                guard self.lastViewport > 0, vh < self.lastViewport - 40, self.atBottom else { return }
+                // 变矮（键盘升起）且原本在底：内容跟着上移同样高度，画面不动、底还是底
+                let maxY = max(-inset.top, sv.contentSize.height - vh - inset.top)
+                sv.contentOffset.y = maxY
+            })
+            lastViewport = sv.bounds.height - sv.adjustedContentInset.top - sv.adjustedContentInset.bottom
+            fire()
         }
-        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
     }
 }

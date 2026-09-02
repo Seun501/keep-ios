@@ -13,6 +13,8 @@ enum Theme {
         }
     }
     static let bg = dyn(0xF9F9F7, 0x20201F)
+    static let uiText = uiDyn(0x302D27, 0xE8E2D6)
+    static let uiMuted = uiDyn(0x9B9183, 0x98907F)
     static let panel = dyn(0xF2EDE3, 0x2A2A27)
     static let text = dyn(0x302D27, 0xE8E2D6)
     static let muted = dyn(0x9B9183, 0x98907F)

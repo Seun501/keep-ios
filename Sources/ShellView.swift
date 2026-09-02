@@ -4,11 +4,11 @@ import SwiftUI
 struct ShellView: UIViewControllerRepresentable {
     let token: String
     var openDrawer = false
-    var hash = ""
+    var deepLink = ""
     let onLogout: () -> Void
 
     func makeUIViewController(context: Context) -> WebShellController {
-        WebShellController(token: token, openDrawer: openDrawer, hash: hash, onLogout: onLogout)
+        WebShellController(token: token, openDrawer: openDrawer, deepLink: deepLink, onLogout: onLogout)
     }
 
     func updateUIViewController(_ uiViewController: WebShellController, context: Context) {}

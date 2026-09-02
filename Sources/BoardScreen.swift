@@ -111,7 +111,7 @@ struct BoardScreen: View {
         }
         .task { await m.refresh() }
         .onChange(of: m.tab) { t in if t == "letters" { showLettersWeb = true; m.tab = "notes" } }
-        .fullScreenCover(isPresented: $showLettersWeb) { WebShellScreen(onLogout: onLogout, openDrawer: false, hash: "#letters") }
+        .fullScreenCover(isPresented: $showLettersWeb) { WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: "#letters") }
     }
 
     @ViewBuilder private var list: some View {

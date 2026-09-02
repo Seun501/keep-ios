@@ -247,32 +247,25 @@ struct ChatScreen: View {
                             ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
                                 PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
                             }
-                            Color.clear.frame(height: 1).id("bottom")
+                            Color.clear.frame(height: 1).id("bottom").padding(.top, -21)   // 末条到底＝网页 padding-bottom 10
                                 .onAppear { atBottom = true }.onDisappear { atBottom = false }
                         }
                         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
-                        .background(GeometryReader { g in
-                            Color.clear.preference(key: ScrollMetrics.self,
-                                                   value: ScrollMetrics.Value(minY: g.frame(in: .named("scroll")).minY, height: g.size.height))
+                        .background(ScrollObserver { y, ch, vh in
+                            let total = max(ch, 1)
+                            scrollThumb = min(1, vh / total)
+                            scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
+                            farFromBottom = (total - y - vh) > 40
                         })
                     }
-                    .coordinateSpace(name: "scroll")
                     .scrollIndicators(.hidden)
                     .scrollDismissesKeyboard(.interactively)
                     .refreshable { await model.load() }
                     .overlay(alignment: .topTrailing) { scrollbar }
-                    .onPreferenceChange(ScrollMetrics.self) { v in
-                        let viewport = UIScreen.main.bounds.height * 0.7
-                        let total = max(v.height, 1)
-                        scrollThumb = min(1, viewport / total)
-                        scrollFrac = min(max(-v.minY / total, 0), 1 - scrollThumb)
-                        farFromBottom = (total + v.minY - viewport) > 40
-                    }
                     .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
                     .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
                     .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
                     .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
-                    .onChange(of: focused) { f in if f && atBottom { scrollBottom(proxy) } }   // 键盘升起，钉底的流跟着上去
                     .background(KeyboardDismisser())
                     .onAppear { Task { await model.load() } }
 
@@ -325,7 +318,7 @@ struct ChatScreen: View {
     private var scrollbar: some View {
         GeometryReader { g in
             let h = g.size.height
-            Capsule().fill(Theme.scrollTint.opacity(scrollThumb < 1 ? 0.4 : 0))
+            Capsule().fill(Theme.scrollTint.opacity(scrollThumb < 0.98 ? 0.4 : 0))
                 .frame(width: 5, height: max(24, h * scrollThumb))
                 .offset(x: -2, y: h * scrollFrac)
         }
@@ -434,9 +427,10 @@ struct ChatScreen: View {
                         if model.sending {
                             RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
                         } else if canSend {
-                            Text("↑").font(.system(size: 17)).foregroundColor(.white)          // 照网页 #send .arr
+                            Text("↑").font(.system(size: 17, weight: .medium)).foregroundColor(.white)   // 照网页 #send .arr
                         } else {
-                            WaveIcon(color: Theme.sendIdleFg)                                   // 照网页 #send .wav（手绘六根线）
+                            Image("wav").renderingMode(.template).resizable().frame(width: 36, height: 36)
+                                .foregroundColor(Theme.sendIdleFg)                              // 网页那份 SVG 原件
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -488,17 +482,11 @@ struct ChatScreen: View {
     }
 }
 
-struct ScrollMetrics: PreferenceKey {
-    struct Value: Equatable { var minY: CGFloat = 0; var height: CGFloat = 1 }
-    static var defaultValue = Value()
-    static func reduce(value: inout Value, nextValue: () -> Value) { value = nextValue() }
-}
-
 /// 网页壳全屏（书架/相册/留言板/记忆/档案等长尾页先留网页），顶上一条「‹ 聊天」回来。
 struct WebShellScreen: View {
     let onLogout: () -> Void
     var openDrawer = true
-    var hash = ""
+    var deepLink = ""
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
@@ -513,7 +501,7 @@ struct WebShellScreen: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Theme.bg)
-            ShellView(token: Keychain.token ?? "", openDrawer: openDrawer, hash: hash, onLogout: { dismiss(); onLogout() })
+            ShellView(token: Keychain.token ?? "", openDrawer: openDrawer, deepLink: deepLink, onLogout: { dismiss(); onLogout() })
                 .ignoresSafeArea(edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         }

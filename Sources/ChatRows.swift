@@ -118,8 +118,8 @@ struct ThinkView: View {
             if open {
                 HStack(alignment: .top, spacing: 14) {
                     Rectangle().fill(Theme.border).frame(width: 1.5).padding(.leading, 4)
-                    Text(text).font(Theme.serif(14)).lineSpacing(4).foregroundColor(Theme.muted)
-                        .textSelection(.enabled)
+                    RichText(attr: MD.ns(text, base: Theme.uiSerif(14), bold: Theme.uiSerif(14, weight: .semibold),
+                                          mono: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular), color: Theme.uiMuted, lineHeight: 1.6))
                 }
                 .padding(.vertical, 4)
             }

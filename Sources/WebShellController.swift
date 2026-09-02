@@ -21,13 +21,13 @@ final class WebShellController: UIViewController {
     private let token: String
     private let onLogout: () -> Void
     private let openDrawer: Bool
-    private let hash: String
+    private let deepLink: String
     private var webView: WKWebView!
 
-    init(token: String, openDrawer: Bool = false, hash: String = "", onLogout: @escaping () -> Void) {
+    init(token: String, openDrawer: Bool = false, deepLink: String = "", onLogout: @escaping () -> Void) {
         self.token = token
         self.openDrawer = openDrawer
-        self.hash = hash
+        self.deepLink = deepLink
         self.onLogout = onLogout
         super.init(nibName: nil, bundle: nil)
     }
@@ -74,7 +74,7 @@ final class WebShellController: UIViewController {
             var d = document.getElementById("drawer"); if (d) d.classList.add("open");
           });
           // 直达某一页（原生抽屉点进来）：books/album/mem/letters/arch:YYYY-MM-DD/search:词
-          var go = \(Self.jsString(hash));
+          var go = \(Self.jsString(deepLink));
           if (go) window.addEventListener("load", function(){ setTimeout(function(){ try {
             var click = function(id){ var e = document.getElementById(id); if (e) e.click(); };
             if (go === "#books") click("booksBtn");

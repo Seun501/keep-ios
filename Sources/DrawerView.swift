@@ -14,7 +14,7 @@ struct DrawerView: View {
     @State private var target: Target? = nil
     @State private var showBoard = false
 
-    struct Target: Identifiable { let id = UUID(); let hash: String }
+    struct Target: Identifiable { let id = UUID(); let link: String }
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -44,13 +44,13 @@ struct DrawerView: View {
                 .padding(.top, 6)
 
                 VStack(spacing: 0) {
-                    row("书架") { target = Target(hash: "#books") }
+                    row("书架") { target = Target(link: "#books") }
                     hair
-                    row("相册") { target = Target(hash: "#album") }
+                    row("相册") { target = Target(link: "#album") }
                     hair
                     row("留言板", badge: notesBadge) { showBoard = true }
                     hair
-                    row("记忆") { target = Target(hash: "#mem") }
+                    row("记忆") { target = Target(link: "#mem") }
                 }
                 .padding(.top, 10)
 
@@ -69,7 +69,7 @@ struct DrawerView: View {
             .transition(.move(edge: .leading))
         }
         .task { await load() }
-        .fullScreenCover(item: $target) { t in WebShellScreen(onLogout: onLogout, openDrawer: false, hash: t.hash) }
+        .fullScreenCover(item: $target) { t in WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: t.link) }
         .fullScreenCover(isPresented: $showBoard) { BoardScreen(onLogout: onLogout) }
     }
 
@@ -120,7 +120,7 @@ struct DrawerView: View {
                         .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .background(on ? Theme.dyn(0xF1EFEB, 0x34332F).opacity(0.55) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .onTapGesture { if on { target = Target(hash: String(format: "#arch:%04d-%02d-%02d", y, m, d)) } }
+                        .onTapGesture { if on { target = Target(link: String(format: "#arch:%04d-%02d-%02d", y, m, d)) } }
                 }
             }
         }
@@ -135,7 +135,7 @@ struct DrawerView: View {
     private func search() {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return }
-        target = Target(hash: "#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s))
+        target = Target(link: "#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s))
     }
     private func close() { withAnimation(.easeIn(duration: 0.18)) { shown = false } }
 

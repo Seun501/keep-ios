@@ -35,6 +35,36 @@ enum MD {
         }
         return a
     }
+    /// 同上，但产出 NSAttributedString 给 UITextView（粗体/代码/删除线原生生效；精确选字）。lineHeight＝网页 line-height 倍数。
+    static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, color: UIColor, lineHeight: CGFloat) -> NSAttributedString {
+        let a = inline(s)
+        let m = NSMutableAttributedString(string: String(a.characters))
+        let para = NSMutableParagraphStyle()
+        para.minimumLineHeight = base.pointSize * lineHeight
+        para.maximumLineHeight = base.pointSize * lineHeight
+        let all = NSRange(location: 0, length: m.length)
+        m.addAttributes([.font: base, .foregroundColor: color, .paragraphStyle: para,
+                         .baselineOffset: max(0, (base.pointSize * lineHeight - base.lineHeight) / 4)], range: all)
+        for run in a.runs {
+            guard let intent = run.inlinePresentationIntent else { continue }
+            let r = NSRange(run.range, in: a)
+            if intent.contains(.stronglyEmphasized) { m.addAttribute(.font, value: bold, range: r) }
+            if intent.contains(.code) { m.addAttribute(.font, value: mono, range: r) }
+            if intent.contains(.strikethrough) {
+                m.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                                 .foregroundColor: color.withAlphaComponent(0.65)], range: r)
+            }
+        }
+        return m
+    }
+    static func keNS(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium, color: UIColor = Theme.uiText, lineHeight: CGFloat = 1.6) -> NSAttributedString {
+        ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
+           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight)
+    }
+    static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
+        ns(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
+           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.uiText, lineHeight: 1.5)
+    }
     static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
         styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
                mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.text)
@@ -149,9 +179,9 @@ struct MarkdownView: View {
     @ViewBuilder private func block(_ b: MD.Block) -> some View {
         switch b {
         case .para(let lines):
-            Text(joined(lines)).lineSpacing(3)   // 网页 line-height 1.6；Noto 行盒≈1.45em，补 3
+            RichText(attr: MD.keNS(lines.joined(separator: "\n")))
         case .heading(let lv, let s):
-            Text(MD.ke(s, size: lv <= 2 ? 21 : 18.5, weight: .semibold))
+            RichText(attr: MD.keNS(s, size: lv <= 2 ? 21 : 18.5, weight: .semibold, lineHeight: 1.35))
         case .code(let c):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(c).font(.system(size: 13.5, design: .monospaced)).foregroundColor(Theme.text)
@@ -161,14 +191,14 @@ struct MarkdownView: View {
         case .quote(let q):
             HStack(alignment: .top, spacing: 12) {
                 Rectangle().fill(Theme.border).frame(width: 3)
-                Text(joined(q)).lineSpacing(3).foregroundColor(Theme.muted)
+                RichText(attr: MD.keNS(q.joined(separator: "\n"), color: Theme.uiMuted))
             }
         case .ul(let items):   // 网页 ul/ol：padding-left 2em、li 间 3
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, s in
                     HStack(alignment: .top, spacing: 8) {
                         Text("•").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted).frame(width: 22, alignment: .trailing)
-                        Text(MD.ke(s)).lineSpacing(3)
+                        RichText(attr: MD.keNS(s))
                     }
                 }
             }
@@ -177,7 +207,7 @@ struct MarkdownView: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, it in
                     HStack(alignment: .top, spacing: 8) {
                         Text("\(it.0).").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted).frame(width: 22, alignment: .trailing)
-                        Text(MD.ke(it.1)).lineSpacing(3)
+                        RichText(attr: MD.keNS(it.1))
                     }
                 }
             }
@@ -213,8 +243,33 @@ struct UserTextView: View {
         let paras = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(paras.enumerated()), id: \.offset) { _, p in
-                Text(MD.xun(p)).lineSpacing(4)   // 寻定：她的气泡用系统默认
+                RichText(attr: MD.xunNS(p))   // 寻定：她的气泡用系统默认；18/1.5 照网页
             }
         }
+    }
+}
+
+
+/// 系统文本视图承载富文本：粗体/代码/删除线是真的，长按能精确选字复制（SwiftUI 的 Text 只能整段复制）。
+struct RichText: UIViewRepresentable {
+    let attr: NSAttributedString
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView()
+        tv.isEditable = false; tv.isSelectable = true; tv.isScrollEnabled = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
+        tv.dataDetectorTypes = [.link]
+        tv.linkTextAttributes = [.foregroundColor: Theme.uiScrollTint]
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.required, for: .vertical)
+        return tv
+    }
+    func updateUIView(_ tv: UITextView, context: Context) {
+        if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr }
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let w = proposal.width ?? (UIScreen.main.bounds.width - 32)
+        let h = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: w, height: h)
     }
 }
