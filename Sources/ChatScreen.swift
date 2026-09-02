@@ -289,6 +289,14 @@ struct ChatScreen: View {
 
     private func pop() { if !path.isEmpty { path.removeLast() } }
 
+    @State private var kbUp = false
+    /// 键盘收着时才真正拨开关；键盘开着就等 keyboardDidHide 再拨
+    private func syncAvoid() {
+        let want = !(showMeal || drawerOn)
+        if kbUp && KeyboardAvoid.shared.on != want { return }
+        if KeyboardAvoid.shared.on != want { KeyboardAvoid.shared.on = want }
+    }
+
     private var root: some View {
         VStack(spacing: 0) {
             header
@@ -306,7 +314,13 @@ struct ChatScreen: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         // 键盘让位交给系统（与键盘同曲线同时长）；吃吃笺/抽屉/别的页开着时把宿主的让位关掉，主页不动
-        .onChange(of: showMeal || drawerOn) { off in KeyboardAvoid.shared.on = !off }   // 留言板等页开着时让位要留着（浮卡靠它上移，寻验 43）
+        // 让位开关只在键盘收着时拨（键盘开着拨会整页重排——寻验 43「抽屉从天而降」）：
+        // 键盘开着去拉抽屉/点吃吃 → 先收键盘，键盘收完再关让位；留言板等页开着时让位留着（浮卡靠它上移）
+        .onChange(of: showMeal || drawerOn) { off in
+            if off && kbUp { composerFocused = false } else { syncAvoid() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in kbUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbUp = false; syncAvoid() }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
