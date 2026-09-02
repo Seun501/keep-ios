@@ -223,7 +223,9 @@ struct ChatScreen: View {
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
     @State private var greetOn = !(Preview.on && Preview.screen != "greet")
-    @State private var mealEchoes: [String] = []
+    @State private var mealEchoes: [MealEcho] = []   // 吃吃就地回显；正牌小纸条进正史后自动顶替
+    @State private var mealOk = false                 // 碗钮短暂变赤陶 ✓（照网页 1.2s）
+    struct MealEcho: Identifiable { let id = UUID(); let line: String; let at: Date }
     @StateObject private var lintel = LintelModel()
     @StateObject private var clawd = ClawdModel()
     @State private var atBottom = true
@@ -281,7 +283,16 @@ struct ChatScreen: View {
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
-        .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60).ignoresSafeArea(.keyboard) } }
+        .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { line in
+            mealEchoes.append(MealEcho(line: line, at: Date()))
+            mealOk = true; DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { mealOk = false }
+        }).zIndex(60).ignoresSafeArea(.keyboard) } }
+        .onChange(of: model.loadTick) { _ in
+            // 正牌小纸条（服务器物化进正史的 meal ping）到了就把回显撤掉，不重影
+            mealEchoes.removeAll { e in
+                model.msgs.contains { $0.isPing && $0.meal == true && (TimeFmt.parse($0.ts ?? "") ?? .distantPast) >= e.at.addingTimeInterval(-120) }
+            }
+        }
         .onChange(of: showMeal) { on in
             if on { mealKeyboard = true }
             else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !showMeal { mealKeyboard = false } } }   // 等笺的键盘收完再恢复让位
@@ -323,14 +334,14 @@ struct ChatScreen: View {
                 }.buttonStyle(.plain).padding(.top, 4)
             }
             ForEach(model.items) { r in row(r.item) }
-            if let live = model.live { liveView(live) }
-            ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
-                PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
+            if let live = model.live { VStack(alignment: .leading, spacing: 22) { liveView(live) }.id("live") }
+            ForEach(mealEchoes) { e in
+                PingChipView(msg: Msg(role: "user", content: e.line, ts: nil), forceMeal: true).id("echo-\(e.id)")
             }
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)   // 网页 #messages padding-bottom 10
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
-        .background(ScrollObserver { y, ch, vh in
+        .background(ScrollObserver(name: "chat") { y, ch, vh in
             let total = max(ch, 1)
             scrollThumb = min(1, vh / total)
             scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
@@ -350,11 +361,13 @@ struct ChatScreen: View {
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
             .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 10) }   // 轨道下端与末条时间齐平（寻验：别探到底）
+            .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+            .onChange(of: mealEchoes.count) { n in if n > 0, !farFromBottom { scrollBottom(proxy, animated: true) } }
             .onAppear { Task { await model.load() } }
     }
 
@@ -407,8 +420,10 @@ struct ChatScreen: View {
             .frame(width: 42, height: 42)
             LintelColumn(m: lintel)
             Button { showMeal = true } label: {
-                Image("bowl").renderingMode(.template).resizable().frame(width: 20, height: 20)
-                    .foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                Group {
+                    if mealOk { Text("✓").font(.system(size: 17, weight: .bold)).foregroundColor(Theme.accent) }
+                    else { Image("bowl").renderingMode(.template).resizable().frame(width: 20, height: 20).foregroundColor(Theme.muted) }
+                }.frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
         }
@@ -527,10 +542,24 @@ struct ChatScreen: View {
         model.send(text: t, images: imgs)
     }
 
+    /// 列表末尾的那一行（懒列表的「到底」锚点按估算高度定位，最后一行没排出来就停在它上头——寻验：最后一条克的话总看不见）
+    private var lastId: String? {
+        if let e = mealEchoes.last { return "echo-\(e.id)" }
+        if model.live != nil { return "live" }
+        return model.items.last?.id
+    }
+    /// 到底：先让 SwiftUI 滚到最后一行本身（把它真排出来），再由 UIKit 按真实内容高精确钉底（含底部 10 留白）。
     private func scrollBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
-        let go = { proxy.scrollTo("bottom", anchor: .bottom) }
+        let go = {
+            if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } else { proxy.scrollTo("bottom", anchor: .bottom) }
+        }
+        let pin = {
+            guard let sv = ScrollObserver.view("chat") else { return }
+            let maxY = sv.contentSize.height - sv.bounds.height + sv.adjustedContentInset.bottom
+            if maxY > -sv.adjustedContentInset.top { sv.setContentOffset(CGPoint(x: 0, y: maxY), animated: false) }
+        }
         if animated { withAnimation(.easeOut(duration: 0.25)) { go() } } else { go() }
-        for d in [0.1, 0.3, 0.7, 1.4] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { go() } }
+        for d in [0.1, 0.3, 0.7, 1.4] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { go(); DispatchQueue.main.async { pin() } } }
     }
 
     /// 选图 → 长边 1568 的 jpeg dataURL（Anthropic 最优尺寸），最多 4 张。

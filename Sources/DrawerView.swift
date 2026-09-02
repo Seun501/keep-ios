@@ -136,7 +136,7 @@ struct DrawerView: View {
                     HStack(spacing: 3) {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, d in
                             if d == 0 {
-                                Color.clear.frame(maxWidth: .infinity, minHeight: 30)
+                                Color.clear.frame(maxWidth: .infinity).frame(height: 30)
                             } else {
                                 let on = has.contains(d)
                                 ZStack {
@@ -144,12 +144,12 @@ struct DrawerView: View {
                                     Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
                                         .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 30)
+                                .frame(maxWidth: .infinity).frame(height: 30)
                                 .contentShape(Rectangle())
                                 .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
                             }
                         }
-                        if row.count < 7 { ForEach(0..<(7 - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, minHeight: 30) } }
+                        if row.count < 7 { ForEach(0..<(7 - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity).frame(height: 30) } }
                     }
                 }
             }

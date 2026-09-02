@@ -80,23 +80,28 @@ enum Greet {
 }
 
 /// 开屏底板：整块纸色盖住正文装配，Clawd 站在屏高 45%、句子在 51%（照 Claude App 构图）。
+/// 站位一律按「屏幕坐标」算再减去自己的全局 y——和聊天页 `ClawdModel.layout` 同一把尺（寻验 28：两处差一截＝两把尺）。
+/// 句子等 Clawd 的画装好才一起露（寻验 28：字比蟹先出）。
 struct GreetOverlay: View {
     @Binding var shown: Bool
     @State private var line = ""
     @State private var textOn = false
     var body: some View {
         GeometryReader { g in
+            let H = UIScreen.main.bounds.height
+            let top = g.frame(in: .global).minY
             ZStack(alignment: .top) {
                 Theme.bg.ignoresSafeArea()
-                ClawdWeb(state: "idle", flip: false)
+                ClawdWeb(state: "idle", flip: false, onReady: { textOn = true })
                     .frame(width: 150, height: 150)
-                    .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(g.size.height) + 75)   // 与聊天页开场站位同一个点
+                    .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)   // 与聊天页开场站位同一个点
                 HangingText(text: line)
                     .font(Theme.serif(19, weight: .semibold))
                     .foregroundColor(Theme.text)
                     .padding(.horizontal, 36)
                     .frame(maxWidth: .infinity)
-                    .offset(y: g.size.height * 0.51)
+                    .offset(y: H * 0.51 - top)
+                    .opacity(textOn ? 1 : 0)
             }
         }
         .ignoresSafeArea()

@@ -5,6 +5,15 @@ import WebKit
 struct ClawdWeb: UIViewRepresentable {
     let state: String
     let flip: Bool
+    var onReady: (() -> Void)? = nil     // 画真正装好（含 SVG）才回调——开屏句子等它一起出
+    func makeCoordinator() -> Coordinator { Coordinator(onReady: onReady) }
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onReady: (() -> Void)?
+        init(onReady: (() -> Void)?) { self.onReady = onReady }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.onReady?() }   // 等一帧真画上去
+        }
+    }
 
     static let files: [String: String] = [
         "idle": "clawd-mini-idle", "walk": "clawd-mini-crabwalk", "happy": "clawd-mini-happy",
@@ -22,6 +31,7 @@ struct ClawdWeb: UIViewRepresentable {
         wv.scrollView.backgroundColor = .clear
         wv.scrollView.isScrollEnabled = false
         wv.isUserInteractionEnabled = false
+        wv.navigationDelegate = context.coordinator
         let dir = Bundle.main.resourceURL ?? Bundle.main.bundleURL
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -156,10 +166,15 @@ struct ClawdView: View {
 /// 读真实滚动位置（放在滚动内容的 background 里，进窗口后往上找到 UIScrollView 观察 contentOffset/contentSize），
 /// 并在键盘升起时把内容跟着平移：原本钉着底就继续钉底。
 struct ScrollObserver: UIViewRepresentable {
+    var name: String? = nil            // 登记名：外面按名拿到 UIScrollView（精确滚到底）
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
+    final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
+    static var registry: [String: WeakBox] = [:]
+    static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
-        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v) } }
+        let name = self.name
+        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v, name: name) } }
         return v
     }
     func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onChange = onChange }
@@ -171,10 +186,11 @@ struct ScrollObserver: UIViewRepresentable {
         private var atBottom = true
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
         deinit { if let kb { NotificationCenter.default.removeObserver(kb) } }
-        func attach(from v: UIView) {
+        func attach(from v: UIView, name: String?) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
+            if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv) }
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
             sv.contentInset = .zero

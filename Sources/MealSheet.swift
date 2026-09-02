@@ -86,15 +86,16 @@ struct MealSheet: View {
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         let line = f.string(from: Date()) + (kind.isEmpty ? "-寻吃过了" : "-寻吃了\(kind)") + (t.isEmpty ? "" : "：\(t)")
         shown = false
-        Task {
+        Task { @MainActor in          // 回显要在主线程改状态（寻验 28：提交了流里没出现——原本在后台线程碰 @State，界面不刷）
             guard let token = Keychain.token else { return }
             var r = URLRequest(url: Gateway.home.appendingPathComponent("api/meal"))
             r.httpMethod = "POST"
             r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
             r.httpBody = try? JSONSerialization.data(withJSONObject: body)
-            _ = try? await URLSession.shared.data(for: r)
-            onSent(line)
+            let ok = ((try? await URLSession.shared.data(for: r))?.1 as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
+            PushRegistrar.diag("meal: post ok=\(ok)")
+            if ok { onSent(line) }
         }
     }
 
