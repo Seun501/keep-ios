@@ -419,9 +419,9 @@ struct ChatScreen: View {
                         if model.sending {
                             RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
                         } else if canSend {
-                            Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                            Text("↑").font(.system(size: 17)).foregroundColor(.white)          // 照网页 #send .arr
                         } else {
-                            Image(systemName: "waveform").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.sendIdleFg)
+                            WaveIcon(color: Theme.sendIdleFg)                                   // 照网页 #send .wav（手绘六根线）
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -501,5 +501,23 @@ struct WebShellScreen: View {
                 .ignoresSafeArea(.keyboard)
         }
         .background(Theme.bg.ignoresSafeArea())
+    }
+}
+
+
+/// 发送键无字态的声波（照网页 SVG viewBox 0 0 36 36，六根圆头竖线，铺满 36 圆）
+struct WaveIcon: View {
+    var color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            let k = size.width / 36
+            var p = Path()
+            for (x, y0, y1) in [(5.37, 16.24, 19.77), (10.38, 13.32, 22.68), (15.39, 9.13, 26.87),
+                                (20.4, 13.32, 22.68), (25.46, 10.59, 25.42), (30.47, 16.24, 19.77)] {
+                p.move(to: CGPoint(x: x * k, y: y0 * k)); p.addLine(to: CGPoint(x: x * k, y: y1 * k))
+            }
+            ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: 2.3 * k, lineCap: .round))
+        }
+        .frame(width: 36, height: 36)
     }
 }
