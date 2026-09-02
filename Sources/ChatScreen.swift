@@ -212,6 +212,7 @@ struct ChatScreen: View {
     @State private var pending: [String] = []
     @State private var picks: [PhotosPickerItem] = []
     @State private var showWeb = false
+    @State private var drawerOn = false
     @State private var showMeal = false
     @State private var greetOn = true
     @State private var mealEchoes: [String] = []
@@ -314,6 +315,7 @@ struct ChatScreen: View {
         }
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
+        .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout).zIndex(50) } }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }
@@ -333,7 +335,7 @@ struct ChatScreen: View {
     /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
     private var header: some View {
         HStack(spacing: 0) {
-            Button { showWeb = true } label: {
+            Button { withAnimation(.easeOut(duration: 0.22)) { drawerOn = true } } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(0..<3, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 1).fill(Theme.text).frame(width: 16, height: 2)
@@ -495,6 +497,8 @@ struct ScrollMetrics: PreferenceKey {
 /// 网页壳全屏（书架/相册/留言板/记忆/档案等长尾页先留网页），顶上一条「‹ 聊天」回来。
 struct WebShellScreen: View {
     let onLogout: () -> Void
+    var openDrawer = true
+    var hash = ""
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
@@ -509,7 +513,7 @@ struct WebShellScreen: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Theme.bg)
-            ShellView(token: Keychain.token ?? "", openDrawer: true, onLogout: { dismiss(); onLogout() })
+            ShellView(token: Keychain.token ?? "", openDrawer: openDrawer, hash: hash, onLogout: { dismiss(); onLogout() })
                 .ignoresSafeArea(edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         }

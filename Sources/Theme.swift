@@ -20,6 +20,8 @@ enum Theme {
     static let userBubble = dyn(0xF1EFEB, 0x34332F)
     static let border = dyn(0xE4DDCF, 0x3A3833)
     static let composer = dyn(0xF2F2F2, 0x2E2E2B)
+    static let boardBg = dyn(0xF6F2EF, 0x20201F)     // 留言板/抽屉页底（暖白）
+    static let card = dyn(0xFAFAFA, 0x2A2A27)        // 留言卡/底栏白卡
     static let hairRing = dyn(0xFBFBFB, 0x3A3833)
     static let attachBg = dyn(0xF0EFEB, 0x34332F)
     static let menuFill = dyn(0xF2F2F2, 0x131313)

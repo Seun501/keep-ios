@@ -21,11 +21,13 @@ final class WebShellController: UIViewController {
     private let token: String
     private let onLogout: () -> Void
     private let openDrawer: Bool
+    private let hash: String
     private var webView: WKWebView!
 
-    init(token: String, openDrawer: Bool = false, onLogout: @escaping () -> Void) {
+    init(token: String, openDrawer: Bool = false, hash: String = "", onLogout: @escaping () -> Void) {
         self.token = token
         self.openDrawer = openDrawer
+        self.hash = hash
         self.onLogout = onLogout
         super.init(nibName: nil, bundle: nil)
     }
@@ -71,6 +73,17 @@ final class WebShellController: UIViewController {
           if (\(openDrawer ? "true" : "false")) document.addEventListener("DOMContentLoaded", function(){
             var d = document.getElementById("drawer"); if (d) d.classList.add("open");
           });
+          // 直达某一页（原生抽屉点进来）：books/album/mem/letters/arch:YYYY-MM-DD/search:词
+          var go = \(Self.jsString(hash));
+          if (go) window.addEventListener("load", function(){ setTimeout(function(){ try {
+            var click = function(id){ var e = document.getElementById(id); if (e) e.click(); };
+            if (go === "#books") click("booksBtn");
+            else if (go === "#album") click("albumBtn");
+            else if (go === "#mem") click("memBtn");
+            else if (go === "#letters") { click("notesBtn"); setTimeout(function(){ var t = document.querySelector('#notesTabs .ntab[data-tab="letters"]'); if (t) t.click(); }, 400); }
+            else if (go.indexOf("#arch:") === 0 && typeof openArchDay === "function") { var d = document.getElementById("drawer"); if (d) d.classList.remove("open"); openArchDay(go.slice(6)); }
+            else if (go.indexOf("#search:") === 0) { var q = document.getElementById("archQ"); if (q) { q.value = decodeURIComponent(go.slice(8)); click("archGo"); } }
+          } catch(e) {} }, 350); });
           document.addEventListener("DOMContentLoaded", function(){
             var login = document.getElementById("login");
             if (!login) return;
