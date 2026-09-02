@@ -11,6 +11,11 @@ import WebKit
 final class WebShellController: UIViewController {
 
     static var home: URL { Gateway.home }
+    /// 网页 :root --bg：纸色 #F9F9F7 / 夜 #20201F。
+    static let paper = UIColor { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(red: 0x20/255, green: 0x20/255, blue: 0x1F/255, alpha: 1)
+                                       : UIColor(red: 0xF9/255, green: 0xF9/255, blue: 0xF7/255, alpha: 1)
+    }
     static let ownHosts: Set<String> = ["ke.seunk.cn"]
 
     private let token: String
@@ -33,7 +38,7 @@ final class WebShellController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = Self.paper
 
         // 键盘通知的观察者按登记先后依次被叫。这里必须赶在 WKWebView 之前登记：
         // 我先把窗口收到键盘上沿，WebKit 随后量「键盘盖住了多少」＝零，就不再给页面垫内边距——
@@ -87,10 +92,11 @@ final class WebShellController: UIViewController {
         wv.scrollView.contentInsetAdjustmentBehavior = .never
         wv.scrollView.bounces = false                    // 文档层不橡皮筋；页内滚动容器不受影响
         wv.scrollView.keyboardDismissMode = .interactive
-        wv.backgroundColor = .systemBackground
+        wv.backgroundColor = Self.paper                  // 网页 --bg 同色：键盘升起重排的一瞬不露白（09-02 寻验）
+        wv.scrollView.backgroundColor = Self.paper
         wv.isOpaque = true
         if #available(iOS 15.0, *) {
-            wv.underPageBackgroundColor = .systemBackground
+            wv.underPageBackgroundColor = Self.paper
         }
         view.addSubview(wv)
         webView = wv
