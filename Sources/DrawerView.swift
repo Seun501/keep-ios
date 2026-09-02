@@ -107,7 +107,7 @@ struct DrawerView: View {
             HStack {
                 Button { shift(-1) } label: { Text("‹").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
                 Spacer()
-                Text("\(y) 年 \(m) 月").font(Theme.round(13.5)).foregroundColor(Theme.text)
+                Text("\(String(y)) 年 \(m) 月").font(Theme.round(13.5)).foregroundColor(Theme.text)
                 Spacer()
                 Button { shift(1) } label: { Text("›").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
             }

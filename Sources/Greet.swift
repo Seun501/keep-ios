@@ -107,7 +107,7 @@ struct GreetOverlay: View {
         .onAppear {
             line = Greet.pick()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { textOn = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { bye() }
+            if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { bye() } }
             Task { await Greet.refreshCache() }
         }
         .transition(.opacity)

@@ -269,7 +269,7 @@ struct ChatScreen: View {
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout).zIndex(50) } }
-        .fullScreenCover(isPresented: .constant(Preview.on && Preview.screen == "board")) { BoardScreen(onLogout: onLogout) }
+        .fullScreenCover(isPresented: .constant(Preview.on && ["board", "boardpop"].contains(Preview.screen))) { BoardScreen(onLogout: onLogout) }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }

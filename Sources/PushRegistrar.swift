@@ -18,6 +18,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
 
     /// 登录成功后、以及每次启动：有权限就注册；没问过就问一次。
     static func registerIfAuthorized() {
+        if Preview.on { return }   // 截图别弹系统通知框
         let c = UNUserNotificationCenter.current()
         c.getNotificationSettings { s in
             Self.diag("auth=\(s.authorizationStatus.rawValue) keychain=\(Keychain.token == nil ? "empty" : "ok")")

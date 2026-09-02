@@ -163,7 +163,7 @@ struct BoardScreen: View {
         return Button { m.open(n) } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 17)).foregroundColor(Theme.text)
+                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).foregroundColor(Theme.text)
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
                         if n.state == "unread" && replies == 0 { Circle().fill(Theme.accent).frame(width: 5, height: 5) }

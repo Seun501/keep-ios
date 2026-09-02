@@ -72,7 +72,7 @@ jobs:
             xcrun simctl io "$UDID" screenshot "artifacts/$SCREEN.png"
           done
           SIMCTL_CHILD_KEEP_PREVIEW=1 SIMCTL_CHILD_KEEP_SCREEN=greet xcrun simctl launch --terminate-running-process "$UDID" cn.seunk.keep
-          sleep 1.2
+          sleep 5
           xcrun simctl io "$UDID" screenshot "artifacts/greet.png"
           # 踩坑册：别信界面，看包。把最终 Info.plist 与授权一并留证。
           plutil -p "$APP/Info.plist" > artifacts/Info.plist.txt
