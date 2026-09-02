@@ -232,7 +232,6 @@ struct ScrollObserver: UIViewRepresentable {
             let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
             if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset.y = maxY }
         }
-        }
     }
 }
 
