@@ -113,13 +113,13 @@ struct BoardScreen: View {
 
                 tabs
             }
+            .ignoresSafeArea(.keyboard)   // 列表与底栏不随键盘；浮卡那层自己让位
             if let id = m.openId, let n = m.notes.first(where: { $0.id == id }) {
                 NotePop(note: n, model: m).zIndex(80)
             }
         }
         .task { await m.refresh() }
         .onChange(of: m.tab) { t in if t == "letters" { m.tab = "notes"; onWeb("#letters") } }
-        .ignoresSafeArea(.keyboard)
     }
 
     @ViewBuilder private var list: some View {
@@ -256,31 +256,17 @@ struct SecTitle: View {
     }
 }
 
-/// 带橙滚动条的滚动区（照网页 scrollbar-color rgba(217,119,87,.4)）：系统条藏起，自己画 3pt 胶囊，只在真滚动时露、停 0.9s 隐。
+/// 橙滚动条的滚动区：系统原生指示条（ScrollObserver 染成赤陶 40%、轨道底端抬 22）——能拖、拉到头会缩，网页那根就是它。
 struct OrangeScroll<Content: View>: View {
     var name: String
     var barX: CGFloat = 0
     @ViewBuilder var content: () -> Content
-    @State private var thumb: CGFloat = 1
-    @State private var frac: CGFloat = 0
-    @State private var on = false
-    @State private var lastY: CGFloat = .nan
-    @State private var hide: DispatchWorkItem? = nil
     var body: some View {
         ScrollView {
-            content().background(ScrollObserver(name: name) { y, ch, vh in
-                let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
-                if lastY.isNaN { lastY = y; return }          // 第一次量到不算滚（寻验：一打开就露条）
-                if abs(y - lastY) > 0.5 {
-                    on = true; hide?.cancel()
-                    let w = DispatchWorkItem { on = false }; hide = w
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
-                }
-                lastY = y
-            })
+            content().background(ScrollObserver(name: name) { _, _, _ in })
         }
-        .scrollIndicators(.hidden)
-        .overlay(alignment: .topTrailing) { OrangeBar(thumb: thumb, frac: frac, on: on, name: name).offset(x: barX) }
+        .scrollIndicators(.visible)
+        .scrollBounceBehavior(.always, axes: .vertical)
     }
 }
 
@@ -292,20 +278,13 @@ struct NotePop: View {
     @ObservedObject var model: BoardModel
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
-    @State private var kb: CGFloat = 0
-    @State private var cardH: CGFloat = 0
     @FocusState private var focused: Bool
-
-    /// 键盘来了卡要上移多少：居中位的卡底 → 键盘上沿 12（照网页 fit），只往上不往下
-    private var liftY: CGFloat {
-        guard kb > 0, cardH > 0 else { return 0 }
-        let H = UIScreen.main.bounds.height
-        let centeredBottom = (H + cardH) / 2
-        return min(0, (H - kb - 12) - centeredBottom)
-    }
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
+    /// 键盘让位交给系统：整个浮卡层不忽略键盘安全区，键盘一来可用高度就矮，卡在剩下的空间里居中、
+    /// 太高就压到 可用高−40（照网页 fit 的意思）——和键盘同曲线同时长，没有自己的动画（寻验 39：先掉再上、卡顿）
     var body: some View {
+        GeometryReader { g in
         ZStack {
             Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.38).ignoresSafeArea()
                 .onTapGesture { if focused { focused = false } else { model.openId = nil } }
@@ -328,26 +307,19 @@ struct NotePop: View {
                         replyRow.padding(.top, 10).id("reply")
                     }
                 }
-                // 卡高不因聚焦变（照网页：只改 max-height 与位置，寻验 32：先变长再上移动作太多）；键盘来了把回复排送回视野
-                .onChange(of: kb) { k in if k > 0 { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("reply", anchor: .bottom) } } }
+                // 聚焦后把回复排送回视野（卡矮了它可能被折在下面）
+                .onChange(of: focused) { f in if f { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { proxy.scrollTo("reply", anchor: .bottom) } } }
             }
-            .frame(maxHeight: cap)
+            .frame(maxHeight: cap(g.size.height))
             .fixedSize(horizontal: false, vertical: true)
             .padding(EdgeInsets(top: 4, leading: 18, bottom: 10, trailing: 18))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
-            .background(GeometryReader { g in Color.clear.onAppear { cardH = g.size.height }.onChange(of: g.size.height) { cardH = $0 } })
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .offset(y: liftY)                                    // 单一路径往上走（寻验 38：换对齐方式会先掉下去再上来）
-            .animation(.easeOut(duration: 0.25), value: kb)
         }
-        .ignoresSafeArea()
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
-            guard let f = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
-            kb = max(0, UIScreen.main.bounds.height - f.minY)
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in kb = 0 }
+        .ignoresSafeArea(.container)   // 只忽略刘海/底条，不忽略键盘：键盘来了这层自己矮下去
     }
 
     /// 跟帖输入排（照 .note-reply）：胶囊输入（主页输入卡的窄版：同底色、发丝圈、无阴影）＋赤陶圆钮；未结工单空输入时圆钮变 ✓＝结单
@@ -359,8 +331,8 @@ struct NotePop: View {
                 .tint(Theme.scrollTint)
                 .focused($focused)
                 .padding(.vertical, 8).padding(.horizontal, 14)
-                .background(Theme.card, in: Capsule())                       // 寻验 38：灰芯不要，纸色芯＋一圈淡边
-                .overlay(Capsule().stroke(Theme.border.opacity(0.8), lineWidth: 1))
+                .background(Theme.bg, in: Capsule())                         // 寻验 39：纸色芯，只留那一圈白（发丝圈），没有别的边
+                .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1.5))
             Button {
                 let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !v.isEmpty { text = ""; focused = false; Task { await model.reply(note.id, v) } }
@@ -374,12 +346,8 @@ struct NotePop: View {
         }
     }
 
-    /// 卡高上限：平时＝折叠高；键盘来了再压到 屏高−键盘−52（照网页 fit），不会先变长
-    private var cap: CGFloat {
-        let H = UIScreen.main.bounds.height
-        if kb > 0 { return min(foldHeight, H - kb - 52) }
-        return foldHeight
-    }
+    /// 卡高上限：折叠高，再不超过 可用高−40（键盘来了可用高就是键盘以上那截）
+    private func cap(_ avail: CGFloat) -> CGFloat { min(foldHeight, max(120, avail - 40)) }
     /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼＋下一楼的上留白，不露下一楼的头
     private var foldHeight: CGFloat {
         let capH = UIScreen.main.bounds.height * 0.74

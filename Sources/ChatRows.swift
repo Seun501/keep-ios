@@ -87,7 +87,7 @@ struct UserRowView: View {
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
-                    .padding(.horizontal, 16).padding(.top, 7).padding(.bottom, 13)   // 固定行高把字压在行底，上补下减（寻验 38：气泡上宽下窄）
+                    .padding(.horizontal, 16).padding(.top, 8.5).padding(.bottom, 11.5)   // 固定行高把字压在行底，上补下减（寻验 39：7/13 过了）
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)
             }
@@ -107,14 +107,15 @@ struct ThinkView: View {
     @State private var open = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
+            Button { open.toggle() } label: {   // 照网页 .think-head：小时钟＋一行字，没有箭头；整行都能点（寻验 39）
                 HStack(spacing: 7) {
                     Image(systemName: "clock").font(.system(size: 12))
                     Text(label).font(Theme.serif(13))
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(open ? 180 : 0))
                 }
                 .foregroundColor(Theme.muted)
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if open {

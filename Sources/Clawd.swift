@@ -179,7 +179,7 @@ struct ScrollObserver: UIViewRepresentable {
     }
     func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onChange = onChange }
     func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject {
         var onChange: (CGFloat, CGFloat, CGFloat) -> Void
         private var obs: [NSKeyValueObservation] = []
         private var kb: [NSObjectProtocol] = []
@@ -202,9 +202,12 @@ struct ScrollObserver: UIViewRepresentable {
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
             sv.contentInset = .zero
-            sv.bounces = true; sv.alwaysBounceVertical = true   // 拉到头能拉空回弹（寻：网页那种 Q 弹）
+            // 原生指示条（网页那根就是 WebKit 的它）：轨道底端抬 22、贴右 2；颜色照网页 rgba(217,119,87,.4)
+            sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 22, right: 0)
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
+                if !sv.bounces || !sv.alwaysBounceVertical { sv.bounces = true; sv.alwaysBounceVertical = true }   // SwiftUI 会改回去，每次都按住
+                self.tintIndicator(sv)
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
                 let y = sv.contentOffset.y + inset.top
@@ -213,10 +216,6 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            // 滚动条长按拖（照系统滚动条手感）：滚动区右缘 28pt 内按住 0.25s 起拖，一路改 contentOffset
-            let lp = UILongPressGestureRecognizer(target: self, action: #selector(barDrag(_:)))
-            lp.minimumPressDuration = 0.25; lp.delegate = self
-            sv.addGestureRecognizer(lp)
             // 键盘：动作开始时记下「视口底边以下还有多少内容」，动画期间每帧保持这个数不变——
             // 视口矮了内容就跟着抬、视口高回去内容就落回去（iMessage 的底边锚定），不看在不在底。
             // 不依赖 SwiftUI 怎么改帧、也不依赖 KVO 能不能听到 frame。
@@ -257,48 +256,15 @@ struct ScrollObserver: UIViewRepresentable {
             let target = min(max(maxY - dist, -inset.top), maxY)   // 底边锚定：底边以下的内容量保持开始时那个数
             if abs(sv.contentOffset.y - target) > 0.5 { sv.contentOffset.y = target }
         }
-        @objc private func barDrag(_ g: UILongPressGestureRecognizer) {
-            guard let sv else { return }
-            let p = g.location(in: sv)
-            let inset = sv.adjustedContentInset
-            let vh = sv.bounds.height - inset.top - inset.bottom
-            let frac = min(max((p.y - sv.contentOffset.y - inset.top) / max(vh, 1), 0), 1)
-            let maxY = sv.contentSize.height - vh - inset.top
-            guard maxY > 0 else { return }
-            let target = frac * (sv.contentSize.height - vh) - inset.top
-            sv.contentOffset.y = min(max(target, -inset.top), maxY)
+        /// 把系统指示条染成赤陶 40%（指示条是私有子视图，每次滚动时补染——它会被重建）
+        private func tintIndicator(_ sv: UIScrollView) {
+            for v in sv.subviews where String(describing: type(of: v)).contains("ScrollIndicator") {
+                if v.subviews.isEmpty { v.backgroundColor = Theme.uiScrollTint.withAlphaComponent(0.4); v.layer.cornerRadius = v.bounds.width / 2 }
+                for pill in v.subviews where pill.backgroundColor != Theme.uiScrollTint.withAlphaComponent(0.4) {
+                    pill.backgroundColor = Theme.uiScrollTint.withAlphaComponent(0.4)
+                }
+            }
         }
-        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-            guard let sv, g is UILongPressGestureRecognizer else { return true }
-            let p = g.location(in: sv)
-            let vh = sv.bounds.height - sv.adjustedContentInset.top - sv.adjustedContentInset.bottom
-            return sv.contentSize.height > vh + 1 && (p.x - sv.contentOffset.x) > sv.bounds.width - 28
-        }
-        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
-    }
-}
-
-/// 橙滚动条（照网页 scrollbar-color rgba(217,119,87,.4)）：3pt 胶囊靠右、只在滚时露；
-/// 长按 0.25s 后可拖着走（寻验：要像系统滚动条一样能拖）——按登记名拿 UIScrollView 直接改 offset。
-/// 纯画、不吃触摸（构建 36 那版把触摸区铺满整页，主页和留言板全滑不动——寻验）；拖动由 ScrollObserver 挂在 UIScrollView 上的长按手势管。
-struct OrangeBar: View {
-    var thumb: CGFloat
-    var frac: CGFloat
-    var on: Bool
-    var name: String? = nil
-    var inset: CGFloat = 2
-    var body: some View {
-        GeometryReader { g in
-            let h = g.size.height
-            Capsule().fill(Theme.scrollTint.opacity(0.4))
-                .frame(width: 3, height: max(24, h * thumb))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, inset)
-                .offset(y: h * frac)
-                .opacity(thumb < 0.98 && on ? 1 : 0)
-                .animation(.easeOut(duration: 0.25), value: on)
-        }
-        .allowsHitTesting(false)
     }
 }
 

@@ -86,10 +86,15 @@ enum MD {
            mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight)
     }
     /// 寻的气泡：系统字 18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
+    private static let xunCache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 400; return c }()
     static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
-        ns(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
+        let key = "\(size)|\(s)" as NSString
+        if let c = xunCache.object(forKey: key) { return c }
+        let r = ns(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
            mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), italic: UIFont.italicSystemFont(ofSize: size),
            color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8)
+        xunCache.setObject(r, forKey: key)
+        return r
     }
     static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
         styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
@@ -294,16 +299,22 @@ struct RichText: UIViewRepresentable {
         return tv
     }
     func updateUIView(_ tv: UITextView, context: Context) {
-        if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr }
+        if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr; context.coordinator.cache = nil }
     }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator { var cache: (w: CGFloat, size: CGSize)? = nil }
+    /// 键盘让位/滚动区改帧时 SwiftUI 每帧都来问尺寸——同宽同文就直接给上次算的（寻验 39：收键盘卡顿）
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         let maxW = proposal.width ?? (UIScreen.main.bounds.width - 32)
+        if let c = context.coordinator.cache, abs(c.w - maxW) < 0.5 { return c.size }
         // 按内容量宽：短句就窄气泡（寻验：全部撑满一样长了）
         let r = attr.boundingRect(with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
                                   options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
         let w = min(maxW, ceil(r.width) + 1)
         let h = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
-        return CGSize(width: w, height: h)
+        let size = CGSize(width: w, height: h)
+        context.coordinator.cache = (maxW, size)
+        return size
     }
 }
 
@@ -311,7 +322,16 @@ struct RichText: UIViewRepresentable {
 /// 克的整条正文合成一个 NSAttributedString：段落/标题/引用/列表/代码块全在一个文本视图里 → 能跨段精确选字复制。
 /// 块级规则与间距照网页：p 间 16、li 间 3、ul/ol 左缩 2em、引用左线 3px 灰、代码块等宽淡底、标题加大加粗。
 enum MDWhole {
+    private static let cache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 400; return c }()
+    /// 每次重绘都会来要（滚动阈值、流式每帧……），同文同号直接给缓存的（寻验 39：卡）
     static func make(_ text: String, size: CGFloat = 18) -> NSAttributedString {
+        let key = "\(size)|\(text)" as NSString
+        if let c = cache.object(forKey: key) { return c }
+        let r = build(text, size: size)
+        cache.setObject(r, forKey: key)
+        return r
+    }
+    private static func build(_ text: String, size: CGFloat) -> NSAttributedString {
         let out = NSMutableAttributedString()
         let blocks = MD.parse(text)
         func para(_ ns: NSAttributedString, before: CGFloat, after: CGFloat, indent: CGFloat = 0, head: CGFloat = 0) {

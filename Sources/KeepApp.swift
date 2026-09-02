@@ -15,10 +15,13 @@ struct KeepApp: App {
     var body: some Scene {
         WindowGroup {
             if token != nil {
-                ChatScreen(onLogout: {
+                // 聊天页装在自己的宿主控制器里：键盘让位交给系统（曲线与键盘一致），
+                // 吃吃笺/抽屉打字时用宿主的 safeAreaRegions 开关把让位关掉——主页纹丝不动
+                HostBox(content: ChatScreen(onLogout: {
                     Keychain.token = nil
                     self.token = nil
-                })
+                }))
+                .ignoresSafeArea()
             } else {
                 LoginView { t in
                     Keychain.token = t
@@ -26,6 +29,32 @@ struct KeepApp: App {
                     PushRegistrar.registerIfAuthorized()
                 }
             }
+        }
+    }
+}
+
+/// 键盘让位总开关（主页自己的键盘＝开；吃吃笺/抽屉/别的页的键盘＝关）
+@MainActor
+final class KeyboardAvoid: ObservableObject {
+    static let shared = KeyboardAvoid()
+    @Published var on = true
+}
+
+/// 自己的 UIHostingController：能拨 safeAreaRegions（iOS 16.4+），SwiftUI 顶层的 WindowGroup 宿主拨不到。
+struct HostBox<Content: View>: UIViewControllerRepresentable {
+    let content: Content
+    @ObservedObject private var kb = KeyboardAvoid.shared
+    init(content: Content) { self.content = content }
+    func makeUIViewController(context: Context) -> UIHostingController<Content> {
+        let vc = UIHostingController(rootView: content)
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+    func updateUIViewController(_ vc: UIHostingController<Content>, context: Context) {
+        vc.rootView = content
+        if #available(iOS 16.4, *) {
+            let want: SafeAreaRegions = kb.on ? .all : .container
+            if vc.safeAreaRegions != want { vc.safeAreaRegions = want }
         }
     }
 }

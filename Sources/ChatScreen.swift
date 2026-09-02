@@ -6,9 +6,11 @@ import PhotosUI
 struct LiveSeg {
     var thinking = ""
     var text = ""
+    var shown = 0                 // 打字机已放出的字数（照网页 smoothTick：块到了不砸上屏，逐帧匀速放）
     var thinkStart: Date? = nil
     var thinkSecs: Double? = nil
     var error: String? = nil
+    var shownText: String { shown >= text.count ? text : String(text.prefix(shown)) }
 }
 
 enum LiveItem {
@@ -35,7 +37,18 @@ struct LiveTurn {
         var s = seg
         if let t0 = s.thinkStart, s.thinkSecs == nil { s.thinkSecs = Date().timeIntervalSince(t0); seg = s }
     }
-    private mutating func newSegment() { finishThought(); items.append(.seg(LiveSeg())) }
+    /// 定格：封段/工具/结束/出错时把已放出的字数拨到底，别让打字机循环盖掉后画的内容
+    private mutating func settle() { var s = seg; s.shown = s.text.count; seg = s }
+    private mutating func newSegment() { finishThought(); settle(); items.append(.seg(LiveSeg())) }
+    /// 打字机一帧：积压越多每帧放越多（约 0.4s 追平）。放了字返回 true。
+    mutating func advance() -> Bool {
+        var s = seg
+        let n = s.text.count
+        guard s.shown < n else { return false }
+        s.shown = min(n, s.shown + max(1, Int((Double(n - s.shown) / 24).rounded())))
+        seg = s; events += 1
+        return true
+    }
 
     mutating func apply(_ ev: GatewayAPI.Event) {
         events += 1
@@ -49,6 +62,7 @@ struct LiveTurn {
         case .tool(let name):
             finishThought()
             if !seg.thinking.isEmpty || !seg.text.isEmpty {
+                settle()
                 items.append(.chip(name: name, done: false)); items.append(.seg(LiveSeg()))
             } else {
                 items.insert(.chip(name: name, done: false), at: segIndex)
@@ -58,9 +72,9 @@ struct LiveTurn {
         case .delta(let t):
             finishThought(); var s = seg; s.text += t; seg = s
         case .done(let u):
-            finishThought(); usage = u; finished = true
+            finishThought(); settle(); usage = u; finished = true
         case .error(let m):
-            finishThought(); var s = seg; s.error = m; seg = s; finished = true
+            finishThought(); settle(); var s = seg; s.error = m; seg = s; finished = true
         }
     }
 }
@@ -165,6 +179,7 @@ final class ChatModel: ObservableObject {
                     lastEventAt = Date()
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
                     live?.apply(ev)
+                    if case .delta = ev { startSmoother() }
                 }
                 PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0) finished=\(live?.finished ?? false) textLen=\(live?.items.compactMap { if case .seg(let s) = $0 { return s.text.count }; return nil }.reduce(0, +) ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
@@ -187,9 +202,23 @@ final class ChatModel: ObservableObject {
                 } else { PushRegistrar.diag("chat: reload failed after stream") }
             }
             rebuild()
+            smoother?.invalidate(); smoother = nil
             live = nil
             sending = false
         }
+    }
+
+    /// 打字机循环（照网页 smoothTick，逐帧放字，追平即停）
+    private var smoother: Timer? = nil
+    private func startSmoother() {
+        guard smoother == nil else { return }
+        smoother = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
+            Task { @MainActor in
+                guard let self, var l = self.live else { t.invalidate(); self?.smoother = nil; return }
+                if l.advance() { self.live = l } else { t.invalidate(); self.smoother = nil }
+            }
+        }
+        RunLoop.main.add(smoother!, forMode: .common)
     }
 
     func stop() {
@@ -233,18 +262,12 @@ struct ChatScreen: View {
     @StateObject private var clawd = ClawdModel()
     @State private var atBottom = true
     @State private var farFromBottom = false
-    @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
-    @State private var scrollThumb: CGFloat = 1     // 可见区占比
-    @State private var scrollbarOn = false
     @State private var dbg = ""
-    @State private var scrollbarHide: DispatchWorkItem? = nil
     @FocusState private var focused: Bool
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply"].contains(Preview.screen) ? [.board] : []
-    @State private var kbH: CGFloat = 0          // 键盘高（屏幕坐标）；主页自己让位，不用 SwiftUI 的自动让位（吃吃笺/抽屉的键盘不该动主页）
-    @State private var safeBottom: CGFloat = 0
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
     var body: some View {
@@ -282,17 +305,8 @@ struct ChatScreen: View {
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
-        .ignoresSafeArea(.keyboard)                   // 让位自己做（输入卡按键盘高垫底），吃吃笺/抽屉打字主页纹丝不动
-        .background(GeometryReader { g in Color.clear.onAppear { safeBottom = g.safeAreaInsets.bottom } })
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
-            guard let f = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
-            let h = max(0, UIScreen.main.bounds.height - f.minY)
-            // 系统键盘曲线的等价弹簧（mass 3 / stiffness 1000 / damping 500），输入卡和键盘一起走
-            withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500, initialVelocity: 0)) { kbH = h }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500, initialVelocity: 0)) { kbH = 0 }
-        }
+        // 键盘让位交给系统（与键盘同曲线同时长）；吃吃笺/抽屉/别的页开着时把宿主的让位关掉，主页不动
+        .onChange(of: showMeal || drawerOn || !path.isEmpty) { off in KeyboardAvoid.shared.on = !off }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
@@ -353,24 +367,17 @@ struct ChatScreen: View {
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
         .background(ScrollObserver(name: "chat") { y, ch, vh in
             let total = max(ch, 1)
-            scrollThumb = min(1, vh / total)
-            scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
             farFromBottom = (total - y - vh) > 40
             atBottom = !farFromBottom
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f", y, ch, vh) }
-            scrollbarOn = true
-            scrollbarHide?.cancel()
-            let w = DispatchWorkItem { scrollbarOn = false }
-            scrollbarHide = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: w)   // 停手后留 1.6s 再隐（寻验 38：消失太快）
         })
     }
 
     private func messageList(_ proxy: ScrollViewProxy) -> some View {
         ScrollView { listContent }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.visible)               // 系统原生指示条（染成赤陶，见 ScrollObserver）：能拖、拉到头会缩、和网页同款
+            .scrollBounceBehavior(.always, axes: .vertical)
             .scrollDismissesKeyboard(.interactively)
-            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 22) }   // 轨道下端再往上抬一点（寻验 38）
             .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
@@ -396,10 +403,6 @@ struct ChatScreen: View {
         .transition(.opacity.combined(with: .scale(scale: 0.82)))
     }
 
-    /// 自绘滚动条：赤陶 40%，照网页 #messages::-webkit-scrollbar；长按可拖。
-    private var scrollbar: some View {
-        OrangeBar(thumb: scrollThumb, frac: scrollFrac, on: scrollbarOn, name: "chat")
-    }
 
     /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
     private var header: some View {
@@ -457,14 +460,9 @@ struct ChatScreen: View {
                     }
                     if let e = s.error {
                         Text(e).font(Theme.serif(15)).foregroundColor(.red)
-                    } else if !s.text.isEmpty {
-                        RichText(attr: MDWhole.make(s.text)).padding(.vertical, 11)
-                    } else if s.thinking.isEmpty && !live.finished {
-                        HStack(spacing: 7) {   // 还没吐字：照网页思考标的样子先亮「Thinking…」
-                            Image(systemName: "clock").font(.system(size: 12))
-                            Text("Thinking…").font(Theme.serif(13))
-                        }.foregroundColor(Theme.muted)
-                    }
+                    } else if s.shown > 0 {
+                        RichText(attr: MDWhole.make(s.shownText)).padding(.vertical, 11)
+                    }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -493,7 +491,7 @@ struct ChatScreen: View {
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .font(.system(size: 18)).foregroundColor(Theme.text)   // 寻定：输入和她的气泡一样用系统字
-                .tint(Theme.scrollTint)
+                .tint(Theme.scrollTint.opacity(0.4))                   // 光标同网页滚动条：赤陶 40%（寻定）
                 .focused($focused)
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
@@ -530,13 +528,6 @@ struct ChatScreen: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
         .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14)
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)   // 消息区到输入卡＝网页 #messages padding-bottom 10，别再叠
-        .padding(.bottom, composerLift)                                  // 键盘让位：只在主页自己的键盘时垫
-    }
-
-    /// 输入卡为键盘让出的高度：键盘高减去本来就有的底安全区；吃吃笺/抽屉/别的页开着时是它们的键盘，主页不动
-    private var composerLift: CGFloat {
-        guard kbH > 0, !showMeal, !drawerOn, path.isEmpty else { return 0 }
-        return max(0, kbH - safeBottom)
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
