@@ -26,7 +26,8 @@ extension TimelineItem {
             for (k, it) in out.enumerated() { rows.append(TimelineRow(id: "\(cur)-\(k)", item: it)) }
             out.removeAll()
         }
-        defer { flush() }
+        // 注意：这里不能用 defer——`return rows` 先求值、defer 后跑，最后一条永远进不了返回值
+        //（构建 28 前一直如此：克的最新一条要等下一条来了才露面，寻验「克也不回复我」的病根）
         var prevDay = from > 0 ? msgs[from - 1].localDay : ""
         for i in from..<to {
             flush(); cur = i
@@ -61,6 +62,7 @@ extension TimelineItem {
                 }
             }
         }
+        flush()
         return rows
     }
 }
