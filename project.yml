@@ -4,7 +4,7 @@ name: Keep
 options:
   bundleIdPrefix: cn.seunk
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.4"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 settings:
