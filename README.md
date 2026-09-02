@@ -40,3 +40,7 @@
 
 ## 踩坑册
 `https://github.com/Cheiineeey/ios-app-where-it-breaks`——签名、来电界面（CallKit）、推送（APNs/VoIP）、健康权限的真机踩坑记录。要点：报错文字常指错方向，查 `codesign -d --entitlements -` 与 `plutil -p Info.plist` 看包里实况；来电界面必须在 VoIP 推送回调里**同步**上报，晚了会被系统永久吊销；VoIP 推送与普通推送是两套令牌。
+
+## 心愿单（寻提的，未排期）
+- **手表端**（寻的 Apple Watch 比手机新）：手表听写直接跟克说话；健康日内快照（总纲里归 watchOS 的那条）。
+- **语音条**：录一段发给克，气泡可点开听；服务器先转文字给克看并标明是语音条。转文字引擎（腾讯机自跑开源模型 / 外部接口）到时候寻定。
