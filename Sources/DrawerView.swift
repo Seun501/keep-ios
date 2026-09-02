@@ -33,14 +33,14 @@ struct DrawerView: View {
                         .padding(.vertical, 10).padding(.horizontal, 12)
                         .submitLabel(.search).onSubmit(search)
                     Button(action: search) {
-                        Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)
                             .padding(.horizontal, 13).frame(maxHeight: .infinity)
                             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }.padding(3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .background(Theme.bg, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border, lineWidth: 0.7))
                 .padding(.top, 6)
 
                 VStack(spacing: 0) {
@@ -56,10 +56,13 @@ struct DrawerView: View {
 
                 Spacer(minLength: 0)
 
-                Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity).offset(y: 6).frame(height: 0)
-
                 calendar
+                    .padding(EdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 8))
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
+
+                Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity).padding(.top, 8)
             }
             .padding(EdgeInsets(top: 20, leading: 22, bottom: 10, trailing: 22))
             .frame(width: min(UIScreen.main.bounds.width * 0.78, 300))

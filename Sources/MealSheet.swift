@@ -21,7 +21,7 @@ struct MealSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 9) {
-                        BowlIcon(color: Theme.accent, size: 19)
+                        Image("bowl").renderingMode(.template).resizable().frame(width: 19, height: 19).foregroundColor(Theme.accent)
                         Text("吃吃").font(Theme.cjk(16.5, weight: .bold)).tracking(1.6).foregroundColor(Theme.text)
                     }
                     HStack {
@@ -49,7 +49,7 @@ struct MealSheet: View {
                                 .overlay(Circle().stroke(Theme.border, lineWidth: 1))
                         }
                         Button(action: send) {
-                            Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                            Image("mealSend").renderingMode(.template).resizable().frame(width: 14, height: 14).foregroundColor(.white)
                                 .frame(width: 28, height: 28).background(Theme.accent, in: Circle())
                         }
                     }
@@ -63,8 +63,7 @@ struct MealSheet: View {
 
                 if let image {
                     ZStack(alignment: .topTrailing) {
-                        RemoteImage(src: image).frame(maxWidth: 150, maxHeight: 130)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        DataImage(src: image, maxW: 150, maxH: 130, radius: 16)
                             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.22), radius: 15, y: 10)
                         Button { self.image = nil } label: {
                             Text("×").font(Theme.round(12)).foregroundColor(Theme.bg)
@@ -76,7 +75,7 @@ struct MealSheet: View {
             }
         }
         .onChange(of: pick) { _ in Task { await loadPick() } }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { focused = true } }
+
     }
 
     private func send() {

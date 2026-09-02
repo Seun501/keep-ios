@@ -179,7 +179,7 @@ struct BoardScreen: View {
                         Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).foregroundColor(Theme.muted)
                     }
                 }
-                Text(first).font(Theme.serif(14.5, weight: .regular)).lineSpacing(4).foregroundColor(Theme.text)
+                Text(first).font(Theme.serif(14.5, weight: .regular)).lineSpacing(3.5).foregroundColor(Theme.text)
                     .lineLimit(2).multilineTextAlignment(.leading)
                     .strikethrough(n.closed)
             }
@@ -201,19 +201,18 @@ struct BoardScreen: View {
     /// 底部三栏（照 #notesTabs）：白底；选中＝42px 橙正圆托白线图标、往上冒 13px、外圈 4px 页底色；字加粗
     private var tabs: some View {
         HStack(spacing: 0) {
-            tab("tickets", "工单", "checklist")
-            tab("notes", "留言板", "bubble.left")
-            tab("letters", "信件", "envelope")
+            tab("tickets", "工单", "tabTicket")
+            tab("notes", "留言板", "tabNotes")
+            tab("letters", "信件", "tabLetters")
         }
         .padding(.top, 3).padding(.horizontal, 4).padding(.bottom, 1)
         .background(Theme.card.ignoresSafeArea(edges: .bottom))
-        .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 3, y: -1)
     }
     private func tab(_ key: String, _ label: String, _ icon: String) -> some View {
         let on = m.tab == key
         return Button { m.tab = key } label: {
             VStack(spacing: 0) {
-                Image(systemName: icon).font(.system(size: 19, weight: .regular))
+                Image(icon).renderingMode(.template).resizable().frame(width: 21, height: 21)
                     .foregroundColor(on ? .white : Theme.muted)
                     .frame(width: on ? 42 : 36, height: on ? 42 : 30)
                     .background(on ? Theme.accent : .clear, in: Circle())
@@ -249,7 +248,7 @@ struct NotePop: View {
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .center) {   // 观感居中（网页按屏高换算 margin-top 居中）
             Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.38).ignoresSafeArea()
                 .onTapGesture { model.openId = nil }
             VStack(spacing: 0) {
@@ -263,14 +262,13 @@ struct NotePop: View {
                                     Spacer()
                                     Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
                                 }
-                                Text(mm.content ?? "").font(Theme.serif(14.8)).lineSpacing(5).foregroundColor(Theme.text)
-                                    .textSelection(.enabled)
+                                RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
                             }
                             .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
                         }
                     }
                 }
-                .frame(maxHeight: UIScreen.main.bounds.height * 0.74 - 90)
+                .frame(maxHeight: foldHeight)
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     TextField("", text: $text, prompt: Text("Reply…").foregroundColor(Theme.muted.opacity(0.6)))
@@ -296,8 +294,13 @@ struct NotePop: View {
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
-            .padding(.top, 26)
         }
-        .ignoresSafeArea(.keyboard)
+    }
+
+    /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼，往下翻才见后续
+    private var foldHeight: CGFloat {
+        let n = (note.msgs ?? []).count
+        if n > 1 { return min(UIScreen.main.bounds.height * 0.74 - 90, 190) }
+        return UIScreen.main.bounds.height * 0.74 - 90
     }
 }

@@ -78,13 +78,13 @@ struct UserRowView: View {
     let stamp: String
     let images: [String]
     var body: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
                 RemoteImage(src: u).frame(maxWidth: 200, maxHeight: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                UserTextView(text: text)
+                RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n\n")))
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)
@@ -144,7 +144,7 @@ struct AIRowView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 if let c = msg.content, !c.isEmpty {
-                    MarkdownView(text: c).textSelection(.enabled)
+                    RichText(attr: MDWhole.make(c))
                 }
             }
             .padding(.vertical, 11)
@@ -240,6 +240,27 @@ struct RemoteImage: View {
             }
         } else {
             Theme.panel
+        }
+    }
+}
+
+
+/// dataURL 图按真实比例装进 maxW×maxH 的框里再切圆角（圆角贴着图边，不是贴着框）。
+struct DataImage: View {
+    let src: String
+    var maxW: CGFloat = 200
+    var maxH: CGFloat = 200
+    var radius: CGFloat = 26
+    var body: some View {
+        if src.hasPrefix("data:"), let comma = src.firstIndex(of: ","),
+           let data = Data(base64Encoded: String(src[src.index(after: comma)...])), let ui = UIImage(data: data) {
+            let s = min(maxW / max(ui.size.width, 1), maxH / max(ui.size.height, 1), 1)
+            Image(uiImage: ui).resizable()
+                .frame(width: ui.size.width * s, height: ui.size.height * s)
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        } else {
+            RemoteImage(src: src).frame(maxWidth: maxW, maxHeight: maxH)
+                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
     }
 }

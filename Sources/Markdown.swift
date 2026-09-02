@@ -268,8 +268,75 @@ struct RichText: UIViewRepresentable {
         if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr }
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
-        let w = proposal.width ?? (UIScreen.main.bounds.width - 32)
+        let maxW = proposal.width ?? (UIScreen.main.bounds.width - 32)
+        // 按内容量宽：短句就窄气泡（寻验：全部撑满一样长了）
+        let r = attr.boundingRect(with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
+                                  options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        let w = min(maxW, ceil(r.width) + 1)
         let h = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
         return CGSize(width: w, height: h)
+    }
+}
+
+
+/// 克的整条正文合成一个 NSAttributedString：段落/标题/引用/列表/代码块全在一个文本视图里 → 能跨段精确选字复制。
+/// 块级规则与间距照网页：p 间 16、li 间 3、ul/ol 左缩 2em、引用左线 3px 灰、代码块等宽淡底、标题加大加粗。
+enum MDWhole {
+    static func make(_ text: String, size: CGFloat = 18) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let blocks = MD.parse(text)
+        func para(_ ns: NSAttributedString, before: CGFloat, after: CGFloat, indent: CGFloat = 0, head: CGFloat = 0) {
+            let m = NSMutableAttributedString(attributedString: ns)
+            m.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: m.length)) { v, r, _ in
+                let p = (v as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                p.paragraphSpacingBefore = before; p.paragraphSpacing = after
+                p.headIndent = indent; p.firstLineHeadIndent = head
+                m.addAttribute(.paragraphStyle, value: p, range: r)
+            }
+            out.append(m)
+        }
+        for (i, b) in blocks.enumerated() {
+            if i > 0 { out.append(NSAttributedString(string: "\n")) }
+            let last = i == blocks.count - 1
+            switch b {
+            case .para(let lines):
+                para(MD.keNS(lines.joined(separator: "\n"), size: size), before: 0, after: last ? 0 : 16)
+            case .heading(let lv, let t):
+                para(MD.keNS(t, size: lv <= 2 ? size + 3 : size + 0.5, weight: .semibold, lineHeight: 1.35), before: 0, after: last ? 0 : 10)
+            case .quote(let q):
+                let ns = MD.keNS(q.joined(separator: "\n"), size: size, color: Theme.uiMuted)
+                para(ns, before: 0, after: last ? 0 : 16, indent: 15, head: 15)
+            case .ul(let items):
+                for (k, it) in items.enumerated() {
+                    let ns = NSMutableAttributedString(attributedString: MD.keNS("•\t" + it, size: size))
+                    let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
+                    p.headIndent = 2 * size; p.firstLineHeadIndent = 0.9 * size
+                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
+                    p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
+                    ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
+                    out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }
+                }
+            case .ol(let items):
+                for (k, it) in items.enumerated() {
+                    let ns = NSMutableAttributedString(attributedString: MD.keNS("\(it.0).\t" + it.1, size: size))
+                    let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
+                    p.headIndent = 2 * size; p.firstLineHeadIndent = 0.6 * size
+                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
+                    p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
+                    ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
+                    out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }
+                }
+            case .code(let c):
+                let p = NSMutableParagraphStyle(); p.paragraphSpacing = last ? 0 : 16; p.headIndent = 10; p.firstLineHeadIndent = 10
+                out.append(NSAttributedString(string: c, attributes: [
+                    .font: UIFont.monospacedSystemFont(ofSize: 13.5, weight: .regular), .foregroundColor: Theme.uiText,
+                    .backgroundColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27), .paragraphStyle: p]))
+            case .table(let head, let rows):
+                var lines = [head.joined(separator: "  |  ")]
+                for r in rows { lines.append(r.joined(separator: "  |  ")) }
+                para(MD.keNS(lines.joined(separator: "\n"), size: 15), before: 0, after: last ? 0 : 16)
+            }
+        }
+        return out
     }
 }

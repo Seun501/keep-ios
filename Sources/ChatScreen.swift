@@ -226,6 +226,8 @@ struct ChatScreen: View {
     @State private var farFromBottom = false
     @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
     @State private var scrollThumb: CGFloat = 1     // 可见区占比
+    @State private var scrollbarOn = false
+    @State private var scrollbarHide: DispatchWorkItem? = nil
     @FocusState private var focused: Bool
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
@@ -247,6 +249,9 @@ struct ChatScreen: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
+        .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
+            if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { withAnimation(.easeOut(duration: 0.22)) { drawerOn = true } }
+        })   // 屏幕左缘右滑唤出抽屉
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60) } }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
         .onChange(of: model.sending) { s in clawd.busy(s) }
@@ -299,6 +304,11 @@ struct ChatScreen: View {
             scrollThumb = min(1, vh / total)
             scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
             farFromBottom = (total - y - vh) > 40
+            scrollbarOn = true
+            scrollbarHide?.cancel()
+            let w = DispatchWorkItem { scrollbarOn = false }
+            scrollbarHide = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
         })
     }
 
@@ -318,7 +328,7 @@ struct ChatScreen: View {
 
     private func jumpButton(_ proxy: ScrollViewProxy) -> some View {
         Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
-            Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
+            Image("chev").renderingMode(.template).resizable().frame(width: 20, height: 20)
                 .foregroundColor(Theme.jumpArrow)
                 .frame(width: 38, height: 38)
                 .background(Theme.jumpBg, in: Circle())
@@ -334,9 +344,13 @@ struct ChatScreen: View {
     private var scrollbar: some View {
         GeometryReader { g in
             let h = g.size.height
-            Capsule().fill(Theme.scrollTint.opacity(scrollThumb < 0.98 ? 0.4 : 0))
+            Capsule().fill(Theme.scrollTint.opacity(0.4))
                 .frame(width: 5, height: max(24, h * scrollThumb))
-                .offset(x: -2, y: h * scrollFrac)
+                .frame(maxWidth: .infinity, alignment: .trailing)     // 靠右（GeometryReader 默认把孩子放左上）
+                .padding(.trailing, 2)
+                .offset(y: h * scrollFrac)
+                .opacity(scrollThumb < 0.98 && scrollbarOn ? 1 : 0)   // 不滚就不露（照系统滚动条）
+                .animation(.easeOut(duration: 0.25), value: scrollbarOn)
         }
         .allowsHitTesting(false)
     }
@@ -360,7 +374,8 @@ struct ChatScreen: View {
             .buttonStyle(.plain)
             LintelColumn(m: lintel)
             Button { showMeal = true } label: {
-                BowlIcon().frame(width: 34, height: 34)
+                Image("bowl").renderingMode(.template).resizable().frame(width: 20, height: 20)
+                    .foregroundColor(Theme.muted).frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
         }
@@ -394,7 +409,7 @@ struct ChatScreen: View {
                     if let e = s.error {
                         Text(e).font(Theme.serif(15)).foregroundColor(.red)
                     } else if !s.text.isEmpty {
-                        MarkdownView(text: s.text).padding(.vertical, 11)
+                        RichText(attr: MDWhole.make(s.text)).padding(.vertical, 11)
                     } else if s.thinking.isEmpty && !live.finished {
                         Text("…").font(Theme.serif(18)).foregroundColor(Theme.muted)
                     }
@@ -412,18 +427,17 @@ struct ChatScreen: View {
                     HStack(spacing: 8) {
                         ForEach(Array(pending.enumerated()), id: \.offset) { i, u in
                             ZStack(alignment: .topTrailing) {
-                                RemoteImage(src: u).frame(width: 64, height: 64)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
                                 Button { pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
                                 }.offset(x: 4, y: -4)
                             }
                         }
-                    }.padding(.horizontal, 2)
+                    }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            TextField("", text: $draft, axis: .vertical)
+            TextField("", text: $draft, prompt: Text("Chat with…").font(.system(size: 18)).foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)), axis: .vertical)
                 .lineLimit(1...6)
                 .font(Theme.serif(18)).foregroundColor(Theme.text)
                 .tint(Theme.scrollTint)
@@ -431,7 +445,7 @@ struct ChatScreen: View {
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 PhotosPicker(selection: $picks, maxSelectionCount: 4, matching: .images) {
-                    Image(systemName: "plus").font(.system(size: 17, weight: .medium)).foregroundColor(Theme.text)
+                    Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
                 .padding(.leading, -4)
@@ -461,7 +475,7 @@ struct ChatScreen: View {
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
         .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14)
-        .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
+        .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)   // 消息区到输入卡＝网页 #messages padding-bottom 10，别再叠
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }

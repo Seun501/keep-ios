@@ -122,7 +122,7 @@ struct ClawdView: View {
             .frame(width: 150, height: 150)
             .offset(y: m.hop ? -12 : 0)
             .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸；position 容器铺满整片消息区，手势不能挂它上面
-            .onTapGesture { m.tap() }
+            .highPriorityGesture(TapGesture().onEnded { m.tap() })   // 短按＝戳一下（寻验：默认成了拖动）
             .gesture(
                 LongPressGesture(minimumDuration: 0.32)
                     .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("clawdZone")))
@@ -155,8 +155,9 @@ struct ScrollObserver: UIViewRepresentable {
     final class Coordinator: NSObject {
         var onChange: (CGFloat, CGFloat, CGFloat) -> Void
         private var obs: [NSKeyValueObservation] = []
-        private var lastViewport: CGFloat = 0
+        private var kb: NSObjectProtocol? = nil
         private var atBottom = true
+        deinit { if let kb { NotificationCenter.default.removeObserver(kb) } }
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
         func attach(from v: UIView) {
             var s: UIView? = v
@@ -172,17 +173,24 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            obs.append(sv.observe(\.bounds) { [weak self] sv, _ in
-                guard let self else { return }
-                let inset = sv.adjustedContentInset
-                let vh = sv.bounds.height - inset.top - inset.bottom
-                defer { self.lastViewport = vh }
-                guard self.lastViewport > 0, vh < self.lastViewport - 40, self.atBottom else { return }
-                // 变矮（键盘升起）且原本在底：内容跟着上移同样高度，画面不动、底还是底
-                let maxY = max(-inset.top, sv.contentSize.height - vh - inset.top)
-                sv.contentOffset.y = maxY
-            })
-            lastViewport = sv.bounds.height - sv.adjustedContentInset.top - sv.adjustedContentInset.bottom
+            sv.delaysContentTouches = false          // 长按选字第一次就成（滚动区默认延迟触摸）
+            // 键盘升起：SwiftUI 把键盘高度当安全区塞进 adjustedContentInset（bounds 不变），
+            // 这里直接听键盘通知：原本钉底就把内容跟着上移同样高度，画面不动、底还是底
+            let nc = NotificationCenter.default
+            kb = nc.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self, weak sv] n in
+                guard let self, let sv, self.atBottom,
+                      let end = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+                      let win = sv.window else { return }
+                let kbTop = win.convert(end, from: nil).minY
+                let svBottom = sv.convert(sv.bounds, to: win).maxY
+                let overlap = max(0, svBottom - kbTop - sv.adjustedContentInset.bottom)
+                guard overlap > 0 else { return }
+                let dur = n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+                let curve = n.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 7
+                UIView.animate(withDuration: dur, delay: 0, options: UIView.AnimationOptions(rawValue: curve << 16)) {
+                    sv.contentOffset.y += overlap
+                }
+            }
             fire()
         }
     }
