@@ -5,6 +5,7 @@ import SwiftUI
 /// 后续原生页（聊天流/输入/推送）逐页替换壳里的网页，壳留作长尾页面的落脚处。
 @main
 struct KeepApp: App {
+    @UIApplicationDelegateAdaptor(PushRegistrar.self) private var pushDelegate
     @State private var token: String? = Keychain.token
 
     var body: some Scene {
@@ -20,6 +21,7 @@ struct KeepApp: App {
                 LoginView { t in
                     Keychain.token = t
                     self.token = t
+                    PushRegistrar.registerIfAuthorized()
                 }
             }
         }

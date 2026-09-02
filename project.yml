@@ -37,6 +37,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: true
         UIRequiresFullScreen: false
         ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Keep.entitlements
+      properties:
+        aps-environment: production      # 推送；TestFlight/App Store 包一律 production
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
