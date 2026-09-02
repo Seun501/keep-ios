@@ -318,7 +318,6 @@ struct NotePop: View {
                 .focused($focused)
                 .padding(.vertical, 8).padding(.horizontal, 14)
                 .background(Theme.composer, in: Capsule())
-                .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
             Button {
                 let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !v.isEmpty { text = ""; Task { await model.reply(note.id, v) } }

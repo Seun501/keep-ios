@@ -50,6 +50,7 @@ final class ClawdModel: ObservableObject {
     private var timer: Timer?
     private var lastTouch = Date()
     private var dragging = false
+    var isDragging: Bool { dragging }
     private var placed = false
     private let theater = ["groove", "coffee", "carry", "code", "wizard", "dizzy", "collapse"]
 
@@ -120,27 +121,34 @@ final class ClawdModel: ObservableObject {
 
 struct ClawdView: View {
     @ObservedObject var m: ClawdModel
-    @GestureState private var holding = false     // 手势被系统取消（滚动抢走等）也复位 → 一定放手
+    @State private var downAt: Date? = nil
+    @State private var moved = false
+    @State private var grabTimer: DispatchWorkItem? = nil
     var body: some View {
         ClawdWeb(state: m.state, flip: m.flip)
             .frame(width: 150, height: 150)
             .offset(y: m.hop ? -12 : 0)
-            .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸；position 容器铺满整片消息区，手势不能挂它上面
-            .highPriorityGesture(TapGesture().onEnded { m.tap() })   // 短按＝戳一下（寻验：默认成了拖动）
+            .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸
             .gesture(
-                LongPressGesture(minimumDuration: 0.32)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("clawdZone")))
-                    .updating($holding) { _, st, _ in st = true }
+                // 自己计时（系统的长按/点按并用在这里不听话）：按住 ≥0.32s 拎起来拖，短按＝戳一下
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("clawdZone"))
                     .onChanged { v in
-                        switch v {
-                        case .first(true): m.grab()
-                        case .second(true, let d?): m.drag(to: d.location)
-                        default: break
+                        if downAt == nil {
+                            downAt = Date(); moved = false
+                            let w = DispatchWorkItem { m.grab() }
+                            grabTimer = w
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.32, execute: w)
                         }
+                        if abs(v.translation.width) > 8 || abs(v.translation.height) > 8 { moved = true }
+                        if m.isDragging { m.drag(to: v.location) }
                     }
-                    .onEnded { _ in m.release() }
+                    .onEnded { _ in
+                        grabTimer?.cancel()
+                        let short = (downAt.map { Date().timeIntervalSince($0) } ?? 1) < 0.32
+                        if m.isDragging { m.release() } else if short && !moved { m.tap() }
+                        downAt = nil
+                    }
             )
-            .onChange(of: holding) { h in if !h { m.release() } }
             .position(x: m.pos.x + 75, y: m.pos.y + 75)
     }
 }
