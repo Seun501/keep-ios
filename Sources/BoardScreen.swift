@@ -78,9 +78,9 @@ final class BoardModel: ObservableObject {
 
 struct BoardScreen: View {
     let onLogout: () -> Void
+    var onBack: () -> Void = {}
     var onWeb: (String) -> Void = { _ in }
     @StateObject private var m = BoardModel()
-    @Environment(\.dismiss) private var dismiss
 
     private let motto = ["tickets": "修修补补。", "notes": "等你路过。", "letters": "见字如面。"]
 
@@ -89,7 +89,7 @@ struct BoardScreen: View {
             Theme.boardBg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { dismiss() } label: {
+                    Button { onBack() } label: {
                         Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
                     }.buttonStyle(.plain).padding(.leading, -8)
                     Spacer()
@@ -98,11 +98,11 @@ struct BoardScreen: View {
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
 
-                ScrollView {
+                // 照 #notesBody：padding 12 22 24、卡间 12、橙滚动条（只在滚时露）、没有下拉刷新
+                OrangeScroll(barInset: 0) {
                     LazyVStack(alignment: .leading, spacing: 12) { list }
                         .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 24)
                 }
-                .refreshable { await m.refresh() }
 
                 tabs
             }
@@ -112,9 +112,7 @@ struct BoardScreen: View {
         }
         .task { await m.refresh() }
         .onChange(of: m.tab) { t in if t == "letters" { m.tab = "notes"; onWeb("#letters") } }
-        .navigationBarHidden(true)
         .ignoresSafeArea(.keyboard)
-        .background(SwipeBackEnabler())
     }
 
     @ViewBuilder private var list: some View {
@@ -157,51 +155,51 @@ struct BoardScreen: View {
             .padding(.top, UIScreen.main.bounds.height * 0.3)
     }
 
-    /// 一张帖子一张卡（照 .post-card）：日期衬线大标题，同行靠右 回复数·时分；正文两行截断；未读＝小点或回复数披橙
+    /// 一张帖子一张卡（照 .post-card 逐条数值）：padding 13/15；卡题 Georgia 17 粗，同行靠右 回复数·时分（11 圆体）；
+    /// 正文 14.5/1.55 思源宋体常规、两行截断；未读＝小点或回复数披橙
     private func card(_ n: Note) -> some View {
         let msgs = n.msgs ?? []
-        let first = msgs.first?.content ?? ""
         let replies = max(0, msgs.count - 1)
         return Button { m.open(n) } label: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).foregroundColor(Theme.text)
+                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 17)).tracking(0.17).foregroundColor(Theme.text)
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
                         if n.state == "unread" && replies == 0 { Circle().fill(Theme.accent).frame(width: 5, height: 5) }
                         if replies > 0 {
                             if n.state == "unread" {
-                                Text("\(replies)").font(Theme.round(11)).foregroundColor(.white)
+                                Text("\(replies)").font(Theme.round(10)).foregroundColor(.white)
                                     .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 4)
                                     .background(Theme.accent, in: Capsule())
                             } else {
-                                Text("\(replies)").font(Theme.round(11)).foregroundColor(Theme.cacheTint)
+                                Text("\(replies)").font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.cacheTint)
                             }
                         }
-                        Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).foregroundColor(Theme.muted)
+                        Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
                     }
                 }
-                Text(oneLine(first) ? first + "\n…" : first)
-                    .font(Theme.serif(14, weight: .regular)).lineSpacing(3.5).foregroundColor(Theme.text)
-                    .lineLimit(2).multilineTextAlignment(.leading)
-                    .strikethrough(n.closed)
+                RichText(attr: excerpt(msgs.first?.content ?? "", strike: n.closed), maxLines: 2)
             }
-            .padding(EdgeInsets(top: 16, leading: 15, bottom: 16, trailing: 15))
+            .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.06), radius: 2, y: 1)
             .opacity(n.closed ? 0.55 : 1)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    /// 首行能不能一行放下（放得下就补一行「…」当预览占位，寻定）
-    private func oneLine(_ t: String) -> Bool {
-        if t.contains("\n") { return false }
-        let w = UIScreen.main.bounds.width - 44 - 30
-        let r = (t as NSString).boundingRect(with: CGSize(width: w, height: 1000), options: [.usesLineFragmentOrigin],
-                                             attributes: [.font: Theme.uiSerif(14)], context: nil)
-        return r.height < Theme.uiSerif(14).lineHeight * 1.5
+    /// 两行预览：首行 + 第二行；第二行空着（克习惯首句后空一行）就补「…」（寻定）；首行本身就折两行时只见首行截断。
+    private func excerpt(_ t: String, strike: Bool) -> NSAttributedString {
+        let lines = t.components(separatedBy: "\n")
+        let first = lines.first ?? ""
+        let rest = lines.dropFirst()
+        let second = (rest.first?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) ? "…" : rest.joined(separator: "\n")
+        let ns = NSMutableAttributedString(attributedString: MD.keNS(first + "\n" + second, size: 14.5, weight: .regular, lineHeight: 1.55))
+        if strike { ns.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: ns.length)) }
+        return ns
     }
 
     private func dayEn(_ iso: String?) -> String {
@@ -250,91 +248,133 @@ struct SecTitle: View {
     }
 }
 
+/// 带橙滚动条的滚动区（照网页 scrollbar-color rgba(217,119,87,.4)）：系统条藏起，自己画 3pt 胶囊，只在真滚动时露、停 0.9s 隐。
+struct OrangeScroll<Content: View>: View {
+    var barInset: CGFloat = 0
+    @ViewBuilder var content: () -> Content
+    @State private var thumb: CGFloat = 1
+    @State private var frac: CGFloat = 0
+    @State private var on = false
+    @State private var lastY: CGFloat = .nan
+    @State private var hide: DispatchWorkItem? = nil
+    var body: some View {
+        ScrollView {
+            content().background(ScrollObserver { y, ch, vh in
+                let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
+                if lastY.isNaN { lastY = y; return }          // 第一次量到不算滚（寻验：一打开就露条）
+                if abs(y - lastY) > 0.5 {
+                    on = true; hide?.cancel()
+                    let w = DispatchWorkItem { on = false }; hide = w
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
+                }
+                lastY = y
+            })
+        }
+        .scrollIndicators(.hidden)
+        .overlay(alignment: .topTrailing) {
+            GeometryReader { g in
+                Capsule().fill(Theme.scrollTint.opacity(0.4)).frame(width: 3, height: max(20, g.size.height * thumb))
+                    .frame(maxWidth: .infinity, alignment: .trailing).offset(x: barInset, y: g.size.height * frac)
+                    .opacity(thumb < 0.98 && on ? 1 : 0)
+                    .animation(.easeOut(duration: 0.25), value: on)
+            }.allowsHitTesting(false)
+        }
+    }
+}
+
 /// 帖子内页＝浮卡（照 #notePop/#notePopCard）：暗幕，纸色圆角卡，楼层式；跟帖输入排＝胶囊＋赤陶圆钮；
 /// 未结工单输入框空时圆钮变 ✓＝结单。点卡外收卡。
+/// 键盘（照网页 fit）：聚焦后卡平滑送到键盘上沿 12px，高卡收到 屏高−键盘−52。
 struct NotePop: View {
     let note: Note
     @ObservedObject var model: BoardModel
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
-    @State private var thumb: CGFloat = 1
-    @State private var frac: CGFloat = 0
-    @State private var barOn = false
-    @State private var lastY: CGFloat = -1
-    @State private var barHide: DispatchWorkItem? = nil
+    @State private var kb: CGFloat = 0
+    @State private var expanded = false
     @FocusState private var focused: Bool
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
     var body: some View {
-        ZStack(alignment: .center) {   // 观感居中（网页按屏高换算 margin-top 居中）
+        ZStack {
             Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.38).ignoresSafeArea()
-                .onTapGesture { model.openId = nil }
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
-                                    .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
-                                Spacer()
-                                Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
+                .onTapGesture { if focused { focused = false } else { model.openId = nil } }
+            ScrollViewReader { proxy in
+                OrangeScroll(barInset: 12) {
+                    VStack(spacing: 0) {
+                        ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
+                                        .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
+                                    Spacer()
+                                    Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
+                                }
+                                RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
                             }
-                            RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
+                            .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
+                            .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
                         }
-                        .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
-                        .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
+                        replyRow.padding(.top, 10).id("reply")
                     }
-                    replyRow.padding(.top, 10)
                 }
-                .background(ScrollObserver { y, ch, vh in
-                    let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
-                    if abs(y - lastY) > 0.5 { barOn = true; barHide?.cancel(); let w = DispatchWorkItem { barOn = false }; barHide = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w) }
-                    lastY = y
-                })
+                .onChange(of: focused) { f in
+                    if f { expanded = true; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("reply", anchor: .bottom) } } }
+                }
             }
-            .scrollIndicators(.hidden)
-            .overlay(alignment: .topTrailing) {
-                GeometryReader { g in
-                    Capsule().fill(Theme.scrollTint.opacity(0.4)).frame(width: 3, height: max(20, g.size.height * thumb))
-                        .frame(maxWidth: .infinity, alignment: .trailing).offset(x: 12, y: g.size.height * frac)
-                        .opacity(thumb < 0.98 && barOn ? 1 : 0)
-                        .animation(.easeOut(duration: 0.25), value: barOn)
-                }.allowsHitTesting(false)
-            }
-            .frame(maxHeight: foldHeight)
+            .frame(maxHeight: cap)
             .fixedSize(horizontal: false, vertical: true)
             .padding(EdgeInsets(top: 4, leading: 18, bottom: 10, trailing: 18))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: kb > 0 ? .bottom : .center)
+            .padding(.bottom, kb > 0 ? kb + 12 : 0)
+            .animation(.easeOut(duration: 0.25), value: kb)
         }
+        .ignoresSafeArea()
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+            guard let f = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+            kb = max(0, UIScreen.main.bounds.height - f.minY)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in kb = 0 }
     }
 
-    /// 跟帖输入排（照 .note-reply）：胶囊输入＋赤陶圆钮；未结工单空输入时圆钮变 ✓＝结单
+    /// 跟帖输入排（照 .note-reply）：胶囊输入（主页输入卡的窄版：同底色、发丝圈、无阴影）＋赤陶圆钮；未结工单空输入时圆钮变 ✓＝结单
     private var replyRow: some View {
         HStack(spacing: 8) {
             TextField("", text: $text, prompt: Text("Reply…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
+                .textFieldStyle(.plain)
                 .font(.system(size: 15)).foregroundColor(Theme.text)
+                .tint(Theme.scrollTint)
                 .focused($focused)
                 .padding(.vertical, 8).padding(.horizontal, 14)
                 .background(Theme.composer, in: Capsule())
+                .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
             Button {
                 let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !v.isEmpty { text = ""; Task { await model.reply(note.id, v) } }
+                if !v.isEmpty { text = ""; focused = false; Task { await model.reply(note.id, v) } }
                 else if note.isTicket && !note.closed { Task { await model.closeTicket(note.id) } }
             } label: {
                 Text((note.isTicket && !note.closed && text.trimmingCharacters(in: .whitespaces).isEmpty) ? "✓" : "↑")
                     .font(.system(size: 15)).foregroundColor(.white)
                     .frame(width: 30, height: 30).background(Theme.accent, in: Circle())
             }
+            .buttonStyle(.plain)
         }
     }
 
-    /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼＋20，回复与输入排都藏在下面，往下翻才见
+    /// 卡高上限：平时 74vh；键盘来了 屏高−键盘−52（照网页 fit）
+    private var cap: CGFloat {
+        let H = UIScreen.main.bounds.height
+        if kb > 0 { return H - kb - 52 }
+        return expanded ? H * 0.74 : foldHeight
+    }
+    /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼＋下一楼的上留白，不露下一楼的头
     private var foldHeight: CGFloat {
-        let cap = UIScreen.main.bounds.height * 0.74
+        let capH = UIScreen.main.bounds.height * 0.74
         let n = (note.msgs ?? []).count
-        if n > 1, firstFloorH > 0 { return min(cap, firstFloorH + 20) }
-        return cap
+        if n > 1, firstFloorH > 0 { return min(capH, firstFloorH + 8) }
+        return capH
     }
 }

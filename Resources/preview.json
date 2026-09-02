@@ -1,18 +1,117 @@
 {
-  "id": "preview",
-  "title": "预览",
-  "messages": [
-    {"role": "user", "content": "今天去了趟青羊宫，人不多。", "ts": "2026-09-01T10:12:00+08:00"},
-    {"role": "assistant", "content": "人不多的时候最好。**三清殿**前面那棵银杏，秋天会黄得很整齐。\n\n你走的哪条路？\n\n- 从正门进，先过八卦亭\n- 还是绕后面那条小路", "thinking": "她今天心情看起来还行。青羊宫……上次她说过喜欢那里的清净。", "think_secs": 4.2, "ts": "2026-09-01T10:13:20+08:00", "usage": {"input_tokens": 148912, "cached_tokens": 148700, "output_tokens": 96}},
-    {"role": "user", "content": "正门。八卦亭那儿有人在拍照", "ts": "2026-09-01T10:15:00+08:00"},
-    {"role": "user", "content": "12:20-寻吃了午餐：豆花饭", "ts": "2026-09-01T12:20:00+08:00", "meal": true},
-    {"role": "user", "content": "（自由时间）", "ts": "2026-09-01T15:00:00+08:00", "wake": true},
-    {"role": "assistant", "content": "", "thinking": "看看相册。", "ts": "2026-09-01T15:00:10+08:00", "wake": true, "tool_calls": [{"function": {"name": "knock", "arguments": "{\"content\": \"下午的光很好。\\n\\n你那边呢？\"}"}}]},
-    {"role": "assistant", "content": "敲过了。", "ts": "2026-09-01T15:00:30+08:00", "wake": true},
-    {"role": "user", "content": "在图书馆", "ts": "2026-09-02T09:40:00+08:00"},
-    {"role": "assistant", "content": "", "thinking": "查一下天气。", "think_secs": 1.1, "ts": "2026-09-02T09:40:20+08:00", "tool_calls": [{"function": {"name": "weather", "arguments": "{}"}}]},
-    {"role": "assistant", "content": "那边下午会转阴，记得带伞。\n\n> 顺便：昨天说的那本书，我翻到第三章了。\n\n1. `git pull` 之后再看\n2. 别急着改\n\n~~划掉的~~ 也留着。", "thinking": "", "ts": "2026-09-02T09:41:05+08:00", "usage": {"input_tokens": 149402, "cached_tokens": 149180, "output_tokens": 140}},
-    {"role": "user", "content": "好", "ts": "2026-09-02T09:42:00+08:00"},
-    {"role": "assistant", "content": "嗯。", "ts": "2026-09-02T09:42:15+08:00", "usage": {"input_tokens": 149500, "cached_tokens": 149402, "output_tokens": 6}}
-  ]
+ "id": "preview",
+ "title": "预览",
+ "messages": [
+  {
+   "role": "user",
+   "content": "今天去了趟青羊宫，人不多。",
+   "ts": "2026-09-01T10:12:00+08:00"
+  },
+  {
+   "role": "assistant",
+   "content": "人不多的时候最好。**三清殿**前面那棵银杏，秋天会黄得很整齐。\n\n你走的哪条路？\n\n- 从正门进，先过八卦亭\n- 还是绕后面那条小路",
+   "thinking": "她今天心情看起来还行。青羊宫……上次她说过喜欢那里的清净。",
+   "think_secs": 4.2,
+   "ts": "2026-09-01T10:13:20+08:00",
+   "usage": {
+    "input_tokens": 148912,
+    "cached_tokens": 148700,
+    "output_tokens": 96
+   }
+  },
+  {
+   "role": "user",
+   "content": "正门。八卦亭那儿有人在拍照",
+   "ts": "2026-09-01T10:15:00+08:00"
+  },
+  {
+   "role": "user",
+   "content": "12:20-寻吃了午餐：豆花饭",
+   "ts": "2026-09-01T12:20:00+08:00",
+   "meal": true
+  },
+  {
+   "role": "user",
+   "content": "（自由时间）",
+   "ts": "2026-09-01T15:00:00+08:00",
+   "wake": true
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "thinking": "看看相册。",
+   "ts": "2026-09-01T15:00:10+08:00",
+   "wake": true,
+   "tool_calls": [
+    {
+     "function": {
+      "name": "knock",
+      "arguments": "{\"content\": \"下午的光很好。\\n\\n你那边呢？\"}"
+     }
+    }
+   ]
+  },
+  {
+   "role": "assistant",
+   "content": "敲过了。",
+   "ts": "2026-09-01T15:00:30+08:00",
+   "wake": true
+  },
+  {
+   "role": "user",
+   "content": "在图书馆",
+   "ts": "2026-09-02T09:40:00+08:00"
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "thinking": "查一下天气。",
+   "think_secs": 1.1,
+   "ts": "2026-09-02T09:40:20+08:00",
+   "tool_calls": [
+    {
+     "function": {
+      "name": "weather",
+      "arguments": "{}"
+     }
+    }
+   ]
+  },
+  {
+   "role": "assistant",
+   "content": "那边下午会转阴，记得带伞。\n\n> 顺便：昨天说的那本书，我翻到第三章了。\n\n1. `git pull` 之后再看\n2. 别急着改\n\n~~划掉的~~ 也留着。",
+   "thinking": "",
+   "ts": "2026-09-02T09:41:05+08:00",
+   "usage": {
+    "input_tokens": 149402,
+    "cached_tokens": 149180,
+    "output_tokens": 140
+   }
+  },
+  {
+   "role": "user",
+   "content": "好",
+   "ts": "2026-09-02T09:42:00+08:00"
+  },
+  {
+   "role": "assistant",
+   "content": "嗯。",
+   "ts": "2026-09-02T09:42:15+08:00",
+   "usage": {
+    "input_tokens": 149500,
+    "cached_tokens": 149402,
+    "output_tokens": 6
+   }
+  },
+  {
+   "role": "user",
+   "content": "那我先去泡茶。",
+   "ts": "2026-09-02T09:43:00+08:00"
+  },
+  {
+   "role": "assistant",
+   "content": "*把杯子推过去* 慢慢泡，**水别太烫**。\n\n回来我们接着说 `preview.json` 那件事。",
+   "ts": "2026-09-02T09:43:20+08:00"
+  }
+ ]
 }

@@ -238,19 +238,27 @@ struct ChatScreen: View {
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     @State private var path: [Route] = Preview.on && ["board", "boardpop"].contains(Preview.screen) ? [.board] : []
+    @State private var mealKeyboard = false      // 吃吃笺的键盘：主页不跟着抬（寻验 28 第 3 条）
 
+    /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
     var body: some View {
-        NavigationStack(path: $path) {
+        ZStack {
             root
-                .navigationBarHidden(true)
-                .navigationDestination(for: Route.self) { r in
+            ForEach(Array(path.enumerated()), id: \.offset) { i, r in
+                Group {
                     switch r {
-                    case .board: BoardScreen(onLogout: onLogout, onWeb: { path.append(.web($0)) }).background(SwipeBackEnabler())
-                    case .web(let link): WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: link).navigationBarHidden(true).background(SwipeBackEnabler())
+                    case .board: BoardScreen(onLogout: onLogout, onBack: pop, onWeb: { path.append(.web($0)) })
+                    case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
                     }
                 }
+                .zIndex(Double(100 + i))
+                .background(EdgeSwipe(onBack: pop))
+                .transaction { $0.animation = nil }
+            }
         }
     }
+
+    private func pop() { if !path.isEmpty { path.removeLast() } }
 
     private var root: some View {
         VStack(spacing: 0) {
@@ -268,11 +276,16 @@ struct ChatScreen: View {
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
+        .ignoresSafeArea(mealKeyboard ? .keyboard : [])   // 吃吃笺打字时主页不让位（笺照网页钉在屏中央，键盘只盖下半）
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
-        .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60) } }
+        .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60).ignoresSafeArea(.keyboard) } }
+        .onChange(of: showMeal) { on in
+            if on { mealKeyboard = true }
+            else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !showMeal { mealKeyboard = false } } }   // 等笺的键盘收完再恢复让位
+        }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
         .onChange(of: model.sending) { s in clawd.busy(s) }
         .onChange(of: model.live?.events ?? 0) { _ in
@@ -336,19 +349,12 @@ struct ChatScreen: View {
         ScrollView { listContent }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
-            .refreshable { await model.load() }
-            .overlay(alignment: .topTrailing) { scrollbar }
+            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 10) }   // 轨道下端与末条时间齐平（寻验：别探到底）
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { n in
-                // 键盘升起：原本钉底就跟着键盘一起滚到底（一次，跟键盘同时长）
-                guard atBottom else { return }
-                let dur = n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-                withAnimation(.easeOut(duration: dur)) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
             .onAppear { Task { await model.load() } }
     }
 
@@ -461,7 +467,7 @@ struct ChatScreen: View {
                                 Button { pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
-                                }.offset(x: 4, y: -4)
+                                }.buttonStyle(.plain).offset(x: 4, y: -4)
                             }
                         }
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
@@ -469,6 +475,7 @@ struct ChatScreen: View {
             }
             TextField("", text: $draft, prompt: Text("Chat with…").font(.system(size: 18)).foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)), axis: .vertical)
                 .lineLimit(1...6)
+                .textFieldStyle(.plain)
                 .font(Theme.serif(18)).foregroundColor(Theme.text)
                 .tint(Theme.scrollTint)
                 .focused($focused)
@@ -478,6 +485,7 @@ struct ChatScreen: View {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
+                .buttonStyle(.plain)
                 .padding(.leading, -4)
                 Spacer()
                 Button {
@@ -497,6 +505,7 @@ struct ChatScreen: View {
                     .background(model.sending ? Theme.attachBg : (canSend ? Theme.accent : Theme.sendIdle), in: Circle())
                     .animation(.easeInOut(duration: 0.2), value: canSend)
                 }
+                .buttonStyle(.plain)
                 .disabled(!model.sending && !canSend)
             }
         }
@@ -545,20 +554,21 @@ struct ChatScreen: View {
 /// 网页壳全屏（书架/相册/留言板/记忆/档案等长尾页先留网页），顶上一条「‹ 聊天」回来。
 struct WebShellScreen: View {
     let onLogout: () -> Void
+    var onBack: () -> Void = {}
     var openDrawer = true
     var deepLink = ""
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button { dismiss() } label: {
+                Button { onBack(); dismiss() } label: {
                     Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
                 }.buttonStyle(.plain).padding(.leading, -8)
                 Spacer()
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Theme.bg)
-            ShellView(token: Keychain.token ?? "", openDrawer: openDrawer, deepLink: deepLink, onLogout: { dismiss(); onLogout() })
+            ShellView(token: Keychain.token ?? "", openDrawer: openDrawer, deepLink: deepLink, onLogout: { onBack(); dismiss(); onLogout() })
                 .ignoresSafeArea(edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         }

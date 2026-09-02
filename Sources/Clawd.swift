@@ -188,6 +188,14 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
+            // 键盘升起时 SwiftUI 把滚动区一帧帧压矮：原本钉着底就每帧把底重新钉住（内容跟着键盘一起抬）。
+            // 不靠通知时机、不靠 scrollTo，直接跟着视口高度走，键盘怎么动内容就怎么动。
+            obs.append(sv.observe(\.bounds, options: [.old, .new]) { [weak self] sv, ch in
+                guard let self, let o = ch.oldValue?.size.height, let n = ch.newValue?.size.height, n < o, self.atBottom else { return }
+                let inset = sv.adjustedContentInset
+                let maxY = sv.contentSize.height - n + inset.bottom
+                if maxY > -inset.top { sv.contentOffset.y = maxY }
+            })
             fire()
         }
     }
@@ -228,20 +236,43 @@ struct KeyboardDismisser: UIViewRepresentable {
 }
 
 
-/// 导航条一隐藏，系统的「左缘右滑返回」就被关了；这里把手势重新打开（寻定：每个页面都要右滑退出）。
-struct SwipeBackEnabler: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        let vc = UIViewController()
-        DispatchQueue.main.async { enable(from: vc) }
-        return vc
+/// 左缘右滑＝退回上一页（照网页 touchmove：起点 <26px、右移 >55px 就收掉最上面的页）。
+/// 挂在窗口上一只屏缘手势，压在网页壳上也能接到；哪页在最上面就退哪页，页退光了手势就闲着。
+struct EdgeSwipe: UIViewRepresentable {
+    var onBack: () -> Void
+    static var stack: [(id: ObjectIdentifier, fire: () -> Void)] = []
+    func makeUIView(context: Context) -> HookView {
+        let v = HookView(); v.isUserInteractionEnabled = false
+        let co = context.coordinator
+        v.onWindow = { [weak v] in
+            guard let w = v?.window else { return }
+            if !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.edge" }) {
+                let g = UIScreenEdgePanGestureRecognizer(target: EdgeSwipe.Sink.shared, action: #selector(EdgeSwipe.Sink.pan))
+                g.edges = .left; g.name = "keep.edge"
+                w.addGestureRecognizer(g)
+            }
+            if !EdgeSwipe.stack.contains(where: { $0.id == ObjectIdentifier(co) }) {
+                EdgeSwipe.stack.append((ObjectIdentifier(co), { co.onBack() }))
+            }
+        }
+        return v
     }
-    func updateUIViewController(_ vc: UIViewController, context: Context) { enable(from: vc) }
-    private func enable(from vc: UIViewController) {
-        var p = vc.parent
-        while let cur = p, !(cur is UINavigationController) { p = cur.parent }
-        if let nav = p as? UINavigationController ?? vc.navigationController {
-            nav.interactivePopGestureRecognizer?.delegate = nil
-            nav.interactivePopGestureRecognizer?.isEnabled = true
+    func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onBack = onBack }
+    static func dismantleUIView(_ uiView: HookView, coordinator: Coordinator) {
+        EdgeSwipe.stack.removeAll { $0.id == ObjectIdentifier(coordinator) }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(onBack: onBack) }
+    final class Coordinator { var onBack: () -> Void; init(onBack: @escaping () -> Void) { self.onBack = onBack } }
+    final class Sink: NSObject {
+        static let shared = Sink()
+        private var fired = false
+        @objc func pan(_ g: UIScreenEdgePanGestureRecognizer) {
+            switch g.state {
+            case .began: fired = false
+            case .changed:
+                if !fired, g.translation(in: g.view).x > 55 { fired = true; EdgeSwipe.stack.last?.fire() }
+            default: break
+            }
         }
     }
 }

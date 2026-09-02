@@ -35,14 +35,15 @@ struct DrawerView: View {
 
                 HStack(spacing: 0) {
                     TextField("", text: $q, prompt: Text("Search…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
-                        .font(Theme.round(14)).foregroundColor(Theme.text)
+                        .textFieldStyle(.plain)
+                        .font(Theme.round(14)).foregroundColor(Theme.text).tint(Theme.scrollTint)
                         .padding(.vertical, 7).padding(.horizontal, 12)
                         .submitLabel(.search).onSubmit(search)
                     Button(action: search) {
                         Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)
                             .padding(.horizontal, 13).frame(maxHeight: .infinity)
                             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }.padding(3)
+                    }.buttonStyle(.plain).padding(3)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .background(Theme.bg, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -63,15 +64,16 @@ struct DrawerView: View {
                 Spacer(minLength: 0)
 
                 calendar
-                    .padding(EdgeInsets(top: 12, leading: 6, bottom: 8, trailing: 6))
+                    .padding(EdgeInsets(top: 12, leading: 6, bottom: 10, trailing: 6))
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
                     .transaction { $0.animation = nil }                // 切月干干净净，不动画
 
-                Text(usage.isEmpty ? " " : usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)   // 先占位，晚到也不挪日历
+                // 照网页 #usageLine：零高度悬浮、往下 6px——日历钉底，下面只留这一行小字的空（寻验 28 第 4 条）
+                Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity).frame(height: 0, alignment: .top).padding(.top, 6)
             }
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 6, trailing: 22))
+            .padding(EdgeInsets(top: 20, leading: 22, bottom: 10, trailing: 22))
             .frame(width: w)
             .frame(maxHeight: .infinity)
             .background(Theme.boardBg.ignoresSafeArea())
@@ -121,21 +123,34 @@ struct DrawerView: View {
                 Button { shift(1) } label: { Text("›").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
             }
             .buttonStyle(.plain)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 3) {
-                ForEach(["日","一","二","三","四","五","六"], id: \.self) { w in
-                    Text(w).font(Theme.round(11)).foregroundColor(Theme.muted.opacity(0.6)).padding(.vertical, 2)
-                }
-                ForEach((0..<firstWd).map { "blank-\($0)" }, id: \.self) { _ in Color.clear.frame(height: 26) }
-                ForEach(Array(1...n), id: \.self) { d in
-                    let on = has.contains(d)
-                    ZStack {
-                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
-                        Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
-                            .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
+            // 非懒排：整月一次量完（LazyVGrid 换月时先按旧高度排、下一帧再改，箭头会「升起来」——寻验 28 第 5 条）
+            let cells: [Int] = Array(repeating: 0, count: firstWd) + Array(1...n)
+            let rows = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
+            VStack(spacing: 3) {
+                HStack(spacing: 3) {
+                    ForEach(["日","一","二","三","四","五","六"], id: \.self) { w in
+                        Text(w).font(Theme.round(11)).foregroundColor(Theme.muted.opacity(0.6)).padding(.vertical, 2).frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 30)
-                    .contentShape(Rectangle())
-                    .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
+                }
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 3) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, d in
+                            if d == 0 {
+                                Color.clear.frame(maxWidth: .infinity, minHeight: 30)
+                            } else {
+                                let on = has.contains(d)
+                                ZStack {
+                                    if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
+                                    Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
+                                        .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 30)
+                                .contentShape(Rectangle())
+                                .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
+                            }
+                        }
+                        if row.count < 7 { ForEach(0..<(7 - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, minHeight: 30) } }
+                    }
                 }
             }
         }

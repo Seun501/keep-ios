@@ -39,7 +39,8 @@ struct MealSheet: View {
                     .padding(.horizontal, 4).padding(.top, 13).padding(.bottom, 6)
                     HStack(spacing: 10) {
                         TextField("", text: $text, prompt: Text("Eating…").foregroundColor(Theme.muted.opacity(0.6)))
-                            .font(Theme.round(13.5)).foregroundColor(Theme.text)
+                            .textFieldStyle(.plain)
+                            .font(Theme.round(13.5)).foregroundColor(Theme.text).tint(Theme.scrollTint)
                             .focused($focused)
                             .padding(.vertical, 7).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
@@ -47,11 +48,11 @@ struct MealSheet: View {
                             Text("＋").font(.system(size: 16)).foregroundColor(Theme.muted)
                                 .frame(width: 28, height: 28)
                                 .overlay(Circle().stroke(Theme.border, lineWidth: 1))
-                        }
+                        }.buttonStyle(.plain)
                         Button(action: send) {
                             Image("mealSend").renderingMode(.template).resizable().frame(width: 14, height: 14).foregroundColor(.white)
                                 .frame(width: 28, height: 28).background(Theme.accent, in: Circle())
-                        }
+                        }.buttonStyle(.plain)
                     }
                     .padding(.top, 4)
                 }
@@ -68,7 +69,7 @@ struct MealSheet: View {
                         Button { self.image = nil } label: {
                             Text("×").font(Theme.round(12)).foregroundColor(Theme.bg)
                                 .frame(width: 18, height: 18).background(Theme.text, in: Circle())
-                        }.offset(x: 6, y: -6)
+                        }.buttonStyle(.plain).offset(x: 6, y: -6)
                     }
                     .padding(.leading, 6)
                 }

@@ -51,6 +51,7 @@ struct LoginView: View {
                         .frame(width: 96, height: 44)
                         .background(accent, in: Capsule())
                 }
+                .buttonStyle(.plain)
                 .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
                 .opacity(text.trimmingCharacters(in: .whitespaces).isEmpty ? 0.55 : 1)
 
