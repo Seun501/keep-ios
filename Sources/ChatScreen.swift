@@ -186,6 +186,16 @@ final class ChatModel: ObservableObject {
         Task { await GatewayAPI.stop(id) }
     }
 
+    /// 进后台：主动断开流。服务器见「她走了」就在克说完时整条推送到手机（和微信一样回来先看到通知），
+    /// 回前台 pulse→load 把全文接回来。生成本身在服务器后台跑完，不会丢。
+    func detach() {
+        guard sending else { return }
+        PushRegistrar.diag("chat: detach (background)")
+        streamTask?.cancel()
+        live = nil
+        sending = false
+    }
+
     var metDays: Int {
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
         let start = c.date(from: DateComponents(year: 2026, month: 5, day: 2)) ?? Date()
@@ -298,7 +308,10 @@ struct ChatScreen: View {
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
         .onAppear { model.onLogout = onLogout }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
-        .onChange(of: phase) { p in if p == .active { Task { await model.pulse() } } }
+        .onChange(of: phase) { p in
+            if p == .active { Task { await model.pulse() } }
+            if p == .background { model.detach() }
+        }
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
