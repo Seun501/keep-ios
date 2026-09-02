@@ -146,6 +146,7 @@ struct DrawerView: View {
     }
 
     private func load() async {
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01"]; ym = (2026, 9); usage = "5h 19% · week 5%"; notesBadge = 1; return }
         guard let token = Keychain.token else { return }
         func get(_ path: String) async -> [String: Any]? {
             var r = URLRequest(url: Gateway.home.appendingPathComponent(path))

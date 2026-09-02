@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct KeepApp: App {
     @UIApplicationDelegateAdaptor(PushRegistrar.self) private var pushDelegate
-    @State private var token: String? = Keychain.token
+    @State private var token: String? = Preview.on ? "preview" : Keychain.token
 
     init() {
         // 选中高亮/把手/光标全局同滚动条色（寻 09-02：三者一个色）

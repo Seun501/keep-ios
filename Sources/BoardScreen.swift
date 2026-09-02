@@ -35,6 +35,7 @@ final class BoardModel: ObservableObject {
     @Published var openId: String? = nil
 
     func refresh() async {
+        if Preview.on, let d = Preview.json("preview_notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: d) { notes = p.notes; unread = p.unread ?? 0; if Preview.screen == "boardpop" { openId = "n2" }; return }
         guard let token = Keychain.token else { return }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/notes"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

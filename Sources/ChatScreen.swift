@@ -85,6 +85,10 @@ final class ChatModel: ObservableObject {
     private var lastEventAt = Date()
 
     func load() async {
+        if Preview.on, let d = Preview.json("preview"), let conv = try? JSONDecoder().decode(ConversationPayload.self, from: d) {
+            conversationId = conv.id; msgs = conv.messages; renderFrom = Self.startOfLastDays(msgs, days: 2); rebuild(); loadTick += 1
+            return
+        }
         do {
             guard let id = try await GatewayAPI.latestConversationId() else { return }
             let conv = try await GatewayAPI.conversation(id)
@@ -212,9 +216,9 @@ struct ChatScreen: View {
     @State private var pending: [String] = []
     @State private var picks: [PhotosPickerItem] = []
     @State private var showWeb = false
-    @State private var drawerOn = false
+    @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
-    @State private var greetOn = true
+    @State private var greetOn = !(Preview.on && Preview.screen != "greet")
     @State private var mealEchoes: [String] = []
     @StateObject private var lintel = LintelModel()
     @StateObject private var clawd = ClawdModel()
@@ -260,6 +264,7 @@ struct ChatScreen: View {
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout).zIndex(50) } }
+        .fullScreenCover(isPresented: .constant(Preview.on && Preview.screen == "board")) { BoardScreen(onLogout: onLogout) }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }
