@@ -314,16 +314,15 @@ struct ChatScreen: View {
             ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
                 PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
             }
-            Color.red.opacity(Preview.on ? 0.5 : 0).frame(height: 2).id("bottom").padding(.top, -22)   // 末条到底＝网页 padding-bottom 10
-                .onAppear { atBottom = true }.onDisappear { atBottom = false }
         }
-        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 0)
-        .background(Preview.on ? Color.green.opacity(0.08) : Color.clear)
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)   // 网页 #messages padding-bottom 10
+        .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
         .background(ScrollObserver { y, ch, vh in
             let total = max(ch, 1)
             scrollThumb = min(1, vh / total)
             scrollFrac = min(max(y / total, 0), 1 - scrollThumb)
             farFromBottom = (total - y - vh) > 40
+            atBottom = !farFromBottom
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f", y, ch, vh) }
             scrollbarOn = true
             scrollbarHide?.cancel()
@@ -339,7 +338,6 @@ struct ChatScreen: View {
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.load() }
             .overlay(alignment: .topTrailing) { scrollbar }
-            .overlay(alignment: .top) { if Preview.on { Text(dbg).font(.system(size: 11)).foregroundColor(.red) } }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }

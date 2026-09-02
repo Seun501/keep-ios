@@ -167,6 +167,8 @@ struct ScrollObserver: UIViewRepresentable {
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
             sv.delaysContentTouches = false          // 长按选字第一次就成
+            sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
+            sv.contentInset = .zero
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
                 let inset = sv.adjustedContentInset

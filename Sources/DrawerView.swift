@@ -117,11 +117,11 @@ struct DrawerView: View {
                 ForEach(["日","一","二","三","四","五","六"], id: \.self) { w in
                     Text(w).font(Theme.round(11)).foregroundColor(Theme.muted.opacity(0.6)).padding(.vertical, 2)
                 }
-                ForEach(0..<firstWd, id: \.self) { _ in Color.clear.frame(height: 26) }
-                ForEach(1...n, id: \.self) { d in
+                ForEach((0..<firstWd).map { "blank-\($0)" }, id: \.self) { _ in Color.clear.frame(height: 26) }
+                ForEach(Array(1...n), id: \.self) { d in
                     let on = has.contains(d)
                     ZStack {
-                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Preview.on ? Color.orange : Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
+                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
                         Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
                             .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
                     }
