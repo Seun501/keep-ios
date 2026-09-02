@@ -15,7 +15,6 @@ settings:
     CODE_SIGN_STYLE: Automatic
     # 团队号由打包机环境变量注入（见 .github/workflows/ios.yml），仓库里不写死。
     DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
-    TARGETED_DEVICE_FAMILY: "1"          # 只做 iPhone
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
   Keep:
@@ -29,6 +28,7 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Keep
+        CFBundleDevelopmentRegion: zh-Hans
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
@@ -40,5 +40,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
+        TARGETED_DEVICE_FAMILY: "1"          # 只做 iPhone（项目级写法被目标级默认盖掉，09-02 查包发现）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
