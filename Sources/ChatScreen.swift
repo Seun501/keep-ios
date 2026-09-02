@@ -248,7 +248,6 @@ struct ChatScreen: View {
                     .coordinateSpace(name: "scroll")
                     .scrollIndicators(.hidden)
                     .scrollDismissesKeyboard(.interactively)
-                    .simultaneousGesture(TapGesture().onEnded { focused = false })   // 点消息区收键盘（照网页）
                     .refreshable { await model.load() }
                     .overlay(alignment: .topTrailing) { scrollbar }
                     .onPreferenceChange(ScrollMetrics.self) { v in
@@ -262,6 +261,8 @@ struct ChatScreen: View {
                     .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
                     .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
                     .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+                    .onChange(of: focused) { f in if f && atBottom { scrollBottom(proxy) } }   // 键盘升起，钉底的流跟着上去
+                    .background(KeyboardDismisser())
                     .onAppear { Task { await model.load() } }
 
                     ClawdView(m: clawd).zIndex(5)

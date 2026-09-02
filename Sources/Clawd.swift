@@ -121,8 +121,7 @@ struct ClawdView: View {
         ClawdWeb(state: m.state, flip: m.flip)
             .frame(width: 150, height: 150)
             .offset(y: m.hop ? -12 : 0)
-            .position(x: m.pos.x + 75, y: m.pos.y + 75)
-            .contentShape(Rectangle())
+            .contentShape(Rectangle())            // 只有蟹身这 150×150 吃触摸；position 容器铺满整片消息区，手势不能挂它上面（构建 14 的抓蟹 bug）
             .onTapGesture { m.tap() }
             .gesture(
                 LongPressGesture(minimumDuration: 0.32)
@@ -136,5 +135,34 @@ struct ClawdView: View {
                     }
                     .onEnded { _ in m.release() }
             )
+            .position(x: m.pos.x + 75, y: m.pos.y + 75)
+    }
+}
+
+/// 系统级「点空白收键盘」：给窗口挂一只不吞触摸的点按识别器（SwiftUI 的 TapGesture 在滚动区里靠不住）。
+struct KeyboardDismisser: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(frame: .zero); v.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            guard let w = v.window, !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.dismiss" }) else { return }
+            let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
+            tap.name = "keep.dismiss"; tap.cancelsTouchesInView = false; tap.delegate = context.coordinator
+            w.addGestureRecognizer(tap)
+        }
+        return v
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        @objc func tap(_ g: UITapGestureRecognizer) {
+            // 点在输入框/按钮上不收（让它们自己处理）
+            var v = g.view?.hitTest(g.location(in: g.view), with: nil)
+            while let cur = v {
+                if cur is UITextView || cur is UITextField || cur is UIControl { return }
+                v = cur.superview
+            }
+            g.view?.endEditing(true)
+        }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
     }
 }

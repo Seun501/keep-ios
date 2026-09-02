@@ -189,7 +189,7 @@ struct UserTextView: View {
         let paras = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(paras.enumerated()), id: \.offset) { _, p in
-                Text(MD.inline(p)).font(Theme.serif(18)).lineSpacing(4).foregroundColor(Theme.text)
+                Text(MD.inline(p)).font(.system(size: 17)).lineSpacing(4).foregroundColor(Theme.text)   // 寻定：她的气泡用系统默认
             }
         }
     }

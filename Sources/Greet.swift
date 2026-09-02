@@ -90,7 +90,7 @@ struct GreetOverlay: View {
                 Theme.bg.ignoresSafeArea()
                 ClawdWeb(state: "idle", flip: false)
                     .frame(width: 150, height: 150)
-                    .position(x: g.size.width / 2, y: g.size.height * 0.45 + 150 * 0.17)   // 素材可见中心≈盒高 67%
+                    .position(x: g.size.width / 2, y: g.size.height * 0.45 - 100 + 75)   // 盒顶=0.45h−100（可见中心≈盒高67%），字在 0.51h
                 HangingText(text: line)
                     .font(Theme.serif(19, weight: .black))
                     .foregroundColor(Theme.text)
