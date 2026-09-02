@@ -263,7 +263,7 @@ struct ChatScreen: View {
     @State private var atBottom = true
     @State private var farFromBottom = false
     @State private var dbg = ""
-    @FocusState private var focused: Bool
+    @State private var composerFocused = false
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
@@ -487,12 +487,7 @@ struct ChatScreen: View {
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            TextField("", text: $draft, prompt: Text("Chat with…").font(.system(size: 18)).foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)), axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .font(.system(size: 18)).foregroundColor(Theme.text)   // 寻定：输入和她的气泡一样用系统字
-                .tint(Theme.scrollTint.opacity(0.4))                   // 光标同网页滚动条：赤陶 40%（寻定）
-                .focused($focused)
+            Composer(text: $draft, focused: $composerFocused)      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 PhotosPicker(selection: $picks, maxSelectionCount: 4, matching: .images) {
@@ -522,7 +517,7 @@ struct ChatScreen: View {
                 .buttonStyle(.plain)   // 不用 .disabled：plain 样式会把禁用态压灰（寻验：黑钮变灰）
             }
         }
-        .padding(EdgeInsets(top: 14, leading: 18, bottom: 10, trailing: 14))
+        .padding(EdgeInsets(top: 18, leading: 18, bottom: 10, trailing: 14))   // 上面拉高一点（寻验 41）
         .background(Theme.composer, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
@@ -536,7 +531,7 @@ struct ChatScreen: View {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let imgs = pending
         draft = ""; pending = []
-        focused = false
+        composerFocused = false
         model.send(text: t, images: imgs)
     }
 

@@ -72,6 +72,21 @@ enum Theme {
         return UIFont(descriptor: lora, size: size)
     }
     static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiSerif(size, weight: weight)) }
+    /// 中文回落字体本体（量自然行高用）
+    static func uiCJK(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        UIFont(name: cjkName(weight), size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
+    }
+    static func uiSongti(_ size: CGFloat, bold: Bool = false) -> UIFont {
+        UIFont(name: bold ? "STSongti-SC-Bold" : "STSongti-SC-Regular", size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
+    }
+    /// 寻那一套（网页 body：'Lora', Georgia, 'Songti SC'）：Lora 400 → 系统宋体；粗体 Lora 600 → 宋体粗
+    static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
+        let song = uiSongti(size, bold: bold).fontDescriptor
+        var lora = descriptor("Lora-Regular", size: size, fallback: song)
+        let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        lora = lora.addingAttributes([variation: [2003265652: bold ? 600 : 400], .cascadeList: [song]])
+        return UIFont(descriptor: lora, size: size)
+    }
     /// 纯中文场合（门楣、题）：Noto 打头。
     static func cjk(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         let songti = UIFontDescriptor(name: "Songti SC", size: size)

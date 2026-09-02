@@ -37,7 +37,7 @@ enum MD {
     }
     /// 同上，但产出 NSAttributedString 给 UITextView（粗体/代码/删除线原生生效；精确选字）。lineHeight＝网页 line-height 倍数。
     /// 行内规则照网页 mdInline 那四条正则（`代码`、**粗**、~~紧贴删除线~~、*斜*），逐段落字。
-    static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, italic: UIFont? = nil, color: UIColor, lineHeight: CGFloat, paraSpacing: CGFloat = 0) -> NSAttributedString {
+    static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, italic: UIFont? = nil, color: UIColor, lineHeight: CGFloat, paraSpacing: CGFloat = 0, cjkLineHeight: CGFloat? = nil) -> NSAttributedString {
         struct Run { var text: String; var kind: Character }   // kind: n/c/b/d/e
         var runs: [Run] = []
         let pats: [(String, Character)] = [
@@ -62,11 +62,12 @@ enum MD {
         runs = split(s, 0)
         let m = NSMutableAttributedString()
         let para = NSMutableParagraphStyle()
-        para.minimumLineHeight = base.pointSize * lineHeight
-        para.maximumLineHeight = base.pointSize * lineHeight
+        // 行距用 lineSpacing 补到网页的 line-height（行框保持字体自然高：选字把手/光标才不会比字高一大截，
+        // 上下留白也对称——寻验 41）。自然行高取拉丁与中文回落字体里高的那个。
+        let natural = max(base.lineHeight, cjkLineHeight ?? 0)
+        para.lineSpacing = max(0, base.pointSize * lineHeight - natural)
         para.paragraphSpacing = paraSpacing
-        let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para,
-                                                        .baselineOffset: max(0, (base.pointSize * lineHeight - base.lineHeight) / 4)]
+        let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para]
         for r in runs {
             var at = baseAttrs
             switch r.kind {
@@ -83,16 +84,17 @@ enum MD {
     /// 粗体用 600：网页自托管的思源宋体只有 400/500/600，**粗** 在网页上落到 600（寻验 36 对比图：App 的 700 太重）
     static func keNS(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium, color: UIColor = Theme.uiText, lineHeight: CGFloat = 1.6) -> NSAttributedString {
         ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .semibold),
-           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight)
+           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight,
+           cjkLineHeight: Theme.uiCJK(size, weight: weight).lineHeight)
     }
-    /// 寻的气泡：系统字 18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
+    /// 寻的气泡与输入框：网页 body 那套字（Lora → 宋体 Songti SC，常规），18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
     private static let xunCache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 400; return c }()
     static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
         let key = "\(size)|\(s)" as NSString
         if let c = xunCache.object(forKey: key) { return c }
-        let r = ns(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
-           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), italic: UIFont.italicSystemFont(ofSize: size),
-           color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8)
+        let r = ns(s, base: Theme.uiUser(size), bold: Theme.uiUser(size, bold: true),
+           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular),
+           color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiSongti(size).lineHeight)
         xunCache.setObject(r, forKey: key)
         return r
     }
@@ -360,7 +362,7 @@ enum MDWhole {
                     let ns = NSMutableAttributedString(attributedString: MD.keNS("•\t" + it, size: size))
                     let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
                     p.headIndent = 2 * size; p.firstLineHeadIndent = 0.9 * size
-                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
+                    p.lineSpacing = max(0, size * 1.6 - max(Theme.uiSerif(size, weight: .medium).lineHeight, Theme.uiCJK(size, weight: .medium).lineHeight))
                     p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
                     ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
                     out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }
@@ -370,7 +372,7 @@ enum MDWhole {
                     let ns = NSMutableAttributedString(attributedString: MD.keNS("\(it.0).\t" + it.1, size: size))
                     let p = NSMutableParagraphStyle(); p.tabStops = [NSTextTab(textAlignment: .left, location: 2 * size)]
                     p.headIndent = 2 * size; p.firstLineHeadIndent = 0.6 * size
-                    p.minimumLineHeight = size * 1.6; p.maximumLineHeight = size * 1.6
+                    p.lineSpacing = max(0, size * 1.6 - max(Theme.uiSerif(size, weight: .medium).lineHeight, Theme.uiCJK(size, weight: .medium).lineHeight))
                     p.paragraphSpacing = (k == items.count - 1 && !last) ? 16 : 3
                     ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
                     out.append(ns); if k < items.count - 1 { out.append(NSAttributedString(string: "\n")) }

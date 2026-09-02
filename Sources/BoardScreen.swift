@@ -290,7 +290,7 @@ struct NotePop: View {
                 .onTapGesture { if focused { focused = false } else { model.openId = nil } }
             ScrollViewReader { proxy in
                 OrangeScroll(name: "pop", barX: 12) {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 0) {   // 左右留白放在内容上（不放在滚动区外），指示条才贴卡边不压字（寻验 41）
                         ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
@@ -306,13 +306,15 @@ struct NotePop: View {
                         }
                         replyRow.padding(.top, 10).id("reply")
                     }
+                    .padding(.horizontal, 14)
                 }
+                .onAppear { if Preview.on, Preview.screen == "boardreply" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { focused = true } } }
                 // 聚焦后把回复排送回视野（卡矮了它可能被折在下面）
                 .onChange(of: focused) { f in if f { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { proxy.scrollTo("reply", anchor: .bottom) } } }
             }
             .frame(maxHeight: cap(g.size.height))
             .fixedSize(horizontal: false, vertical: true)
-            .padding(EdgeInsets(top: 4, leading: 18, bottom: 10, trailing: 18))
+            .padding(EdgeInsets(top: 4, leading: 4, bottom: 10, trailing: 4))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)

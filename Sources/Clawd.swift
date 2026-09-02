@@ -184,15 +184,14 @@ struct ScrollObserver: UIViewRepresentable {
         private var obs: [NSKeyValueObservation] = []
         private var kb: [NSObjectProtocol] = []
         private var atBottom = true
-        private var pinning = false
-        private var dist: CGFloat = 0        // 键盘动作开始时视口底边以下还有多少内容（保持不变＝底边锚定，iMessage 做法）
-        private var link: CADisplayLink? = nil
-        private var linkUntil = Date()
+        private var lastDist: CGFloat = 0    // 视口底边以下还有多少内容——一直记着「键盘来之前」那个数（底边锚定，iMessage 做法）
+        private var lastH: CGFloat = 0
+        private var kbBusy = false
         private weak var sv: UIScrollView? = nil
         private var name: String? = nil
         private var logged = 0
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
-        deinit { kb.forEach { NotificationCenter.default.removeObserver($0) }; link?.invalidate() }
+        deinit { kb.forEach { NotificationCenter.default.removeObserver($0) } }
         func attach(from v: UIView, name: String?) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
@@ -203,7 +202,7 @@ struct ScrollObserver: UIViewRepresentable {
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
             sv.contentInset = .zero
             // 原生指示条（网页那根就是 WebKit 的它）：轨道底端抬 22、贴右 2；颜色照网页 rgba(217,119,87,.4)
-            sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 22, right: 0)
+            sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 12, right: 0)
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
                 if !sv.bounces || !sv.alwaysBounceVertical { sv.bounces = true; sv.alwaysBounceVertical = true }   // SwiftUI 会改回去，每次都按住
@@ -211,25 +210,36 @@ struct ScrollObserver: UIViewRepresentable {
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
                 let y = sv.contentOffset.y + inset.top
-                if !self.pinning { self.atBottom = (sv.contentSize.height - y - vh) < 40 }
+                self.atBottom = (sv.contentSize.height - y - vh) < 40
+                // 视口高度没在变的时候才更新「底边以下量」——系统让位先于我改帧，改帧后量到的数是错的（寻验 41：又不跟了）
+                if !self.kbBusy, abs(sv.bounds.height - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }
+                self.lastH = sv.bounds.height
                 self.onChange(y, sv.contentSize.height, vh)
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            // 键盘：动作开始时记下「视口底边以下还有多少内容」，动画期间每帧保持这个数不变——
-            // 视口矮了内容就跟着抬、视口高回去内容就落回去（iMessage 的底边锚定），不看在不在底。
-            // 不依赖 SwiftUI 怎么改帧、也不依赖 KVO 能不能听到 frame。
+            // 键盘：系统让位把视口压矮/放高（它跑在我前面），我拿「键盘来之前底边以下的内容量」算出新偏移，
+            // 用键盘同一条曲线同一时长把 contentOffset 动过去——底边锚定（iMessage 做法），和键盘一起走、不逐帧硬掰。
             for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
                 kb.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] note in
                     guard let self, let sv = self.sv else { return }
                     let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
-                    if !self.pinning {
-                        let inset = sv.adjustedContentInset
-                        self.dist = max(0, sv.contentSize.height - (sv.contentOffset.y + sv.bounds.height - inset.bottom))
-                        self.pinning = true
-                    }
-                    self.pinFor(dur + 0.5)
+                    let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt) ?? 7
+                    let dist = self.lastDist
+                    self.kbBusy = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.15) { [weak self] in self?.kbBusy = false }
                     if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
+                    DispatchQueue.main.async { [weak sv] in      // 让 SwiftUI 先按新键盘排好版
+                        guard let sv else { return }
+                        let inset = sv.adjustedContentInset
+                        let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
+                        guard maxY > -inset.top else { return }
+                        let target = min(max(maxY - dist, -inset.top), maxY)
+                        guard abs(target - sv.contentOffset.y) > 0.5 else { return }
+                        UIView.animate(withDuration: dur, delay: 0, options: [UIView.AnimationOptions(rawValue: curve << 16), .beginFromCurrentState, .allowUserInteraction]) {
+                            sv.contentOffset.y = target
+                        }
+                    }
                 })
             }
             fire()
@@ -239,22 +249,7 @@ struct ScrollObserver: UIViewRepresentable {
             guard let sv else { return }
             let f = sv.convert(sv.bounds, to: nil)
             let kf = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
-            PushRegistrar.diag(String(format: "%@: frame=%.0f..%.0f inset=%.0f cs=%.0f off=%.0f kbTop=%.0f dist=%.0f safe=%.0f", tag, f.minY, f.maxY, sv.contentInset.bottom, sv.contentSize.height, sv.contentOffset.y, kf.minY, dist, sv.safeAreaInsets.bottom))
-        }
-        private func pinFor(_ secs: Double) {
-            linkUntil = Date().addingTimeInterval(secs)
-            if link == nil {
-                let l = CADisplayLink(target: self, selector: #selector(tick))
-                l.add(to: .main, forMode: .common); link = l
-            }
-        }
-        @objc private func tick() {
-            guard let sv, Date() < linkUntil else { link?.invalidate(); link = nil; pinning = false; return }
-            let inset = sv.adjustedContentInset
-            let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
-            guard maxY > -inset.top else { return }
-            let target = min(max(maxY - dist, -inset.top), maxY)   // 底边锚定：底边以下的内容量保持开始时那个数
-            if abs(sv.contentOffset.y - target) > 0.5 { sv.contentOffset.y = target }
+            PushRegistrar.diag(String(format: "%@: frame=%.0f..%.0f inset=%.0f cs=%.0f off=%.0f kbTop=%.0f dist=%.0f safe=%.0f", tag, f.minY, f.maxY, sv.contentInset.bottom, sv.contentSize.height, sv.contentOffset.y, kf.minY, lastDist, sv.safeAreaInsets.bottom))
         }
         /// 把系统指示条染成赤陶 40%（指示条是私有子视图，每次滚动时补染——它会被重建）
         private func tintIndicator(_ sv: UIScrollView) {

@@ -87,7 +87,7 @@ struct UserRowView: View {
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
-                    .padding(.horizontal, 16).padding(.top, 8.5).padding(.bottom, 11.5)   // 固定行高把字压在行底，上补下减（寻验 39：7/13 过了）
+                    .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)
             }
