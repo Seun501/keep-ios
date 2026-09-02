@@ -78,7 +78,7 @@ struct UserRowView: View {
     let stamp: String
     let images: [String]
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
+        VStack(alignment: .trailing, spacing: 4) {
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
                 RemoteImage(src: u).frame(maxWidth: 200, maxHeight: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -132,10 +132,11 @@ struct AIRowView: View {
     let msg: Msg
     let showUsage: Bool
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
             if !th.isEmpty {
                 ThinkView(text: th, label: msg.thinkSecs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thought")
+                    .padding(.bottom, 4)
             }
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array((msg.images ?? []).enumerated()), id: \.offset) { _, u in
@@ -146,8 +147,9 @@ struct AIRowView: View {
                     MarkdownView(text: c).textSelection(.enabled)
                 }
             }
+            .padding(.vertical, 11)
             if msg.toolCalls == nil {
-                HStack(spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(TimeFmt.stamp(msg.ts)).font(Theme.round(12)).foregroundColor(Theme.muted)
                     if showUsage, let u = msg.usage, let it = u.inputTokens {
                         (Text("\(it) tokens · ").foregroundColor(Theme.muted)
@@ -155,6 +157,7 @@ struct AIRowView: View {
                             .font(Theme.round(11.5))
                     }
                 }
+                .padding(.top, 5)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
