@@ -23,6 +23,19 @@ final class WebShellController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
+        // 键盘通知的观察者按登记先后依次被叫。这里必须赶在 WKWebView 之前登记：
+        // 我先把窗口收到键盘上沿，WebKit 随后量「键盘盖住了多少」＝零，就不再给页面垫内边距——
+        // 否则它垫一次、我收一次，页面被推两回（09-02 首包寻验：跳）。
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(keyboardWillChange(_:)),
+                       name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardWillHide(_:)),
+                       name: UIResponder.keyboardWillHideNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardDidChange(_:)),
+                       name: UIResponder.keyboardDidShowNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardDidChange(_:)),
+                       name: UIResponder.keyboardDidHideNotification, object: nil)
+
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
@@ -44,13 +57,28 @@ final class WebShellController: UIViewController {
         }
         view.addSubview(wv)
         webView = wv
+        Self.removeInputAccessoryBar(from: wv)
         webView.load(URLRequest(url: Self.home))
+    }
 
-        let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(keyboardWillChange(_:)),
-                       name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
-        nc.addObserver(self, selector: #selector(keyboardWillHide(_:)),
-                       name: UIResponder.keyboardWillHideNotification, object: nil)
+    /// 摘掉键盘上方那根 Safari 式「上一个/下一个/完成」辅助条（09-02 首包寻验）。
+    /// WKWebView 没有公开开关；做法是给内容视图动态派生一个子类，把 inputAccessoryView 答成 nil。
+    private static func removeInputAccessoryBar(from webView: WKWebView) {
+        guard let target = webView.scrollView.subviews.first(where: {
+            NSStringFromClass(type(of: $0)).hasPrefix("WKContent")
+        }) else { return }
+        let name = "KeepWKContentView_NoAccessory"
+        if let cls = NSClassFromString(name) {
+            object_setClass(target, cls)
+            return
+        }
+        guard let superclass = object_getClass(target),
+              let cls = objc_allocateClassPair(superclass, name, 0) else { return }
+        let block: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+        class_addMethod(cls, #selector(getter: UIResponder.inputAccessoryView),
+                        imp_implementationWithBlock(block), "@@:")
+        objc_registerClassPair(cls)
+        object_setClass(target, cls)
     }
 
     override func viewDidLayoutSubviews() {
@@ -72,6 +100,13 @@ final class WebShellController: UIViewController {
     @objc private func keyboardWillHide(_ n: Notification) {
         keyboardTop = nil
         animate(with: n)
+    }
+
+    /// 键盘升完/收完再钉一次：WebKit 若还是垫了内边距，这里抹平，页面只认窗口高度。
+    @objc private func keyboardDidChange(_ n: Notification) {
+        let sv = webView.scrollView
+        if sv.contentInset != .zero { sv.contentInset = .zero }
+        if sv.verticalScrollIndicatorInsets != .zero { sv.verticalScrollIndicatorInsets = .zero }
     }
 
     private func animate(with n: Notification) {
