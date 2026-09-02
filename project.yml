@@ -37,6 +37,12 @@ targets:
         UIViewControllerBasedStatusBarAppearance: true
         UIRequiresFullScreen: false
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - NotoSerifSC-Regular.otf
+          - NotoSerifSC-Medium.otf
+          - NotoSerifSC-SemiBold.otf
+          - NotoSerifSC-Bold.otf
+          - Lora.ttf
     entitlements:
       path: Keep.entitlements
       properties:

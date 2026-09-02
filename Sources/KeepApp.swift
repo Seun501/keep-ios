@@ -7,6 +7,11 @@ struct KeepApp: App {
     @UIApplicationDelegateAdaptor(PushRegistrar.self) private var pushDelegate
     @State private var token: String? = Keychain.token
 
+    init() {
+        // 选中高亮/把手/光标全局同滚动条色（寻 09-02：三者一个色）
+        UIView.appearance().tintColor = Theme.uiScrollTint
+    }
+
     var body: some Scene {
         WindowGroup {
             if token != nil {

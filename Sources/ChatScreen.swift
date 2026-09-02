@@ -20,6 +20,7 @@ struct LiveTurn {
     var items: [LiveItem] = [.seg(LiveSeg())]
     var usage: Usage? = nil
     var finished = false
+    var events = 0
 
     /// 不变量：items 末尾永远是一个 seg（chip 后面总跟着新 seg）。
     private var segIndex: Int {
@@ -37,6 +38,7 @@ struct LiveTurn {
     private mutating func newSegment() { finishThought(); items.append(.seg(LiveSeg())) }
 
     mutating func apply(_ ev: GatewayAPI.Event) {
+        events += 1
         switch ev {
         case .start: break
         case .thinking(let t):
@@ -75,10 +77,12 @@ final class ChatModel: ObservableObject {
     @Published var sending = false
     @Published var doorAlert: String? = nil
     @Published var lastError: String? = nil
+    @Published var loadTick = 0          // 每次整段重拉 +1，页面据此滚到底
     var onLogout: () -> Void = {}
 
     private var lastPulse: Pulse? = nil
     private var streamTask: Task<Void, Never>? = nil
+    private var lastEventAt = Date()
 
     func load() async {
         do {
@@ -89,6 +93,7 @@ final class ChatModel: ObservableObject {
             renderFrom = Self.startOfLastDays(msgs, days: 2)
             rebuild()
             lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+            loadTick += 1
         } catch GatewayAPI.Failure.unauthorized {
             onLogout()
         } catch {
@@ -96,9 +101,14 @@ final class ChatModel: ObservableObject {
         }
     }
 
-    /// 页面开着每分钟摸一次脉，有变才整段重拉（吃饭卡/雨情卡/克的醒会自己冒出来）。
+    /// 页面开着每 15 秒摸一次脉，有变才整段重拉（吃饭卡/雨情卡/克的醒/网页那头发的话会自己冒出来）。
     func pulse() async {
-        guard let id = conversationId, !sending else { return }
+        guard let id = conversationId else { await load(); return }
+        if sending {
+            // 看门狗：流开着却 120 秒没任何事件＝连接死了；收掉，交给重拉
+            if Date().timeIntervalSince(lastEventAt) > 120 { streamTask?.cancel() }
+            return
+        }
         guard let p = try? await GatewayAPI.pulse(id), p != lastPulse else { return }
         await load()
     }
@@ -137,22 +147,26 @@ final class ChatModel: ObservableObject {
 
     func send(text: String, images: [String]) {
         guard !sending, !(text.isEmpty && images.isEmpty) else { return }
-        sending = true; lastError = nil
+        sending = true; lastError = nil; lastEventAt = Date()
         msgs.append(Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images))
         rebuild()
         live = LiveTurn()
+        PushRegistrar.diag("chat: send")
         streamTask = Task {
             do {
                 for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images) {
-                    if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid }
+                    lastEventAt = Date()
+                    if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
                     live?.apply(ev)
                 }
+                PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
                 doorAlert = "克把门关上了" + (until.isEmpty ? "" : "，\(TimeFmt.hm(until)) 开") + (note.isEmpty ? "" : "\n\(note)")
                 msgs.removeLast(); rebuild()
             } catch GatewayAPI.Failure.unauthorized {
                 onLogout()
             } catch {
+                PushRegistrar.diag("chat: error \(error.localizedDescription)")
                 if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")) }
             }
             // 对账：服务器落盘的才是正史；半截也存了
@@ -189,37 +203,74 @@ struct ChatScreen: View {
     @State private var picks: [PhotosPickerItem] = []
     @State private var showWeb = false
     @State private var atBottom = true
+    @State private var farFromBottom = false
+    @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
+    @State private var scrollThumb: CGFloat = 1     // 可见区占比
     @FocusState private var focused: Bool
     @Environment(\.scenePhase) private var phase
-    private let pulseTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
             header
             ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 22) {
-                        if model.renderFrom > 0 {
-                            Button { model.loadOlderDay() } label: {
-                                Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
-                            }.buttonStyle(.plain).padding(.top, 4)
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        LazyVStack(spacing: 22) {
+                            if model.renderFrom > 0 {
+                                Button { model.loadOlderDay() } label: {
+                                    Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
+                                }.buttonStyle(.plain).padding(.top, 4)
+                            }
+                            ForEach(model.items) { r in row(r.item) }
+                            if let live = model.live { liveView(live) }
+                            Color.clear.frame(height: 1).id("bottom")
+                                .onAppear { atBottom = true }.onDisappear { atBottom = false }
                         }
-                        ForEach(model.items) { r in row(r.item) }
-                        if let live = model.live { liveView(live) }
-                        Color.clear.frame(height: 1).id("bottom")
-                            .onAppear { atBottom = true }.onDisappear { atBottom = false }
+                        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
+                        .background(GeometryReader { g in
+                            Color.clear.preference(key: ScrollMetrics.self,
+                                                   value: ScrollMetrics.Value(minY: g.frame(in: .named("scroll")).minY, height: g.size.height))
+                        })
                     }
-                    .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
+                    .coordinateSpace(name: "scroll")
+                    .scrollIndicators(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .simultaneousGesture(TapGesture().onEnded { focused = false })   // 点消息区收键盘（照网页）
+                    .refreshable { await model.load() }
+                    .overlay(alignment: .topTrailing) { scrollbar }
+                    .onPreferenceChange(ScrollMetrics.self) { v in
+                        let viewport = UIScreen.main.bounds.height * 0.7
+                        let total = max(v.height, 1)
+                        scrollThumb = min(1, viewport / total)
+                        scrollFrac = min(max(-v.minY / total, 0), 1 - scrollThumb)
+                        farFromBottom = (total + v.minY - viewport) > 40
+                    }
+                    .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
+                    .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
+                    .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
+                    .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+                    .onAppear { Task { await model.load() } }
+
+                    if farFromBottom && !atBottom {
+                        Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
+                            Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(Theme.jumpArrow)
+                                .frame(width: 38, height: 38)
+                                .background(Theme.jumpBg, in: Circle())
+                                .overlay(Circle().stroke(Theme.jumpRing, lineWidth: 1))
+                                .shadow(color: Color.black.opacity(0.10), radius: 9, y: 6)
+                                .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+                        }
+                        .padding(.bottom, 10)
+                        .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                    }
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
-                .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
-                .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
-                .onAppear { Task { await model.load(); scrollBottom(proxy) } }
             }
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
+        .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .onAppear { model.onLogout = onLogout }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in if p == .active { Task { await model.pulse() } } }
@@ -230,18 +281,42 @@ struct ChatScreen: View {
         } message: { Text(model.doorAlert ?? "") }
     }
 
+    /// 自绘滚动条：5px 赤陶 40%，照网页 #messages::-webkit-scrollbar。
+    private var scrollbar: some View {
+        GeometryReader { g in
+            let h = g.size.height
+            Capsule().fill(Theme.scrollTint.opacity(scrollThumb < 1 ? 0.4 : 0))
+                .frame(width: 5, height: max(24, h * scrollThumb))
+                .offset(x: -2, y: h * scrollFrac)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 顶栏：左上角展开钮（照网页 #menuBtn：42px 圆、发丝圈、三道 16×2 靠左），中间 Keep + 相遇天数（Snell Roundhand）。
     private var header: some View {
         HStack(spacing: 10) {
             Button { showWeb = true } label: {
-                Image(systemName: "line.3.horizontal").font(.system(size: 17, weight: .medium))
-                    .foregroundColor(Theme.text).frame(width: 36, height: 36)
-                    .background(Theme.composer, in: Circle())
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 1).fill(Theme.text).frame(width: 16, height: 2)
+                    }
+                }
+                .padding(.leading, 12)
+                .frame(width: 42, height: 42, alignment: .leading)
+                .background(Theme.menuFill, in: Circle())
+                .overlay(Circle().stroke(Theme.hairRing, lineWidth: 1.5))
+                .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+                .shadow(color: Color.black.opacity(0.08), radius: 14, y: 8)
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text("Keep").font(.custom("Snell Roundhand", size: 30).weight(.bold)).foregroundColor(Theme.text)
+                Text("\(model.metDays)").font(.custom("Snell Roundhand", size: 26).weight(.semibold)).foregroundColor(Theme.accent)
+                    .baselineOffset(-8)
             }
             Spacer()
-            (Text("Keep").font(.custom("Snell Roundhand", size: 24).weight(.bold)).foregroundColor(Theme.text)
-             + Text(" \(model.metDays)").font(.custom("Snell Roundhand", size: 18)).foregroundColor(Theme.accent))
-            Spacer()
-            Color.clear.frame(width: 36, height: 36)
+            Color.clear.frame(width: 42, height: 42)
         }
         .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 4)
     }
@@ -269,11 +344,11 @@ struct ChatScreen: View {
                                   label: s.thinkSecs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thinking…")
                     }
                     if let e = s.error {
-                        Text(e).font(Theme.serif(15)).foregroundColor(.red).padding(.horizontal, 15)
+                        Text(e).font(Theme.serif(15)).foregroundColor(.red)
                     } else if !s.text.isEmpty {
-                        MarkdownView(text: s.text).padding(.horizontal, 15).padding(.vertical, 11)
+                        MarkdownView(text: s.text).padding(.vertical, 11)
                     } else if s.thinking.isEmpty && !live.finished {
-                        Text("…").font(Theme.serif(17)).foregroundColor(Theme.muted).padding(.horizontal, 15)
+                        Text("…").font(Theme.serif(18)).foregroundColor(Theme.muted)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,8 +356,9 @@ struct ChatScreen: View {
         }
     }
 
+    /// 输入卡（照网页 #inputbox）：composer 底、1.5px 发丝圈、26 圆角、两层阴影；上排文字，下排＋与发送。
     private var composer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if !pending.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -296,33 +372,46 @@ struct ChatScreen: View {
                                 }.offset(x: 4, y: -4)
                             }
                         }
-                    }.padding(.horizontal, 4)
+                    }.padding(.horizontal, 2)
                 }
             }
             TextField("", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
-                .font(Theme.serif(17)).foregroundColor(Theme.text)
+                .font(Theme.serif(18)).foregroundColor(Theme.text)
+                .tint(Theme.scrollTint)
                 .focused($focused)
-                .padding(.horizontal, 6).padding(.top, 4)
-            HStack {
+                .padding(.top, 2).padding(.bottom, 4)
+            HStack(spacing: 8) {
                 PhotosPicker(selection: $picks, maxSelectionCount: 4, matching: .images) {
                     Image(systemName: "plus").font(.system(size: 17, weight: .medium)).foregroundColor(Theme.text)
-                        .frame(width: 36, height: 36).background(Theme.userBubble, in: Circle())
+                        .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
+                .padding(.leading, -4)
                 Spacer()
                 Button {
                     if model.sending { model.stop() } else { sendNow() }
                 } label: {
-                    Image(systemName: model.sending ? "stop.fill" : "arrow.up")
-                        .font(.system(size: 17, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(model.sending ? Theme.text : (canSend ? Theme.accent : Theme.accent.opacity(0.35)), in: Circle())
+                    Group {
+                        if model.sending {
+                            RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
+                        } else if canSend {
+                            Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                        } else {
+                            Image(systemName: "waveform").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.sendIdleFg)
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .background(model.sending ? Theme.attachBg : (canSend ? Theme.accent : Theme.sendIdle), in: Circle())
+                    .animation(.easeInOut(duration: 0.2), value: canSend)
                 }
                 .disabled(!model.sending && !canSend)
             }
         }
-        .padding(12)
+        .padding(EdgeInsets(top: 14, leading: 18, bottom: 10, trailing: 14))
         .background(Theme.composer, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
+        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+        .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14)
         .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
     }
 
@@ -332,14 +421,14 @@ struct ChatScreen: View {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let imgs = pending
         draft = ""; pending = []
+        focused = false
         model.send(text: t, images: imgs)
     }
 
     private func scrollBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
         let go = { proxy.scrollTo("bottom", anchor: .bottom) }
         if animated { withAnimation(.easeOut(duration: 0.25)) { go() } } else { go() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { go() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { go() }
+        for d in [0.1, 0.3, 0.7, 1.4] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { go() } }
     }
 
     /// 选图 → 长边 1568 的 jpeg dataURL（Anthropic 最优尺寸），最多 4 张。
@@ -358,6 +447,12 @@ struct ChatScreen: View {
         }
         picks = []
     }
+}
+
+struct ScrollMetrics: PreferenceKey {
+    struct Value: Equatable { var minY: CGFloat = 0; var height: CGFloat = 1 }
+    static var defaultValue = Value()
+    static func reduce(value: inout Value, nextValue: () -> Value) { value = nextValue() }
 }
 
 /// 网页壳全屏（书架/相册/留言板/记忆/档案等长尾页先留网页），顶上一条「‹ 聊天」回来。

@@ -115,7 +115,7 @@ struct MarkdownView: View {
     let text: String
     var body: some View {
         let blocks = MD.parse(text)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {   // .ai .bubble p { margin: 16px 0 }
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
                 block(b)
             }
@@ -125,9 +125,9 @@ struct MarkdownView: View {
     @ViewBuilder private func block(_ b: MD.Block) -> some View {
         switch b {
         case .para(let lines):
-            Text(joined(lines)).font(Theme.serif(17)).lineSpacing(7).foregroundColor(Theme.text)
+            Text(joined(lines)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
         case .heading(let lv, let s):
-            Text(MD.inline(s)).font(Theme.serif(lv <= 2 ? 20 : 17.5, weight: .semibold)).foregroundColor(Theme.text)
+            Text(MD.inline(s)).font(Theme.serif(lv <= 2 ? 21 : 18.5, weight: .semibold)).foregroundColor(Theme.text)
         case .code(let c):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(c).font(.system(size: 13.5, design: .monospaced)).foregroundColor(Theme.text)
@@ -137,14 +137,14 @@ struct MarkdownView: View {
         case .quote(let q):
             HStack(alignment: .top, spacing: 10) {
                 Rectangle().fill(Theme.border).frame(width: 2)
-                Text(joined(q)).font(Theme.serif(16.5)).lineSpacing(6).foregroundColor(Theme.muted)
+                Text(joined(q)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.muted)
             }
         case .ul(let items):
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, s in
                     HStack(alignment: .top, spacing: 8) {
-                        Text("•").font(Theme.serif(17)).foregroundColor(Theme.muted)
-                        Text(MD.inline(s)).font(Theme.serif(17)).lineSpacing(6).foregroundColor(Theme.text)
+                        Text("•").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted)
+                        Text(MD.inline(s)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
                     }
                 }
             }
@@ -152,8 +152,8 @@ struct MarkdownView: View {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, it in
                     HStack(alignment: .top, spacing: 8) {
-                        Text("\(it.0).").font(Theme.serif(17)).foregroundColor(Theme.muted)
-                        Text(MD.inline(it.1)).font(Theme.serif(17)).lineSpacing(6).foregroundColor(Theme.text)
+                        Text("\(it.0).").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted)
+                        Text(MD.inline(it.1)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
                     }
                 }
             }
@@ -189,7 +189,7 @@ struct UserTextView: View {
         let paras = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(paras.enumerated()), id: \.offset) { _, p in
-                Text(MD.inline(p)).font(Theme.serif(17)).lineSpacing(5).foregroundColor(Theme.text)
+                Text(MD.inline(p)).font(Theme.serif(18)).lineSpacing(4).foregroundColor(Theme.text)
             }
         }
     }

@@ -94,7 +94,7 @@ struct UserRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 56)
+        .padding(.leading, UIScreen.main.bounds.width * 0.16)   // max-width 84%
     }
 }
 
@@ -118,7 +118,7 @@ struct ThinkView: View {
             if open {
                 HStack(alignment: .top, spacing: 14) {
                     Rectangle().fill(Theme.border).frame(width: 1.5).padding(.leading, 4)
-                    Text(text).font(Theme.serif(14)).lineSpacing(5).foregroundColor(Theme.muted)
+                    Text(text).font(Theme.serif(14)).lineSpacing(4).foregroundColor(Theme.muted)
                         .textSelection(.enabled)
                 }
                 .padding(.vertical, 4)
@@ -146,7 +146,6 @@ struct AIRowView: View {
                     MarkdownView(text: c).textSelection(.enabled)
                 }
             }
-            .padding(.horizontal, 15).padding(.vertical, 11)
             if msg.toolCalls == nil {
                 HStack(spacing: 10) {
                     Text(TimeFmt.stamp(msg.ts)).font(Theme.round(12)).foregroundColor(Theme.muted)
@@ -156,7 +155,6 @@ struct AIRowView: View {
                             .font(Theme.round(11.5))
                     }
                 }
-                .padding(.leading, 15)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -212,7 +210,7 @@ struct KnockRowView: View {
         let segs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array((segs.isEmpty ? [text] : segs).enumerated()), id: \.offset) { _, s in
-                Text(s).font(Theme.serif(17)).lineSpacing(5).foregroundColor(Theme.knockText)
+                Text(s).font(Theme.serif(18)).lineSpacing(4).foregroundColor(Theme.knockText)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.knockBg, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)
