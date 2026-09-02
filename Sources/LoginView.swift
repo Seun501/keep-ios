@@ -27,7 +27,7 @@ struct LoginView: View {
                     .foregroundStyle(fg)
                     .padding(.bottom, 34)
 
-                SecureField("", text: $text, prompt: Text("口令").foregroundStyle(muted.opacity(0.7)))
+                SecureField("", text: $text, prompt: Text("口令").foregroundColor(muted.opacity(0.7)))
                     .font(.system(size: 17))
                     .foregroundStyle(fg)
                     .multilineTextAlignment(.center)
@@ -85,7 +85,7 @@ enum GatewayAuth {
     enum Result { case ok, wrong, tooMany, offline }
 
     static func verify(token: String) async -> Result {
-        var req = URLRequest(url: WebShellController.home.appendingPathComponent("api/verify"))
+        var req = URLRequest(url: Gateway.home.appendingPathComponent("api/verify"))
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

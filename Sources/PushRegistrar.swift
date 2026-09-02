@@ -46,7 +46,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
 
     private static func report(token hex: String) {
         guard let auth = Self.token else { return }
-        var req = URLRequest(url: WebShellController.home.appendingPathComponent("api/push/apns"))
+        var req = URLRequest(url: Gateway.home.appendingPathComponent("api/push/apns"))
         req.httpMethod = "POST"
         req.setValue("Bearer \(auth)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

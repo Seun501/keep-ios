@@ -10,7 +10,7 @@ import WebKit
 /// 4. 网页进程被系统回收时自动重载。
 final class WebShellController: UIViewController {
 
-    static let home = URL(string: "https://ke.seunk.cn/")!
+    static var home: URL { Gateway.home }
     static let ownHosts: Set<String> = ["ke.seunk.cn"]
 
     private let token: String
