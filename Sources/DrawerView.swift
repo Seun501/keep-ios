@@ -121,8 +121,8 @@ struct DrawerView: View {
                 ForEach(1...n, id: \.self) { d in
                     let on = has.contains(d)
                     ZStack {
-                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
-                        Text("\(d)").font(Theme.round(13, weight: on ? .medium : .regular))
+                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Preview.on ? Color.orange : Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
+                        Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
                             .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
                     }
                     .frame(maxWidth: .infinity, minHeight: 30)
