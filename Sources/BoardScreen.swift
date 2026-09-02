@@ -244,6 +244,7 @@ struct NotePop: View {
     let note: Note
     @ObservedObject var model: BoardModel
     @State private var text = ""
+    @State private var firstFloorH: CGFloat = 0
     @FocusState private var focused: Bool
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
@@ -254,7 +255,7 @@ struct NotePop: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(note.msgs ?? []) { mm in
+                        ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
                                     Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
@@ -265,6 +266,7 @@ struct NotePop: View {
                                 RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
                             }
                             .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
+                            .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
                         }
                     }
                 }
@@ -299,8 +301,9 @@ struct NotePop: View {
 
     /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼，往下翻才见后续
     private var foldHeight: CGFloat {
+        let cap = UIScreen.main.bounds.height * 0.74 - 90
         let n = (note.msgs ?? []).count
-        if n > 1 { return min(UIScreen.main.bounds.height * 0.74 - 90, 190) }
-        return UIScreen.main.bounds.height * 0.74 - 90
+        if n > 1, firstFloorH > 0 { return min(cap, firstFloorH + 20) }   // 网页：首楼高 +20，不露下一楼的头
+        return cap
     }
 }

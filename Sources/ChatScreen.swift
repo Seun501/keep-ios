@@ -295,10 +295,10 @@ struct ChatScreen: View {
             ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
                 PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
             }
-            Color.clear.frame(height: 1).id("bottom").padding(.top, -21)   // 末条到底＝网页 padding-bottom 10
+            Color.clear.frame(height: 1).id("bottom").padding(.top, -22)   // 末条到底＝网页 padding-bottom 10
                 .onAppear { atBottom = true }.onDisappear { atBottom = false }
         }
-        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 0)
         .background(ScrollObserver { y, ch, vh in
             let total = max(ch, 1)
             scrollThumb = min(1, vh / total)

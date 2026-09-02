@@ -26,7 +26,7 @@ struct ClawdWeb: UIViewRepresentable {
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent;overflow:hidden}
-        img{width:100vw;height:100vh;display:block}img.flip{transform:scaleX(-1)}</style></head>
+        img{width:150px;height:150px;display:block}img.flip{transform:scaleX(-1)}</style></head>
         <body><img id="i" src="\(Self.files[state] ?? "clawd-mini-idle").svg" class="\(flip ? "flip" : "")"></body></html>
         """
         wv.loadHTMLString(html, baseURL: dir)
