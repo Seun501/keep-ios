@@ -20,6 +20,30 @@ enum MD {
         return (try? AttributedString(markdown: s, options: opts)) ?? AttributedString(s)
     }
 
+    /// 行内 markdown → 逐段落字：SwiftUI 对自定义字体不会自己把 **粗体** 换字重（构建 13 寻验「没渲染」），
+    /// 这里按 intent 显式给每段配字：正文 base，粗体升档，代码等宽，删除线画线。
+    static func styled(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, color: Color) -> AttributedString {
+        var a = inline(s)
+        a.font = base
+        a.foregroundColor = color
+        for run in a.runs {
+            guard let intent = run.inlinePresentationIntent else { continue }
+            let r = run.range
+            if intent.contains(.stronglyEmphasized) { a[r].font = bold }
+            if intent.contains(.code) { a[r].font = mono }
+            if intent.contains(.strikethrough) { a[r].strikethroughStyle = .single; a[r].foregroundColor = color.opacity(0.65) }
+        }
+        return a
+    }
+    static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
+        styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
+               mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.text)
+    }
+    static func xun(_ s: String, size: CGFloat = 17) -> AttributedString {
+        styled(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
+               mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.text)
+    }
+
     static func parse(_ text: String) -> [Block] {
         var blocks: [String] = []
         var t = text
@@ -125,9 +149,9 @@ struct MarkdownView: View {
     @ViewBuilder private func block(_ b: MD.Block) -> some View {
         switch b {
         case .para(let lines):
-            Text(joined(lines)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
+            Text(joined(lines)).lineSpacing(3)   // 网页 line-height 1.6；Noto 行盒≈1.45em，补 3
         case .heading(let lv, let s):
-            Text(MD.inline(s)).font(Theme.serif(lv <= 2 ? 21 : 18.5, weight: .semibold)).foregroundColor(Theme.text)
+            Text(MD.ke(s, size: lv <= 2 ? 21 : 18.5, weight: .semibold))
         case .code(let c):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(c).font(.system(size: 13.5, design: .monospaced)).foregroundColor(Theme.text)
@@ -135,25 +159,25 @@ struct MarkdownView: View {
             }
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         case .quote(let q):
-            HStack(alignment: .top, spacing: 10) {
-                Rectangle().fill(Theme.border).frame(width: 2)
-                Text(joined(q)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.muted)
+            HStack(alignment: .top, spacing: 12) {
+                Rectangle().fill(Theme.border).frame(width: 3)
+                Text(joined(q)).lineSpacing(3).foregroundColor(Theme.muted)
             }
-        case .ul(let items):
-            VStack(alignment: .leading, spacing: 5) {
+        case .ul(let items):   // 网页 ul/ol：padding-left 2em、li 间 3
+            VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, s in
                     HStack(alignment: .top, spacing: 8) {
-                        Text("•").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted)
-                        Text(MD.inline(s)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
+                        Text("•").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted).frame(width: 22, alignment: .trailing)
+                        Text(MD.ke(s)).lineSpacing(3)
                     }
                 }
             }
         case .ol(let items):
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, it in
                     HStack(alignment: .top, spacing: 8) {
-                        Text("\(it.0).").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted)
-                        Text(MD.inline(it.1)).font(Theme.serif(18, weight: .medium)).lineSpacing(6).foregroundColor(Theme.text)
+                        Text("\(it.0).").font(Theme.serif(18, weight: .medium)).foregroundColor(Theme.muted).frame(width: 22, alignment: .trailing)
+                        Text(MD.ke(it.1)).lineSpacing(3)
                     }
                 }
             }
@@ -161,11 +185,11 @@ struct MarkdownView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 14) { ForEach(Array(head.enumerated()), id: \.offset) { _, c in
-                        Text(MD.inline(c)).font(Theme.serif(15, weight: .semibold)).foregroundColor(Theme.text) } }
+                        Text(MD.ke(c, size: 15, weight: .semibold)) } }
                     Rectangle().fill(Theme.border).frame(height: 1)
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                         HStack(spacing: 14) { ForEach(Array(r.enumerated()), id: \.offset) { _, c in
-                            Text(MD.inline(c)).font(Theme.serif(15)).foregroundColor(Theme.text) } }
+                            Text(MD.ke(c, size: 15)) } }
                     }
                 }
             }
@@ -176,7 +200,7 @@ struct MarkdownView: View {
         var out = AttributedString()
         for (i, l) in lines.enumerated() {
             if i > 0 { out.append(AttributedString("\n")) }
-            out.append(MD.inline(l))
+            out.append(MD.ke(l))
         }
         return out
     }
@@ -189,7 +213,7 @@ struct UserTextView: View {
         let paras = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(paras.enumerated()), id: \.offset) { _, p in
-                Text(MD.inline(p)).font(.system(size: 17)).lineSpacing(4).foregroundColor(Theme.text)   // 寻定：她的气泡用系统默认
+                Text(MD.xun(p)).lineSpacing(4)   // 寻定：她的气泡用系统默认
             }
         }
     }

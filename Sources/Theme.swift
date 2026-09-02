@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 /// 配色照网页 :root（明/暗两套），字体照网页栈：Lora（拉丁）→ Noto Serif CJK SC（中文，克正文 500 档）→ 系统宋体。
 enum Theme {
@@ -48,17 +49,25 @@ enum Theme {
     private static func descriptor(_ name: String, size: CGFloat, fallback: UIFontDescriptor) -> UIFontDescriptor {
         UIFont(name: name, size: size) != nil ? UIFontDescriptor(name: name, size: size) : fallback
     }
-    static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    private static func wght(_ w: Font.Weight) -> CGFloat {
+        switch w {
+        case .bold, .heavy, .black: return 700
+        case .semibold: return 600
+        case .medium: return 500
+        default: return 400
+        }
+    }
+    /// 克正文那一套 UIFont：Lora 可变字体按 wght 轴实例化（网页 500）→ 中文级联 Noto Serif CJK SC 同档 → 系统宋体。
+    static func uiSerif(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
         let songti = UIFontDescriptor(name: "Songti SC", size: size)
         let cjk = descriptor(cjkName(weight), size: size, fallback: songti)
-        // Lora 可变字体只按 Regular 取（命名实例在 iOS 上不保险），拉丁字重交给系统合成
-        let lora = descriptor("Lora-Regular", size: size, fallback: cjk)
-            .addingAttributes([.cascadeList: [cjk, songti]])
-        var f = UIFont(descriptor: lora, size: size)
-        if weight == .bold || weight == .semibold || weight == .heavy || weight == .black,
-           let bold = lora.withSymbolicTraits(.traitBold) { f = UIFont(descriptor: bold, size: size) }
-        return Font(f)
+        var lora = descriptor("Lora-Regular", size: size, fallback: cjk)
+        let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        lora = lora.addingAttributes([variation: [2003265652: wght(weight)],      // 'wght' 轴
+                                      .cascadeList: [cjk, songti]])
+        return UIFont(descriptor: lora, size: size)
     }
+    static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiSerif(size, weight: weight)) }
     /// 纯中文场合（门楣、题）：Noto 打头。
     static func cjk(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         let songti = UIFontDescriptor(name: "Songti SC", size: size)
