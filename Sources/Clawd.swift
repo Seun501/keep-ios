@@ -171,6 +171,10 @@ struct ScrollObserver: UIViewRepresentable {
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
     static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
+    /// 盖在滚动区底上的东西（输入卡）的上沿，窗口坐标；键盘把它顶上来时滚动区按被盖住的高度补底内边距
+    static var covers: [String: CGFloat] = [:]
+    /// 底内边距变化回调（滚动条轨道跟着缩）
+    static var onInset: [String: (CGFloat) -> Void] = [:]
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
         let name = self.name
@@ -179,21 +183,24 @@ struct ScrollObserver: UIViewRepresentable {
     }
     func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onChange = onChange }
     func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var onChange: (CGFloat, CGFloat, CGFloat) -> Void
         private var obs: [NSKeyValueObservation] = []
         private var kb: [NSObjectProtocol] = []
         private var atBottom = true
+        private var pinning = false
         private var link: CADisplayLink? = nil
         private var linkUntil = Date()
         private weak var sv: UIScrollView? = nil
+        private var name: String? = nil
+        private var logged = false
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
         deinit { kb.forEach { NotificationCenter.default.removeObserver($0) }; link?.invalidate() }
         func attach(from v: UIView, name: String?) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
-            self.sv = sv
+            self.sv = sv; self.name = name
             if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv) }
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
@@ -203,21 +210,35 @@ struct ScrollObserver: UIViewRepresentable {
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
                 let y = sv.contentOffset.y + inset.top
-                self.atBottom = (sv.contentSize.height - y - vh) < 40
+                if !self.pinning { self.atBottom = (sv.contentSize.height - y - vh) < 40 }
                 self.onChange(y, sv.contentSize.height, vh)
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            // 键盘升起：原本钉着底就在键盘动画的这段时间里每一帧把底重新钉住（CADisplayLink），
-            // 不依赖 SwiftUI 怎么改帧、也不依赖 KVO 能不能听到 frame——视口矮到哪内容就跟到哪。
-            for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification] {
+            // 滚动条长按拖（照系统滚动条手感）：滚动区右缘 28pt 内按住 0.25s 起拖，一路改 contentOffset
+            let lp = UILongPressGestureRecognizer(target: self, action: #selector(barDrag(_:)))
+            lp.minimumPressDuration = 0.25; lp.delegate = self
+            sv.addGestureRecognizer(lp)
+            // 键盘：动画期间每帧——①滚动区被输入卡盖住多少就补多少底内边距（SwiftUI 不缩它的帧时也能让位）
+            // ②原本钉着底就继续钉底。不依赖 SwiftUI 怎么改帧、也不依赖 KVO 能不能听到 frame。
+            for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
                 kb.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] note in
-                    guard let self, self.atBottom else { return }
+                    guard let self else { return }
                     let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
-                    self.pinFor(dur + 0.2)
+                    if !self.pinning { self.pinning = self.atBottom }
+                    self.pinFor(dur + 0.3)
+                    if n == UIResponder.keyboardWillShowNotification, !self.logged, self.name == "chat" { self.logged = true; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.snapshot("kb-after", note) } }
                 })
             }
             fire()
+        }
+        /// 排查用：键盘前后滚动区的帧/内边距/内容高/偏移，进服务器 diag 日志（一次会话只记一次）
+        private func snapshot(_ tag: String, _ note: Notification) {
+            guard let sv else { return }
+            let f = sv.convert(sv.bounds, to: nil)
+            let kf = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+            let cover = name.flatMap { ScrollObserver.covers[$0] } ?? -1
+            PushRegistrar.diag(String(format: "%@: frame=%.0f..%.0f inset=%.0f cs=%.0f off=%.0f kbTop=%.0f cover=%.0f safe=%.0f pin=%d", tag, f.minY, f.maxY, sv.contentInset.bottom, sv.contentSize.height, sv.contentOffset.y, kf.minY, cover, sv.safeAreaInsets.bottom, pinning ? 1 : 0))
         }
         private func pinFor(_ secs: Double) {
             linkUntil = Date().addingTimeInterval(secs)
@@ -227,53 +248,64 @@ struct ScrollObserver: UIViewRepresentable {
             }
         }
         @objc private func tick() {
-            guard let sv, Date() < linkUntil else { link?.invalidate(); link = nil; return }
+            guard let sv, Date() < linkUntil else { link?.invalidate(); link = nil; pinning = false; return }
+            // ① 被盖住的高度 → 底内边距
+            if let name, let cover = ScrollObserver.covers[name] {
+                let maxY = sv.convert(sv.bounds, to: nil).maxY
+                let overlap = max(0, maxY - cover)
+                if abs(sv.contentInset.bottom - overlap) > 0.5 {
+                    sv.contentInset.bottom = overlap
+                    ScrollObserver.onInset[name]?(overlap)
+                }
+            }
+            // ② 钉底
             let inset = sv.adjustedContentInset
             let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
-            if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset.y = maxY }
+            if pinning, maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset.y = maxY }
+            else if sv.contentOffset.y > maxY, maxY > -inset.top { sv.contentOffset.y = maxY }   // 键盘收了别悬在半空
         }
+        @objc private func barDrag(_ g: UILongPressGestureRecognizer) {
+            guard let sv else { return }
+            let p = g.location(in: sv)
+            let inset = sv.adjustedContentInset
+            let vh = sv.bounds.height - inset.top - inset.bottom
+            let frac = min(max((p.y - sv.contentOffset.y - inset.top) / max(vh, 1), 0), 1)
+            let maxY = sv.contentSize.height - vh - inset.top
+            guard maxY > 0 else { return }
+            let target = frac * (sv.contentSize.height - vh) - inset.top
+            sv.contentOffset.y = min(max(target, -inset.top), maxY)
+        }
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            guard let sv, g is UILongPressGestureRecognizer else { return true }
+            let p = g.location(in: sv)
+            let vh = sv.bounds.height - sv.adjustedContentInset.top - sv.adjustedContentInset.bottom
+            return sv.contentSize.height > vh + 1 && (p.x - sv.contentOffset.x) > sv.bounds.width - 28
+        }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
     }
 }
 
 /// 橙滚动条（照网页 scrollbar-color rgba(217,119,87,.4)）：3pt 胶囊靠右、只在滚时露；
 /// 长按 0.25s 后可拖着走（寻验：要像系统滚动条一样能拖）——按登记名拿 UIScrollView 直接改 offset。
+/// 纯画、不吃触摸（构建 36 那版把触摸区铺满整页，主页和留言板全滑不动——寻验）；拖动由 ScrollObserver 挂在 UIScrollView 上的长按手势管。
 struct OrangeBar: View {
     var thumb: CGFloat
     var frac: CGFloat
     var on: Bool
     var name: String? = nil
     var inset: CGFloat = 2
-    @State private var dragging = false
     var body: some View {
         GeometryReader { g in
             let h = g.size.height
-            let th = max(24, h * thumb)
-            ZStack(alignment: .topTrailing) {
-                Color.clear
-                Capsule().fill(Theme.scrollTint.opacity(dragging ? 0.7 : 0.4))
-                    .frame(width: dragging ? 5 : 3, height: th)
-                    .padding(.trailing, inset)
-                    .offset(y: h * frac)
-                    .opacity(thumb < 0.98 && (on || dragging) ? 1 : 0)
-                    .animation(.easeOut(duration: 0.25), value: on)
-            }
-            .frame(width: 22)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .contentShape(Rectangle())
-            .gesture(
-                LongPressGesture(minimumDuration: 0.25)
-                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                    .onChanged { v in
-                        guard case .second(true, let d?) = v, let name, let sv = ScrollObserver.view(name) else { return }
-                        dragging = true
-                        let inset = sv.adjustedContentInset
-                        let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
-                        let target = ((d.location.y - th / 2) / max(h, 1)) * sv.contentSize.height - inset.top
-                        sv.contentOffset.y = min(max(target, -inset.top), max(maxY, -inset.top))
-                    }
-                    .onEnded { _ in dragging = false }
-            )
+            Capsule().fill(Theme.scrollTint.opacity(0.4))
+                .frame(width: 3, height: max(24, h * thumb))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, inset)
+                .offset(y: h * frac)
+                .opacity(thumb < 0.98 && on ? 1 : 0)
+                .animation(.easeOut(duration: 0.25), value: on)
         }
+        .allowsHitTesting(false)
     }
 }
 

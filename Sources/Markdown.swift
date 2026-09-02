@@ -73,15 +73,16 @@ enum MD {
             case "b": at[.font] = bold
             case "c": at[.font] = mono
             case "d": at[.strikethroughStyle] = NSUnderlineStyle.single.rawValue; at[.foregroundColor] = color.withAlphaComponent(0.65)
-            case "e": if let italic { at[.font] = italic } else { at[.obliqueness] = 0.24 }   // 浏览器合成斜体约 12°（寻验：不够斜）
+            case "e": if let italic { at[.font] = italic } else { at[.obliqueness] = 0.18 }   // 照她给的网页/App 对比截图折中（0.24 过了）
             default: break
             }
             m.append(NSAttributedString(string: r.text, attributes: at))
         }
         return m
     }
+    /// 粗体用 600：网页自托管的思源宋体只有 400/500/600，**粗** 在网页上落到 600（寻验 36 对比图：App 的 700 太重）
     static func keNS(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium, color: UIColor = Theme.uiText, lineHeight: CGFloat = 1.6) -> NSAttributedString {
-        ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
+        ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .semibold),
            mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight)
     }
     /// 寻的气泡：系统字 18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）

@@ -236,6 +236,7 @@ struct ChatScreen: View {
     @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
     @State private var scrollThumb: CGFloat = 1     // 可见区占比
     @State private var scrollbarOn = false
+    @State private var kbInset: CGFloat = 0        // 滚动区为键盘补的底内边距（滚动条轨道同步缩）
     @State private var dbg = ""
     @State private var scrollbarHide: DispatchWorkItem? = nil
     @FocusState private var focused: Bool
@@ -307,7 +308,7 @@ struct ChatScreen: View {
         }
         .task { await lintel.refresh() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
-        .onAppear { model.onLogout = onLogout }
+        .onAppear { model.onLogout = onLogout; ScrollObserver.onInset["chat"] = { kbInset = $0 } }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
             if p == .active { Task { await model.pulse() } }
@@ -363,7 +364,7 @@ struct ChatScreen: View {
         ScrollView { listContent }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
-            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 10) }   // 轨道下端与末条时间齐平（寻验：别探到底）
+            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 10 + kbInset) }   // 轨道下端与末条时间齐平；键盘让位时轨道跟着缩（寻验：条跑到键盘上）
             .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
@@ -518,6 +519,10 @@ struct ChatScreen: View {
             }
         }
         .padding(EdgeInsets(top: 14, leading: 18, bottom: 10, trailing: 14))
+        .background(GeometryReader { g in   // 输入卡上沿（窗口坐标）报给滚动区：键盘把卡顶上来时，滚动区被盖住多少就补多少底内边距
+            let top = g.frame(in: .global).minY
+            Color.clear.onAppear { ScrollObserver.covers["chat"] = top }.onChange(of: top) { ScrollObserver.covers["chat"] = $0 }
+        })
         .background(Theme.composer, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)

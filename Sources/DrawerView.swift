@@ -67,15 +67,17 @@ struct DrawerView: View {
                     .padding(EdgeInsets(top: 12, leading: 8, bottom: 10, trailing: 8))
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
-                    .transaction { $0.animation = nil }                // 切月干干净净，不动画
+                    .id("\(ym.0)-\(ym.1)")                              // 换月＝换身份：不插值、不动画
+                    .transaction { $0.animation = nil }
 
-                // 额度一行：日历下 10、字 16 高、再 2 到安全区（寻验 32：上面太紧下面太空）
+                // 额度一行：日历下 10、字 16 高、离屏底 24（伸进底部安全区，照网页；寻验 36：下面留空还是多）
                 Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)
             }
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 2, trailing: 22))
+            .padding(EdgeInsets(top: 20, leading: 22, bottom: 24, trailing: 22))
             .frame(width: w)
             .frame(maxHeight: .infinity)
+            .ignoresSafeArea(edges: .bottom)
             .background(Theme.boardBg.ignoresSafeArea())
             .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 1).ignoresSafeArea() }
             .transaction { $0.animation = nil }                    // 面板内容一律不动画（额度/角标晚到不挪位）
@@ -114,7 +116,8 @@ struct DrawerView: View {
         let firstWd = cal.component(.weekday, from: first) - 1
         let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
         let has = Set(days.filter { $0.hasPrefix(String(format: "%04d-%02d", y, m)) }.compactMap { Int($0.suffix(2)) })
-        // 寻验 32：整体放大一圈（格 34、字 14）；固定六行——切月时卡高不变，箭头与月题纹丝不动
+        // 寻验 32：整体放大一圈（格 34、字 14）；行数随月（固定六行留空她不要）；
+        // 切月不动画：整张日历换身份（.id）——新月份直接落在最终位置，没有任何东西可插值
         let cellH: CGFloat = 34
         return VStack(spacing: 8) {
             HStack {
@@ -126,8 +129,9 @@ struct DrawerView: View {
             }
             .buttonStyle(.plain)
             // 非懒排：整月一次量完（LazyVGrid 换月时先按旧高度排、下一帧再改，箭头会「升起来」）
-            let cells: [Int] = Array(repeating: 0, count: firstWd) + Array(1...n) + Array(repeating: 0, count: 42 - firstWd - n)
-            let rows = stride(from: 0, to: 42, by: 7).map { Array(cells[$0..<$0 + 7]) }
+            let total = Int(ceil(Double(firstWd + n) / 7)) * 7
+            let cells: [Int] = Array(repeating: 0, count: firstWd) + Array(1...n) + Array(repeating: 0, count: total - firstWd - n)
+            let rows = stride(from: 0, to: total, by: 7).map { Array(cells[$0..<$0 + 7]) }
             VStack(spacing: 3) {
                 HStack(spacing: 3) {
                     ForEach(["日","一","二","三","四","五","六"], id: \.self) { w in
