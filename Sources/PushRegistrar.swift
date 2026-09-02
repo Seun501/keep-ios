@@ -10,7 +10,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
     static var token: String? { Keychain.token }
 
     func application(_ application: UIApplication,
-                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Self.registerIfAuthorized()
         return true
@@ -20,17 +20,29 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
     static func registerIfAuthorized() {
         let c = UNUserNotificationCenter.current()
         c.getNotificationSettings { s in
+            Self.diag("auth=\(s.authorizationStatus.rawValue) keychain=\(Keychain.token == nil ? "empty" : "ok")")
             switch s.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
                 DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
             case .notDetermined:
-                c.requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
+                c.requestAuthorization(options: [.alert, .sound, .badge]) { ok, err in
+                    Self.diag("prompt ok=\(ok) err=\(err?.localizedDescription ?? "")")
                     if ok { DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() } }
                 }
             default:
-                break
+                Self.diag("auth denied")
             }
         }
+    }
+
+    /// 盲调试用：把状态一句话送到服务器日志（09-02 首验推送没弹窗，手机端 print 看不见）。
+    static func diag(_ note: String) {
+        var req = URLRequest(url: Gateway.home.appendingPathComponent("api/push/apns"))
+        req.httpMethod = "POST"
+        if let auth = Self.token { req.setValue("Bearer \(auth)", forHTTPHeaderField: "Authorization") }
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["note": note, "device": UIDevice.current.name])
+        URLSession.shared.dataTask(with: req).resume()
     }
 
     func application(_ application: UIApplication,
@@ -41,7 +53,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
 
     func application(_ application: UIApplication,
                      didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        print("[push] 注册失败：\(error.localizedDescription)")
+        Self.diag("register failed: \(error.localizedDescription)")
     }
 
     private static func report(token hex: String) {

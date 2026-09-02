@@ -28,7 +28,8 @@ enum Keychain {
             var add = base
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            SecItemAdd(add as CFDictionary, nil)
+            let st = SecItemAdd(add as CFDictionary, nil)
+            if st != errSecSuccess { PushRegistrar.diag("keychain add failed: \(st)") }
         }
     }
 }
