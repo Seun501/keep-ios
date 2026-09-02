@@ -2,13 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- 归档导出即上传 TestFlight：Xcode 自己拿 App Store Connect API 密钥签名并递交，省掉 altool 一段。 -->
+	<!-- 归档导出即上传 TestFlight。手动签名：证书与 App Store 描述文件由 API 申请（09-02），
+	     打包机从仓库密钥装入钥匙串；上传凭 App Store Connect API 密钥。无需登记任何设备。 -->
 	<key>method</key>
 	<string>app-store-connect</string>
 	<key>destination</key>
 	<string>upload</string>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>cn.seunk.keep</key>
+		<string>Keep AppStore</string>
+	</dict>
 	<key>uploadSymbols</key>
 	<true/>
 	<key>manageAppVersionAndBuildNumber</key>

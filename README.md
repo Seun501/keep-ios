@@ -30,6 +30,9 @@
 4. **Team ID**：https://developer.apple.com/account → 会员资格详情 → 团队 ID（10 位）。
 5. 把三个 ID 告诉我；`.p8` 我从 `密钥与登录\` 读、用 `gh secret set` 直接送进仓库密钥，不经终端回显、不进任何文档。
 
+### ②′ 签名（已办，09-02）
+自动签名要团队里至少登记一台设备才肯出描述文件；没线没 Mac，改**手动签名**：用 API 密钥直接申请了 Apple Distribution 证书与 App Store 描述文件 `Keep AppStore`（到期 2027-09-02），原件在 `密钥与登录\ios-signing\`（私钥/证书/p12 及口令/描述文件），仓库密钥 `DIST_P12_BASE64` / `DIST_P12_PASSWORD` / `APPSTORE_PROFILE_BASE64`。到期或换证书重跑申请脚本即可（脚本逻辑：CSR→POST /v1/certificates→POST /v1/profiles）。App Store Connect 登记名 **Kaep**（Keep 被运动软件占了；桌面显示名仍 Keep）。
+
 ### ③ App 记录（第一次上传前要有）
 1. https://developer.apple.com/account/resources/identifiers → **+** → App IDs → App → Bundle ID 明确填 `cn.seunk.keep`，描述随意；Capabilities 勾 **Push Notifications**（以后要用）。
 2. App Store Connect → **我的 App** → **+** → 新建 App：平台 iOS、名称 `Keep`（名字后面可改）、主要语言简体中文、套装 ID 选上一步那个、SKU 随意填 `keep`。
