@@ -83,8 +83,11 @@ final class ChatModel: ObservableObject {
     private var lastPulse: Pulse? = nil
     private var streamTask: Task<Void, Never>? = nil
     private var lastEventAt = Date()
+    private var loading = false
 
     func load() async {
+        if loading { return }          // 开屏时 onAppear 与 scenePhase 各拉一次 → 两次重排两次滚（寻验：界面弹几下）
+        loading = true; defer { loading = false }
         if Preview.on, let d = Preview.json("preview"), let conv = try? JSONDecoder().decode(ConversationPayload.self, from: d) {
             conversationId = conv.id; msgs = conv.messages; renderFrom = Self.startOfLastDays(msgs, days: 2); rebuild(); loadTick += 1
             return
@@ -239,7 +242,7 @@ struct ChatScreen: View {
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
-    @State private var path: [Route] = Preview.on && ["board", "boardpop"].contains(Preview.screen) ? [.board] : []
+    @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply"].contains(Preview.screen) ? [.board] : []
     @State private var mealKeyboard = false      // 吃吃笺的键盘：主页不跟着抬（寻验 28 第 3 条）
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
@@ -365,6 +368,7 @@ struct ChatScreen: View {
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
+            .onChange(of: model.live?.events ?? 0) { _ in if atBottom { DispatchQueue.main.async { pinBottom() } } }   // 流式：字长出来就跟着到底（寻验：看不见流式）
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
             .onChange(of: mealEchoes.count) { n in if n > 0, !farFromBottom { scrollBottom(proxy, animated: true) } }
@@ -385,19 +389,9 @@ struct ChatScreen: View {
         .transition(.opacity.combined(with: .scale(scale: 0.82)))
     }
 
-    /// 自绘滚动条：5px 赤陶 40%，照网页 #messages::-webkit-scrollbar。
+    /// 自绘滚动条：赤陶 40%，照网页 #messages::-webkit-scrollbar；长按可拖。
     private var scrollbar: some View {
-        GeometryReader { g in
-            let h = g.size.height
-            Capsule().fill(Theme.scrollTint.opacity(0.4))
-                .frame(width: 3, height: max(24, h * scrollThumb))
-                .frame(maxWidth: .infinity, alignment: .trailing)     // 靠右（GeometryReader 默认把孩子放左上）
-                .padding(.trailing, 2)
-                .offset(y: h * scrollFrac)
-                .opacity(scrollThumb < 0.98 && scrollbarOn ? 1 : 0)   // 不滚就不露（照系统滚动条）
-                .animation(.easeOut(duration: 0.25), value: scrollbarOn)
-        }
-        .allowsHitTesting(false)
+        OrangeBar(thumb: scrollThumb, frac: scrollFrac, on: scrollbarOn, name: "chat")
     }
 
     /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
@@ -491,7 +485,7 @@ struct ChatScreen: View {
             TextField("", text: $draft, prompt: Text("Chat with…").font(.system(size: 18)).foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)), axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
-                .font(Theme.serif(18)).foregroundColor(Theme.text)
+                .font(.system(size: 18)).foregroundColor(Theme.text)   // 寻定：输入和她的气泡一样用系统字
                 .tint(Theme.scrollTint)
                 .focused($focused)
                 .padding(.top, 2).padding(.bottom, 4)
@@ -504,7 +498,7 @@ struct ChatScreen: View {
                 .padding(.leading, -4)
                 Spacer()
                 Button {
-                    if model.sending { model.stop() } else { sendNow() }
+                    if model.sending { model.stop() } else if canSend { sendNow() }
                 } label: {
                     Group {
                         if model.sending {
@@ -520,8 +514,7 @@ struct ChatScreen: View {
                     .background(model.sending ? Theme.attachBg : (canSend ? Theme.accent : Theme.sendIdle), in: Circle())
                     .animation(.easeInOut(duration: 0.2), value: canSend)
                 }
-                .buttonStyle(.plain)
-                .disabled(!model.sending && !canSend)
+                .buttonStyle(.plain)   // 不用 .disabled：plain 样式会把禁用态压灰（寻验：黑钮变灰）
             }
         }
         .padding(EdgeInsets(top: 14, leading: 18, bottom: 10, trailing: 14))
@@ -549,17 +542,19 @@ struct ChatScreen: View {
         return model.items.last?.id
     }
     /// 到底：先让 SwiftUI 滚到最后一行本身（把它真排出来），再由 UIKit 按真实内容高精确钉底（含底部 10 留白）。
+    /// 补钉只在真的没到底时才动（寻验：开屏后界面上下弹几下＝反复重滚）。
     private func scrollBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
         let go = {
             if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } else { proxy.scrollTo("bottom", anchor: .bottom) }
         }
-        let pin = {
-            guard let sv = ScrollObserver.view("chat") else { return }
-            let maxY = sv.contentSize.height - sv.bounds.height + sv.adjustedContentInset.bottom
-            if maxY > -sv.adjustedContentInset.top { sv.setContentOffset(CGPoint(x: 0, y: maxY), animated: false) }
-        }
         if animated { withAnimation(.easeOut(duration: 0.25)) { go() } } else { go() }
-        for d in [0.1, 0.3, 0.7, 1.4] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { go(); DispatchQueue.main.async { pin() } } }
+        for d in [0.05, 0.2, 0.5, 1.0] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { pinBottom() } }
+    }
+    private func pinBottom() {
+        guard let sv = ScrollObserver.view("chat") else { return }
+        let inset = sv.adjustedContentInset
+        let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
+        if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 1 { sv.setContentOffset(CGPoint(x: 0, y: maxY), animated: false) }
     }
 
     /// 选图 → 长边 1568 的 jpeg dataURL（Anthropic 最优尺寸），最多 4 张。

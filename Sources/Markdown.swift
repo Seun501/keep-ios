@@ -37,7 +37,7 @@ enum MD {
     }
     /// 同上，但产出 NSAttributedString 给 UITextView（粗体/代码/删除线原生生效；精确选字）。lineHeight＝网页 line-height 倍数。
     /// 行内规则照网页 mdInline 那四条正则（`代码`、**粗**、~~紧贴删除线~~、*斜*），逐段落字。
-    static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, italic: UIFont? = nil, color: UIColor, lineHeight: CGFloat) -> NSAttributedString {
+    static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, italic: UIFont? = nil, color: UIColor, lineHeight: CGFloat, paraSpacing: CGFloat = 0) -> NSAttributedString {
         struct Run { var text: String; var kind: Character }   // kind: n/c/b/d/e
         var runs: [Run] = []
         let pats: [(String, Character)] = [
@@ -64,6 +64,7 @@ enum MD {
         let para = NSMutableParagraphStyle()
         para.minimumLineHeight = base.pointSize * lineHeight
         para.maximumLineHeight = base.pointSize * lineHeight
+        para.paragraphSpacing = paraSpacing
         let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para,
                                                         .baselineOffset: max(0, (base.pointSize * lineHeight - base.lineHeight) / 4)]
         for r in runs {
@@ -72,7 +73,7 @@ enum MD {
             case "b": at[.font] = bold
             case "c": at[.font] = mono
             case "d": at[.strikethroughStyle] = NSUnderlineStyle.single.rawValue; at[.foregroundColor] = color.withAlphaComponent(0.65)
-            case "e": if let italic { at[.font] = italic } else { at[.obliqueness] = 0.14 }
+            case "e": if let italic { at[.font] = italic } else { at[.obliqueness] = 0.24 }   // 浏览器合成斜体约 12°（寻验：不够斜）
             default: break
             }
             m.append(NSAttributedString(string: r.text, attributes: at))
@@ -83,10 +84,11 @@ enum MD {
         ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
            mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight)
     }
+    /// 寻的气泡：系统字 18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
     static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
         ns(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
            mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), italic: UIFont.italicSystemFont(ofSize: size),
-           color: Theme.uiText, lineHeight: 1.5)
+           color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8)
     }
     static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
         styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),

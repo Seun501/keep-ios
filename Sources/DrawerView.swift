@@ -64,16 +64,16 @@ struct DrawerView: View {
                 Spacer(minLength: 0)
 
                 calendar
-                    .padding(EdgeInsets(top: 12, leading: 6, bottom: 10, trailing: 6))
+                    .padding(EdgeInsets(top: 12, leading: 8, bottom: 10, trailing: 8))
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
                     .transaction { $0.animation = nil }                // 切月干干净净，不动画
 
-                // 照网页 #usageLine：零高度悬浮、往下 6px——日历钉底，下面只留这一行小字的空（寻验 28 第 4 条）
+                // 额度一行：日历下 10、字 16 高、再 2 到安全区（寻验 32：上面太紧下面太空）
                 Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity).frame(height: 0, alignment: .top).padding(.top, 6)
+                    .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)
             }
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 10, trailing: 22))
+            .padding(EdgeInsets(top: 20, leading: 22, bottom: 2, trailing: 22))
             .frame(width: w)
             .frame(maxHeight: .infinity)
             .background(Theme.boardBg.ignoresSafeArea())
@@ -94,9 +94,9 @@ struct DrawerView: View {
             HStack {
                 Text(label).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text)
                 Spacer()
-                if badge > 0 {
+                if badge > 0 {   // 照网页 #notesBadge：20 高、最小 20 宽 → 一位数就是正圆（寻定：小圆圈）
                     Text("\(badge)").font(Theme.round(12)).foregroundColor(.white)
-                        .frame(minWidth: 20, minHeight: 20).padding(.horizontal, 6)
+                        .padding(.horizontal, 6).frame(minWidth: 20).frame(height: 20)
                         .background(Theme.accent, in: Capsule())
                 }
             }
@@ -114,42 +114,43 @@ struct DrawerView: View {
         let firstWd = cal.component(.weekday, from: first) - 1
         let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
         let has = Set(days.filter { $0.hasPrefix(String(format: "%04d-%02d", y, m)) }.compactMap { Int($0.suffix(2)) })
+        // 寻验 32：整体放大一圈（格 34、字 14）；固定六行——切月时卡高不变，箭头与月题纹丝不动
+        let cellH: CGFloat = 34
         return VStack(spacing: 8) {
             HStack {
-                Button { shift(-1) } label: { Text("‹").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
+                Button { shift(-1) } label: { Text("‹").font(.system(size: 21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
                 Spacer()
-                Text("\(String(y)) 年 \(m) 月").font(Theme.round(13.5)).foregroundColor(Theme.text)
+                Text("\(String(y)) 年 \(m) 月").font(Theme.round(14.5)).foregroundColor(Theme.text)
                 Spacer()
-                Button { shift(1) } label: { Text("›").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
+                Button { shift(1) } label: { Text("›").font(.system(size: 21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
             }
             .buttonStyle(.plain)
-            // 非懒排：整月一次量完（LazyVGrid 换月时先按旧高度排、下一帧再改，箭头会「升起来」——寻验 28 第 5 条）
-            let cells: [Int] = Array(repeating: 0, count: firstWd) + Array(1...n)
-            let rows = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
+            // 非懒排：整月一次量完（LazyVGrid 换月时先按旧高度排、下一帧再改，箭头会「升起来」）
+            let cells: [Int] = Array(repeating: 0, count: firstWd) + Array(1...n) + Array(repeating: 0, count: 42 - firstWd - n)
+            let rows = stride(from: 0, to: 42, by: 7).map { Array(cells[$0..<$0 + 7]) }
             VStack(spacing: 3) {
                 HStack(spacing: 3) {
                     ForEach(["日","一","二","三","四","五","六"], id: \.self) { w in
-                        Text(w).font(Theme.round(11)).foregroundColor(Theme.muted.opacity(0.6)).padding(.vertical, 2).frame(maxWidth: .infinity)
+                        Text(w).font(Theme.round(12)).foregroundColor(Theme.muted.opacity(0.6)).padding(.vertical, 2).frame(maxWidth: .infinity)
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     HStack(spacing: 3) {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, d in
                             if d == 0 {
-                                Color.clear.frame(maxWidth: .infinity).frame(height: 30)
+                                Color.clear.frame(maxWidth: .infinity).frame(height: cellH)
                             } else {
                                 let on = has.contains(d)
                                 ZStack {
                                     if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
-                                    Text(String(d)).font(Theme.round(13, weight: on ? .medium : .regular))
+                                    Text(String(d)).font(Theme.round(14, weight: on ? .medium : .regular))
                                         .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
                                 }
-                                .frame(maxWidth: .infinity).frame(height: 30)
+                                .frame(maxWidth: .infinity).frame(height: cellH)
                                 .contentShape(Rectangle())
                                 .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
                             }
                         }
-                        if row.count < 7 { ForEach(0..<(7 - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity).frame(height: 30) } }
                     }
                 }
             }

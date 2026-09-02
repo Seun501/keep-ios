@@ -182,14 +182,18 @@ struct ScrollObserver: UIViewRepresentable {
     final class Coordinator: NSObject {
         var onChange: (CGFloat, CGFloat, CGFloat) -> Void
         private var obs: [NSKeyValueObservation] = []
-        private var kb: NSObjectProtocol? = nil
+        private var kb: [NSObjectProtocol] = []
         private var atBottom = true
+        private var link: CADisplayLink? = nil
+        private var linkUntil = Date()
+        private weak var sv: UIScrollView? = nil
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
-        deinit { if let kb { NotificationCenter.default.removeObserver(kb) } }
+        deinit { kb.forEach { NotificationCenter.default.removeObserver($0) }; link?.invalidate() }
         func attach(from v: UIView, name: String?) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
+            self.sv = sv
             if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv) }
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
@@ -204,15 +208,72 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            // 键盘升起时 SwiftUI 把滚动区一帧帧压矮：原本钉着底就每帧把底重新钉住（内容跟着键盘一起抬）。
-            // 不靠通知时机、不靠 scrollTo，直接跟着视口高度走，键盘怎么动内容就怎么动。
-            obs.append(sv.observe(\.bounds, options: [.old, .new]) { [weak self] sv, ch in
-                guard let self, let o = ch.oldValue?.size.height, let n = ch.newValue?.size.height, n < o, self.atBottom else { return }
-                let inset = sv.adjustedContentInset
-                let maxY = sv.contentSize.height - n + inset.bottom
-                if maxY > -inset.top { sv.contentOffset.y = maxY }
-            })
+            // 键盘升起：原本钉着底就在键盘动画的这段时间里每一帧把底重新钉住（CADisplayLink），
+            // 不依赖 SwiftUI 怎么改帧、也不依赖 KVO 能不能听到 frame——视口矮到哪内容就跟到哪。
+            for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification] {
+                kb.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] note in
+                    guard let self, self.atBottom else { return }
+                    let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+                    self.pinFor(dur + 0.2)
+                })
+            }
             fire()
+        }
+        private func pinFor(_ secs: Double) {
+            linkUntil = Date().addingTimeInterval(secs)
+            if link == nil {
+                let l = CADisplayLink(target: self, selector: #selector(tick))
+                l.add(to: .main, forMode: .common); link = l
+            }
+        }
+        @objc private func tick() {
+            guard let sv, Date() < linkUntil else { link?.invalidate(); link = nil; return }
+            let inset = sv.adjustedContentInset
+            let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
+            if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset.y = maxY }
+        }
+        }
+    }
+}
+
+/// 橙滚动条（照网页 scrollbar-color rgba(217,119,87,.4)）：3pt 胶囊靠右、只在滚时露；
+/// 长按 0.25s 后可拖着走（寻验：要像系统滚动条一样能拖）——按登记名拿 UIScrollView 直接改 offset。
+struct OrangeBar: View {
+    var thumb: CGFloat
+    var frac: CGFloat
+    var on: Bool
+    var name: String? = nil
+    var inset: CGFloat = 2
+    @State private var dragging = false
+    var body: some View {
+        GeometryReader { g in
+            let h = g.size.height
+            let th = max(24, h * thumb)
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                Capsule().fill(Theme.scrollTint.opacity(dragging ? 0.7 : 0.4))
+                    .frame(width: dragging ? 5 : 3, height: th)
+                    .padding(.trailing, inset)
+                    .offset(y: h * frac)
+                    .opacity(thumb < 0.98 && (on || dragging) ? 1 : 0)
+                    .animation(.easeOut(duration: 0.25), value: on)
+            }
+            .frame(width: 22)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .contentShape(Rectangle())
+            .gesture(
+                LongPressGesture(minimumDuration: 0.25)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onChanged { v in
+                        guard case .second(true, let d?) = v, let name, let sv = ScrollObserver.view(name) else { return }
+                        dragging = true
+                        let inset = sv.adjustedContentInset
+                        let maxY = sv.contentSize.height - sv.bounds.height + inset.bottom
+                        let target = ((d.location.y - th / 2) / max(h, 1)) * sv.contentSize.height - inset.top
+                        sv.contentOffset.y = min(max(target, -inset.top), max(maxY, -inset.top))
+                    }
+                    .onEnded { _ in dragging = false }
+            )
         }
     }
 }

@@ -86,7 +86,7 @@ struct UserRowView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n\n")))
+                RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)

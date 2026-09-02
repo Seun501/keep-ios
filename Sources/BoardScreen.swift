@@ -33,9 +33,15 @@ final class BoardModel: ObservableObject {
     @Published var unread = 0
     @Published var tab = "notes"          // tickets | notes | letters
     @Published var openId: String? = nil
+    @Published var loaded = false          // 没拉到之前不显示「还没有帖子」（寻验 32）
 
     func refresh() async {
-        if Preview.on, let d = Preview.json("preview_notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: d) { notes = p.notes; unread = p.unread ?? 0; if Preview.screen == "boardpop" { openId = "n2" }; return }
+        if Preview.on, let d = Preview.json("preview_notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: d) {
+            notes = p.notes; unread = p.unread ?? 0; loaded = true
+            if Preview.screen == "boardpop" { openId = "n2" }
+            if Preview.screen == "boardreply" { openId = "n1" }
+            return
+        }
         guard let token = Keychain.token else { return }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/notes"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -44,6 +50,7 @@ final class BoardModel: ObservableObject {
               let p = try? JSONDecoder().decode(NotesPayload.self, from: d) else { return }
         notes = p.notes
         unread = p.unread ?? 0
+        loaded = true
     }
 
     private func post(_ path: String, _ body: [String: Any]) async -> Bool {
@@ -99,7 +106,7 @@ struct BoardScreen: View {
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
 
                 // 照 #notesBody：padding 12 22 24、卡间 12、橙滚动条（只在滚时露）、没有下拉刷新
-                OrangeScroll(barInset: 0) {
+                OrangeScroll(name: "board") {
                     LazyVStack(alignment: .leading, spacing: 12) { list }
                         .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 24)
                 }
@@ -122,7 +129,7 @@ struct BoardScreen: View {
             let open = tickets.filter { !$0.closed }, done = tickets.filter { $0.closed }
             if !open.isEmpty { SecTitle("待处理"); ForEach(open) { card($0) } }
             if !done.isEmpty { SecTitle("已结"); ForEach(done) { card($0) } }
-            if tickets.isEmpty { empty("没有工单——克没报什么毛病。") }
+            if tickets.isEmpty && m.loaded { empty("没有工单——克没报什么毛病。") }
         } else {
             let plain = newest.filter { !$0.isTicket }
             let nowMon = monLabel(Date())
@@ -131,7 +138,7 @@ struct BoardScreen: View {
                 if mon != nowMon { SecTitle(mon) }
                 ForEach(arr) { card($0) }
             }
-            if plain.isEmpty { empty("还没有帖子。克想说但不急的话，会贴在这里。") }
+            if plain.isEmpty && m.loaded { empty("还没有帖子。克想说但不急的话，会贴在这里。") }
         }
     }
 
@@ -160,17 +167,18 @@ struct BoardScreen: View {
     private func card(_ n: Note) -> some View {
         let msgs = n.msgs ?? []
         let replies = max(0, msgs.count - 1)
+        // 寻验 32 调整：题 16（17 太大）、题到正文 9、卡上下 15
         return Button { m.open(n) } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 17)).tracking(0.17).foregroundColor(Theme.text)
+                    Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
                         if n.state == "unread" && replies == 0 { Circle().fill(Theme.accent).frame(width: 5, height: 5) }
                         if replies > 0 {
-                            if n.state == "unread" {
+                            if n.state == "unread" {   // 照网页 .nu：16 高、最小 16 宽 → 一位数正圆（寻定：小圆圈）
                                 Text("\(replies)").font(Theme.round(10)).foregroundColor(.white)
-                                    .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 4)
+                                    .padding(.horizontal, 4).frame(minWidth: 16).frame(height: 16)
                                     .background(Theme.accent, in: Capsule())
                             } else {
                                 Text("\(replies)").font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.cacheTint)
@@ -181,7 +189,7 @@ struct BoardScreen: View {
                 }
                 RichText(attr: excerpt(msgs.first?.content ?? "", strike: n.closed), maxLines: 2)
             }
-            .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+            .padding(EdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.06), radius: 2, y: 1)
@@ -250,7 +258,8 @@ struct SecTitle: View {
 
 /// 带橙滚动条的滚动区（照网页 scrollbar-color rgba(217,119,87,.4)）：系统条藏起，自己画 3pt 胶囊，只在真滚动时露、停 0.9s 隐。
 struct OrangeScroll<Content: View>: View {
-    var barInset: CGFloat = 0
+    var name: String
+    var barX: CGFloat = 0
     @ViewBuilder var content: () -> Content
     @State private var thumb: CGFloat = 1
     @State private var frac: CGFloat = 0
@@ -259,7 +268,7 @@ struct OrangeScroll<Content: View>: View {
     @State private var hide: DispatchWorkItem? = nil
     var body: some View {
         ScrollView {
-            content().background(ScrollObserver { y, ch, vh in
+            content().background(ScrollObserver(name: name) { y, ch, vh in
                 let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
                 if lastY.isNaN { lastY = y; return }          // 第一次量到不算滚（寻验：一打开就露条）
                 if abs(y - lastY) > 0.5 {
@@ -271,14 +280,7 @@ struct OrangeScroll<Content: View>: View {
             })
         }
         .scrollIndicators(.hidden)
-        .overlay(alignment: .topTrailing) {
-            GeometryReader { g in
-                Capsule().fill(Theme.scrollTint.opacity(0.4)).frame(width: 3, height: max(20, g.size.height * thumb))
-                    .frame(maxWidth: .infinity, alignment: .trailing).offset(x: barInset, y: g.size.height * frac)
-                    .opacity(thumb < 0.98 && on ? 1 : 0)
-                    .animation(.easeOut(duration: 0.25), value: on)
-            }.allowsHitTesting(false)
-        }
+        .overlay(alignment: .topTrailing) { OrangeBar(thumb: thumb, frac: frac, on: on, name: name).offset(x: barX) }
     }
 }
 
@@ -291,7 +293,6 @@ struct NotePop: View {
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
     @State private var kb: CGFloat = 0
-    @State private var expanded = false
     @FocusState private var focused: Bool
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
@@ -300,7 +301,7 @@ struct NotePop: View {
             Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.38).ignoresSafeArea()
                 .onTapGesture { if focused { focused = false } else { model.openId = nil } }
             ScrollViewReader { proxy in
-                OrangeScroll(barInset: 12) {
+                OrangeScroll(name: "pop", barX: 12) {
                     VStack(spacing: 0) {
                         ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
                             VStack(alignment: .leading, spacing: 6) {
@@ -318,9 +319,8 @@ struct NotePop: View {
                         replyRow.padding(.top, 10).id("reply")
                     }
                 }
-                .onChange(of: focused) { f in
-                    if f { expanded = true; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("reply", anchor: .bottom) } } }
-                }
+                // 卡高不因聚焦变（照网页：只改 max-height 与位置，寻验 32：先变长再上移动作太多）；键盘来了把回复排送回视野
+                .onChange(of: kb) { k in if k > 0 { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("reply", anchor: .bottom) } } }
             }
             .frame(maxHeight: cap)
             .fixedSize(horizontal: false, vertical: true)
@@ -364,11 +364,11 @@ struct NotePop: View {
         }
     }
 
-    /// 卡高上限：平时 74vh；键盘来了 屏高−键盘−52（照网页 fit）
+    /// 卡高上限：平时＝折叠高；键盘来了再压到 屏高−键盘−52（照网页 fit），不会先变长
     private var cap: CGFloat {
         let H = UIScreen.main.bounds.height
-        if kb > 0 { return H - kb - 52 }
-        return expanded ? H * 0.74 : foldHeight
+        if kb > 0 { return min(foldHeight, H - kb - 52) }
+        return foldHeight
     }
     /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼＋下一楼的上留白，不露下一楼的头
     private var foldHeight: CGFloat {

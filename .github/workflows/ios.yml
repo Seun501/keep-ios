@@ -66,7 +66,7 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           mkdir -p artifacts
           # 预览模式：假对话，不登录不联网；每页起一次、等 6 秒、截一张
-          for SCREEN in chat drawer board boardpop; do
+          for SCREEN in chat drawer board boardpop boardreply; do
             SIMCTL_CHILD_KEEP_PREVIEW=1 SIMCTL_CHILD_KEEP_SCREEN=$SCREEN xcrun simctl launch --terminate-running-process "$UDID" cn.seunk.keep
             sleep 6
             xcrun simctl io "$UDID" screenshot "artifacts/$SCREEN.png"
