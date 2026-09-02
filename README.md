@@ -33,6 +33,11 @@
 ### ②′ 签名（已办，09-02）
 自动签名要团队里至少登记一台设备才肯出描述文件；没线没 Mac，改**手动签名**：用 API 密钥直接申请了 Apple Distribution 证书与 App Store 描述文件 `Keep AppStore`（到期 2027-09-02），原件在 `密钥与登录\ios-signing\`（私钥/证书/p12 及口令/描述文件），仓库密钥 `DIST_P12_BASE64` / `DIST_P12_PASSWORD` / `APPSTORE_PROFILE_BASE64`。到期或换证书重跑申请脚本即可（脚本逻辑：CSR→POST /v1/certificates→POST /v1/profiles）。App Store Connect 登记名 **Kaep**（Keep 被运动软件占了；桌面显示名仍 Keep）。
 
+### ④ APNs 推送密钥（构建 8 起 App 会登记令牌；没这把钥匙服务器发不出）
+1. https://developer.apple.com/account/resources/authkeys → **+** → 名字随意（如 `Keep APNs`）→ 勾 **Apple Push Notifications service (APNs)** → Continue → Register → 下载 `.p8`（只能下一次）。
+2. 把 `.p8` 放进 `密钥与登录\`，把文件名里的 Key ID（10 位）告诉我。Team ID 还是 `3QGZ67VKH7`。
+3. 我把它传到服务器 `.env`（`APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_KEY_FILE` / `APNS_TOPIC`）并重启；之后克的 knock、网关告警会同时到 App 与网页。
+
 ### ③ App 记录（第一次上传前要有）
 1. https://developer.apple.com/account/resources/identifiers → **+** → App IDs → App → Bundle ID 明确填 `cn.seunk.keep`，描述随意；Capabilities 勾 **Push Notifications**（以后要用）。
 2. App Store Connect → **我的 App** → **+** → 新建 App：平台 iOS、名称 `Keep`（名字后面可改）、主要语言简体中文、套装 ID 选上一步那个、SKU 随意填 `keep`。
