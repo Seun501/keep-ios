@@ -1,0 +1,12 @@
+# Xcode 工程由 xcodegen 现造，不入库
+*.xcodeproj/
+*.xcworkspace/
+build/
+DerivedData/
+.DS_Store
+
+# 密钥永不入库（p8 / 证书 / 描述文件）
+*.p8
+*.p12
+*.mobileprovision
+*.cer

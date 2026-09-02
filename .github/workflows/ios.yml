@@ -1,0 +1,139 @@
+# 打包机（CI）。两班：
+#   build   ——每次推代码：造工程、编模拟器版（不签名）、起模拟器截一张图存成产物。验「编得过、跑得起」。
+#   testflight——手动点或推 v* 标签：真机归档+云签名+直传 TestFlight。要四个仓库密钥（见 README）。
+# 私有仓库 macOS 分钟按 10 倍计，所以 build 班只在 Sources/配置改动时跑，README 之类不触发。
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "project.yml"
+      - "ExportOptions.plist"
+      - ".github/workflows/ios.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "归档并上传 TestFlight"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SCHEME: Keep
+  SIM_NAME: iPhone 16
+
+jobs:
+  build:
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event.inputs.testflight != 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 工具与版本
+        run: |
+          brew install xcodegen
+          xcodebuild -version
+          xcrun simctl list runtimes | head -20
+
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+
+      - name: 编译（模拟器，不签名）
+        run: |
+          set -o pipefail
+          xcodebuild -project Keep.xcodeproj -scheme "$SCHEME" \
+            -destination "platform=iOS Simulator,name=$SIM_NAME" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -60
+
+      - name: 模拟器截图
+        run: |
+          set -e
+          UDID=$(xcrun simctl list devices available | grep "$SIM_NAME (" | head -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          echo "sim=$UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/DerivedData -name "Keep.app" -path "*iphonesimulator*" | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" cn.seunk.keep
+          sleep 8
+          mkdir -p artifacts
+          xcrun simctl io "$UDID" screenshot artifacts/launch.png
+          # 踩坑册：别信界面，看包。把最终 Info.plist 与授权一并留证。
+          plutil -p "$APP/Info.plist" > artifacts/Info.plist.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sim-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 7
+
+  testflight:
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.testflight == 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 工具
+        run: |
+          brew install xcodegen
+          xcodebuild -version
+
+      - name: 落 App Store Connect 密钥
+        run: |
+          mkdir -p "$HOME/private_keys"
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 --decode > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+
+      - name: 归档（真机，云签名）
+        run: |
+          set -o pipefail
+          xcodebuild -project Keep.xcodeproj -scheme "$SCHEME" \
+            -destination "generic/platform=iOS" \
+            -archivePath build/Keep.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            archive | tail -80
+
+      - name: 查包（踩坑册：看包不看界面）
+        run: |
+          APP=$(find build/Keep.xcarchive/Products -name "Keep.app" | head -1)
+          plutil -p "$APP/Info.plist"
+          codesign -d --entitlements - "$APP" 2>&1 | head -40
+
+      - name: 导出并上传 TestFlight
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/Keep.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -60
+
+      - name: 抹密钥
+        if: always()
+        run: rm -rf "$HOME/private_keys"

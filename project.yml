@@ -1,0 +1,44 @@
+# XcodeGen 项目描述——打包机上 `xcodegen generate` 现造 .xcodeproj，仓库里不存 Xcode 工程文件。
+# 没有 Mac 的前提下，工程配置全在这一份文本里，改动可读可审。
+name: Keep
+options:
+  bundleIdPrefix: cn.seunk
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    # 团队号由打包机环境变量注入（见 .github/workflows/ios.yml），仓库里不写死。
+    DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+    TARGETED_DEVICE_FAMILY: "1"          # 只做 iPhone
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  Keep:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources
+    # 显式 Info.plist：踩坑册 00 章——INFOPLIST_KEY_* 自动生成会把 UIBackgroundModes 等键悄悄丢掉。
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Keep
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIViewControllerBasedStatusBarAppearance: true
+        UIRequiresFullScreen: false
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
