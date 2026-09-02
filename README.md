@@ -1,6 +1,6 @@
 # Keep · iOS
 
-克的家的 iOS 端。仓库私有（GitHub `Seun501`），没有 Mac：打包、签名、上传全在 GitHub 的 macOS 打包机上跑。
+克的家的 iOS 端。仓库公开（GitHub `Seun501/keep-ios`，09-02 起——公开仓的 Actions 分钟不限量），没有 Mac：打包、签名、上传全在 GitHub 的 macOS 打包机上跑。密钥一律在 GitHub Secrets 与本地 `密钥与登录\`，仓库里没有也不能有。
 
 ## 现在是什么样（2026-09-02）
 
@@ -16,7 +16,7 @@
 | build | 推 `main` 且改了源码/配置 | 编模拟器版（不签名）、起模拟器截图 | Actions 页面「Artifacts」里的 `launch.png`、`Info.plist.txt` |
 | testflight | 推 `v*` 标签，或 Actions 页手动勾「归档并上传 TestFlight」 | 真机归档、云签名、直传 TestFlight | TestFlight 里的新构建 |
 
-私有仓库 macOS 分钟按 10 倍计（GitHub Free 每月 2000 分钟 ≈ 200 分钟 macOS）。一次 build 约 5–8 分钟，testflight 约 10–15 分钟。
+私有仓时 macOS 分钟按 10 倍计（Free 每月 2000 ≈ 200 分钟 macOS，09-02 一天就用掉 162）；公开后不限量。一次截图班约 5 分半（可用 `screens` 输入只截要看的页），testflight 约 2 分半。Apple 另有每日 TestFlight 上传上限（09-02 第 15 个包被拒），一天最多出三四个包。
 
 ## 寻要办的（一次性）
 
