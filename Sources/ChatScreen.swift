@@ -236,7 +236,6 @@ struct ChatScreen: View {
     @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
     @State private var scrollThumb: CGFloat = 1     // 可见区占比
     @State private var scrollbarOn = false
-    @State private var kbInset: CGFloat = 0        // 滚动区为键盘补的底内边距（滚动条轨道同步缩）
     @State private var dbg = ""
     @State private var scrollbarHide: DispatchWorkItem? = nil
     @FocusState private var focused: Bool
@@ -244,7 +243,8 @@ struct ChatScreen: View {
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply"].contains(Preview.screen) ? [.board] : []
-    @State private var mealKeyboard = false      // 吃吃笺的键盘：主页不跟着抬（寻验 28 第 3 条）
+    @State private var kbH: CGFloat = 0          // 键盘高（屏幕坐标）；主页自己让位，不用 SwiftUI 的自动让位（吃吃笺/抽屉的键盘不该动主页）
+    @State private var safeBottom: CGFloat = 0
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
     var body: some View {
@@ -282,7 +282,17 @@ struct ChatScreen: View {
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
-        .ignoresSafeArea(mealKeyboard ? .keyboard : [])   // 吃吃笺打字时主页不让位（笺照网页钉在屏中央，键盘只盖下半）
+        .ignoresSafeArea(.keyboard)                   // 让位自己做（输入卡按键盘高垫底），吃吃笺/抽屉打字主页纹丝不动
+        .background(GeometryReader { g in Color.clear.onAppear { safeBottom = g.safeAreaInsets.bottom } })
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+            guard let f = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+            let h = max(0, UIScreen.main.bounds.height - f.minY)
+            // 系统键盘曲线的等价弹簧（mass 3 / stiffness 1000 / damping 500），输入卡和键盘一起走
+            withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500, initialVelocity: 0)) { kbH = h }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500, initialVelocity: 0)) { kbH = 0 }
+        }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
@@ -297,10 +307,6 @@ struct ChatScreen: View {
                 model.msgs.contains { $0.isPing && $0.meal == true && (TimeFmt.parse($0.ts ?? "") ?? .distantPast) >= e.at.addingTimeInterval(-120) }
             }
         }
-        .onChange(of: showMeal) { on in
-            if on { mealKeyboard = true }
-            else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !showMeal { mealKeyboard = false } } }   // 等笺的键盘收完再恢复让位
-        }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
         .onChange(of: model.sending) { s in clawd.busy(s) }
         .onChange(of: model.live?.events ?? 0) { _ in
@@ -308,7 +314,7 @@ struct ChatScreen: View {
         }
         .task { await lintel.refresh() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
-        .onAppear { model.onLogout = onLogout; ScrollObserver.onInset["chat"] = { kbInset = $0 } }
+        .onAppear { model.onLogout = onLogout }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
             if p == .active { Task { await model.pulse() } }
@@ -356,7 +362,7 @@ struct ChatScreen: View {
             scrollbarHide?.cancel()
             let w = DispatchWorkItem { scrollbarOn = false }
             scrollbarHide = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: w)   // 停手后留 1.6s 再隐（寻验 38：消失太快）
         })
     }
 
@@ -364,7 +370,7 @@ struct ChatScreen: View {
         ScrollView { listContent }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
-            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 10 + kbInset) }   // 轨道下端与末条时间齐平；键盘让位时轨道跟着缩（寻验：条跑到键盘上）
+            .overlay(alignment: .topTrailing) { scrollbar.padding(.bottom, 22) }   // 轨道下端再往上抬一点（寻验 38）
             .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
@@ -519,15 +525,18 @@ struct ChatScreen: View {
             }
         }
         .padding(EdgeInsets(top: 14, leading: 18, bottom: 10, trailing: 14))
-        .background(GeometryReader { g in   // 输入卡上沿（窗口坐标）报给滚动区：键盘把卡顶上来时，滚动区被盖住多少就补多少底内边距
-            let top = g.frame(in: .global).minY
-            Color.clear.onAppear { ScrollObserver.covers["chat"] = top }.onChange(of: top) { ScrollObserver.covers["chat"] = $0 }
-        })
         .background(Theme.composer, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
         .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14)
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)   // 消息区到输入卡＝网页 #messages padding-bottom 10，别再叠
+        .padding(.bottom, composerLift)                                  // 键盘让位：只在主页自己的键盘时垫
+    }
+
+    /// 输入卡为键盘让出的高度：键盘高减去本来就有的底安全区；吃吃笺/抽屉/别的页开着时是它们的键盘，主页不动
+    private var composerLift: CGFloat {
+        guard kbH > 0, !showMeal, !drawerOn, path.isEmpty else { return 0 }
+        return max(0, kbH - safeBottom)
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }

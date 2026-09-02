@@ -74,7 +74,7 @@ struct DrawerView: View {
                 Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)
             }
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 24, trailing: 22))
+            .padding(EdgeInsets(top: 20, leading: 22, bottom: 14, trailing: 22))   // 寻验 38：日历下面再收窄
             .frame(width: w)
             .frame(maxHeight: .infinity)
             .ignoresSafeArea(edges: .bottom)

@@ -293,7 +293,16 @@ struct NotePop: View {
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
     @State private var kb: CGFloat = 0
+    @State private var cardH: CGFloat = 0
     @FocusState private var focused: Bool
+
+    /// 键盘来了卡要上移多少：居中位的卡底 → 键盘上沿 12（照网页 fit），只往上不往下
+    private var liftY: CGFloat {
+        guard kb > 0, cardH > 0 else { return 0 }
+        let H = UIScreen.main.bounds.height
+        let centeredBottom = (H + cardH) / 2
+        return min(0, (H - kb - 12) - centeredBottom)
+    }
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
     var body: some View {
@@ -328,8 +337,9 @@ struct NotePop: View {
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: kb > 0 ? .bottom : .center)
-            .padding(.bottom, kb > 0 ? kb + 12 : 0)
+            .background(GeometryReader { g in Color.clear.onAppear { cardH = g.size.height }.onChange(of: g.size.height) { cardH = $0 } })
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .offset(y: liftY)                                    // 单一路径往上走（寻验 38：换对齐方式会先掉下去再上来）
             .animation(.easeOut(duration: 0.25), value: kb)
         }
         .ignoresSafeArea()
@@ -349,8 +359,8 @@ struct NotePop: View {
                 .tint(Theme.scrollTint)
                 .focused($focused)
                 .padding(.vertical, 8).padding(.horizontal, 14)
-                .background(Theme.composer, in: Capsule())
-                .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
+                .background(Theme.card, in: Capsule())                       // 寻验 38：灰芯不要，纸色芯＋一圈淡边
+                .overlay(Capsule().stroke(Theme.border.opacity(0.8), lineWidth: 1))
             Button {
                 let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !v.isEmpty { text = ""; focused = false; Task { await model.reply(note.id, v) } }
