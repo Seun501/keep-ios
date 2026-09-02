@@ -163,7 +163,7 @@ final class ChatModel: ObservableObject {
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
                     live?.apply(ev)
                 }
-                PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0)")
+                PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0) finished=\(live?.finished ?? false) textLen=\(live?.items.compactMap { if case .seg(let s) = $0 { return s.text.count }; return nil }.reduce(0, +) ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
                 doorAlert = "克把门关上了" + (until.isEmpty ? "" : "，\(TimeFmt.hm(until)) 开") + (note.isEmpty ? "" : "\n\(note)")
                 msgs.removeLast(); rebuild()
@@ -173,11 +173,15 @@ final class ChatModel: ObservableObject {
                 PushRegistrar.diag("chat: error \(error.localizedDescription)")
                 if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")) }
             }
-            // 对账：服务器落盘的才是正史；半截也存了
-            if let id = conversationId, let conv = try? await GatewayAPI.conversation(id) {
-                msgs = conv.messages
-                renderFrom = min(renderFrom, max(0, msgs.count - 1))
-                lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+            // 对账：服务器落盘的才是正史；半截也存了（拉不到隔一秒再试一次）
+            if let id = conversationId {
+                var conv = try? await GatewayAPI.conversation(id)
+                if conv == nil { try? await Task.sleep(nanoseconds: 1_000_000_000); conv = try? await GatewayAPI.conversation(id) }
+                if let conv {
+                    msgs = conv.messages
+                    renderFrom = min(renderFrom, max(0, msgs.count - 1))
+                    lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+                } else { PushRegistrar.diag("chat: reload failed after stream") }
             }
             rebuild()
             live = nil
@@ -232,7 +236,22 @@ struct ChatScreen: View {
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
+    @State private var path: [Route] = Preview.on && ["board", "boardpop"].contains(Preview.screen) ? [.board] : []
+
     var body: some View {
+        NavigationStack(path: $path) {
+            root
+                .navigationBarHidden(true)
+                .navigationDestination(for: Route.self) { r in
+                    switch r {
+                    case .board: BoardScreen(onLogout: onLogout, onWeb: { path.append(.web($0)) })
+                    case .web(let link): WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: link).navigationBarHidden(true)
+                    }
+                }
+        }
+    }
+
+    private var root: some View {
         VStack(spacing: 0) {
             header
             ScrollViewReader { proxy in
@@ -268,8 +287,7 @@ struct ChatScreen: View {
         }
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
-        .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout).zIndex(50) } }
-        .fullScreenCover(isPresented: .constant(Preview.on && ["board", "boardpop"].contains(Preview.screen))) { BoardScreen(onLogout: onLogout) }
+        .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) } }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }
@@ -278,8 +296,8 @@ struct ChatScreen: View {
     /// 量 Clawd 活动区（消息区尺寸）
     private var clawdProbe: some View {
         GeometryReader { g in
-            Color.clear.onAppear { clawd.layout(area: g.size) }
-                .onChange(of: g.size) { sz in clawd.layout(area: sz) }
+            Color.clear.onAppear { clawd.layout(area: g.size, areaTop: g.frame(in: .global).minY) }
+                .onChange(of: g.size) { sz in clawd.layout(area: sz, areaTop: g.frame(in: .global).minY) }
         }
     }
 
@@ -345,7 +363,7 @@ struct ChatScreen: View {
         GeometryReader { g in
             let h = g.size.height
             Capsule().fill(Theme.scrollTint.opacity(0.4))
-                .frame(width: 5, height: max(24, h * scrollThumb))
+                .frame(width: 3, height: max(24, h * scrollThumb))
                 .frame(maxWidth: .infinity, alignment: .trailing)     // 靠右（GeometryReader 默认把孩子放左上）
                 .padding(.trailing, 2)
                 .offset(y: h * scrollFrac)
@@ -361,17 +379,18 @@ struct ChatScreen: View {
             Button { withAnimation(.easeOut(duration: 0.22)) { drawerOn = true } } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 1).fill(Theme.text).frame(width: 16, height: 2)
+                        RoundedRectangle(cornerRadius: 1).fill(Theme.text).frame(width: 15, height: 1.8)
                     }
                 }
-                .padding(.leading, 12)
-                .frame(width: 42, height: 42, alignment: .leading)
+                .padding(.leading, 11)
+                .frame(width: 39, height: 39, alignment: .leading)
                 .background(Theme.menuFill, in: Circle())
                 .overlay(Circle().stroke(Theme.hairRing, lineWidth: 1.5))
                 .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
                 .shadow(color: Color.black.opacity(0.08), radius: 14, y: 8)
             }
             .buttonStyle(.plain)
+            .frame(width: 42, height: 42)
             LintelColumn(m: lintel)
             Button { showMeal = true } label: {
                 Image("bowl").renderingMode(.template).resizable().frame(width: 20, height: 20)
@@ -411,7 +430,10 @@ struct ChatScreen: View {
                     } else if !s.text.isEmpty {
                         RichText(attr: MDWhole.make(s.text)).padding(.vertical, 11)
                     } else if s.thinking.isEmpty && !live.finished {
-                        Text("…").font(Theme.serif(18)).foregroundColor(Theme.muted)
+                        HStack(spacing: 7) {   // 还没吐字：照网页思考标的样子先亮「Thinking…」
+                            Image(systemName: "clock").font(.system(size: 12))
+                            Text("Thinking…").font(Theme.serif(13))
+                        }.foregroundColor(Theme.muted)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -459,7 +481,7 @@ struct ChatScreen: View {
                         } else if canSend {
                             Text("↑").font(.system(size: 17, weight: .medium)).foregroundColor(.white)   // 照网页 #send .arr
                         } else {
-                            Image("wav").renderingMode(.template).resizable().frame(width: 36, height: 36)
+                            Image("wav").renderingMode(.template).resizable().frame(width: 28, height: 28)
                                 .foregroundColor(Theme.sendIdleFg)                              // 网页那份 SVG 原件
                         }
                     }
@@ -522,11 +544,8 @@ struct WebShellScreen: View {
         VStack(spacing: 0) {
             HStack {
                 Button { dismiss() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                        Text("聊天").font(Theme.serif(15))
-                    }.foregroundColor(Theme.accent)
-                }
+                    Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                }.buttonStyle(.plain).padding(.leading, -8)
                 Spacer()
             }
             .padding(.horizontal, 14).padding(.vertical, 8)

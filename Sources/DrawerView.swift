@@ -1,24 +1,27 @@
 import SwiftUI
 
+/// 从抽屉出去的路（NavigationStack push：从右滑入、左缘右滑退回，寻定：不要淡入淡出/从下冒出）
+enum Route: Hashable {
+    case board
+    case web(String)
+}
+
 /// 抽屉（照网页 #drawerPanel）：左侧 78%（最宽 300）、暖白底、右缘细线；
 /// 花体 Keep＋相遇天数 → 搜索框 → 书架/相册/留言板/记忆 疏朗列表 → 用量一行 → 月历钉底。
 struct DrawerView: View {
     @Binding var shown: Bool
     var unread: Int
     let onLogout: () -> Void
+    var onNavigate: (Route) -> Void = { _ in }
     @State private var q = ""
     @State private var days: [String] = []          // 档案馆有记录的日子 yyyy-MM-dd
     @State private var ym: (Int, Int) = (Calendar.current.component(.year, from: Date()), Calendar.current.component(.month, from: Date()))
     @State private var usage = ""
     @State private var notesBadge = 0
-    @State private var target: Target? = nil
-    @State private var showBoard = false
-
-    struct Target: Identifiable { let id = UUID(); let link: String }
 
     var body: some View {
         ZStack(alignment: .leading) {
-            Color.black.opacity(0.35).ignoresSafeArea().onTapGesture { close() }
+            Color.black.opacity(0.35).ignoresSafeArea().onTapGesture { close() }.transition(.identity)   // 暗幕不淡入淡出
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("Keep").font(.custom("Snell Roundhand", size: 34).weight(.semibold)).tracking(1).foregroundColor(Theme.text)
@@ -30,7 +33,7 @@ struct DrawerView: View {
                 HStack(spacing: 0) {
                     TextField("", text: $q, prompt: Text("Search…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
                         .font(Theme.round(14)).foregroundColor(Theme.text)
-                        .padding(.vertical, 10).padding(.horizontal, 12)
+                        .padding(.vertical, 7).padding(.horizontal, 12)
                         .submitLabel(.search).onSubmit(search)
                     Button(action: search) {
                         Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)
@@ -44,25 +47,25 @@ struct DrawerView: View {
                 .padding(.top, 6)
 
                 VStack(spacing: 0) {
-                    row("书架") { target = Target(link: "#books") }
+                    row("书架") { onNavigate(.web("#books")) }
                     hair
-                    row("相册") { target = Target(link: "#album") }
+                    row("相册") { onNavigate(.web("#album")) }
                     hair
-                    row("留言板", badge: notesBadge) { showBoard = true }
+                    row("留言板", badge: notesBadge) { onNavigate(.board) }
                     hair
-                    row("记忆") { target = Target(link: "#mem") }
+                    row("记忆") { onNavigate(.web("#mem")) }
                 }
                 .padding(.top, 10)
 
                 Spacer(minLength: 0)
 
                 calendar
-                    .padding(EdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 8))
+                    .padding(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
 
                 Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity).padding(.top, 8)
+                    .frame(maxWidth: .infinity).padding(.top, 6)
             }
             .padding(EdgeInsets(top: 20, leading: 22, bottom: 10, trailing: 22))
             .frame(width: min(UIScreen.main.bounds.width * 0.78, 300))
@@ -72,8 +75,6 @@ struct DrawerView: View {
             .transition(.move(edge: .leading))
         }
         .task { await load() }
-        .fullScreenCover(item: $target) { t in WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: t.link) }
-        .fullScreenCover(isPresented: $showBoard) { BoardScreen(onLogout: onLogout) }
     }
 
     private var hair: some View { Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1) }
@@ -81,7 +82,7 @@ struct DrawerView: View {
     private func row(_ label: String, badge: Int = 0, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(label).font(Theme.cjk(16, weight: .medium)).foregroundColor(Theme.text)
+                Text(label).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text)
                 Spacer()
                 if badge > 0 {
                     Text("\(badge)").font(Theme.round(12)).foregroundColor(.white)
@@ -103,7 +104,7 @@ struct DrawerView: View {
         let firstWd = cal.component(.weekday, from: first) - 1
         let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
         let has = Set(days.filter { $0.hasPrefix(String(format: "%04d-%02d", y, m)) }.compactMap { Int($0.suffix(2)) })
-        return VStack(spacing: 4) {
+        return VStack(spacing: 8) {
             HStack {
                 Button { shift(-1) } label: { Text("‹").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
                 Spacer()
@@ -119,15 +120,17 @@ struct DrawerView: View {
                 ForEach(0..<firstWd, id: \.self) { _ in Color.clear.frame(height: 26) }
                 ForEach(1...n, id: \.self) { d in
                     let on = has.contains(d)
-                    Text("\(d)").font(Theme.round(13, weight: on ? .medium : .regular))
-                        .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
-                        .background(on ? Theme.dyn(0xF1EFEB, 0x34332F).opacity(0.55) : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .onTapGesture { if on { target = Target(link: String(format: "#arch:%04d-%02d-%02d", y, m, d)) } }
+                    ZStack {
+                        if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
+                        Text("\(d)").font(Theme.round(13, weight: on ? .medium : .regular))
+                            .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
                 }
             }
         }
-        .padding(.top, 12)
     }
 
     private func shift(_ d: Int) {
@@ -138,7 +141,7 @@ struct DrawerView: View {
     private func search() {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return }
-        target = Target(link: "#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s))
+        onNavigate(.web("#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s)))
     }
     private func close() { withAnimation(.easeIn(duration: 0.18)) { shown = false } }
 

@@ -90,15 +90,13 @@ struct GreetOverlay: View {
                 Theme.bg.ignoresSafeArea()
                 ClawdWeb(state: "idle", flip: false)
                     .frame(width: 150, height: 150)
-                    .position(x: g.size.width / 2, y: g.size.height * 0.45 - 100 + 75)   // 盒顶=0.45h−100（可见中心≈盒高67%），字在 0.51h
+                    .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(g.size.height) + 75)   // 与聊天页开场站位同一个点
                 HangingText(text: line)
-                    .font(Theme.serif(19, weight: .black))
+                    .font(Theme.serif(19, weight: .semibold))
                     .foregroundColor(Theme.text)
                     .padding(.horizontal, 36)
                     .frame(maxWidth: .infinity)
                     .offset(y: g.size.height * 0.51)
-                    .opacity(textOn ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.8), value: textOn)
             }
         }
         .ignoresSafeArea()
@@ -106,7 +104,6 @@ struct GreetOverlay: View {
         .onTapGesture { bye() }
         .onAppear {
             line = Greet.pick()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { textOn = true }
             if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { bye() } }
             Task { await Greet.refreshCache() }
         }

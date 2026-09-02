@@ -53,13 +53,16 @@ final class ClawdModel: ObservableObject {
     private var placed = false
     private let theater = ["groove", "coffee", "carry", "code", "wizard", "dizzy", "collapse"]
 
-    func layout(area: CGSize, headerBottomInset: CGFloat = 0) {
+    /// 开屏站位（网页：可见蟹身中心=屏高45%；素材可见中心≈盒高67%）→ 盒顶（屏幕坐标）
+    static func splashBoxTop(_ screenH: CGFloat) -> CGFloat { screenH * 0.45 - 150 * 0.67 }
+
+    func layout(area: CGSize, areaTop: CGFloat = 0) {
         let size: CGFloat = 150
         let y0 = -size * 0.42, y1 = max(y0, area.height - size + size * 0.11)
         zone = CGRect(x: 8, y: y0, width: max(0, area.width - size - 16), height: max(0, y1 - y0))
         if !placed {
             placed = true
-            pos = CGPoint(x: zone.midX, y: clampY(UIScreen.main.bounds.height * 0.45 - size * 0.67 - 60))
+            pos = CGPoint(x: zone.midX, y: clampY(Self.splashBoxTop(UIScreen.main.bounds.height) - areaTop))
             idle()
         } else if !dragging {
             pos = CGPoint(x: clampX(pos.x), y: clampY(pos.y))
@@ -141,28 +144,29 @@ struct ClawdView: View {
     }
 }
 
-/// 读真实滚动位置（放在滚动内容的 background 里，往上找到 UIScrollView 观察 contentOffset/contentSize），
-/// 并在滚动区因键盘变矮/变高时把内容跟着平移：原本钉着底就继续钉底（治「点开输入框整页跳上去再下来」）。
+/// 读真实滚动位置（放在滚动内容的 background 里，进窗口后往上找到 UIScrollView 观察 contentOffset/contentSize），
+/// 并在键盘升起时把内容跟着平移：原本钉着底就继续钉底。
 struct ScrollObserver: UIViewRepresentable {
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView(); v.isUserInteractionEnabled = false
-        DispatchQueue.main.async { context.coordinator.attach(from: v) }
+    func makeUIView(context: Context) -> HookView {
+        let v = HookView(); v.isUserInteractionEnabled = false
+        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v) } }
         return v
     }
-    func updateUIView(_ uiView: UIView, context: Context) { context.coordinator.onChange = onChange }
+    func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onChange = onChange }
     func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
     final class Coordinator: NSObject {
         var onChange: (CGFloat, CGFloat, CGFloat) -> Void
         private var obs: [NSKeyValueObservation] = []
         private var kb: NSObjectProtocol? = nil
         private var atBottom = true
-        deinit { if let kb { NotificationCenter.default.removeObserver(kb) } }
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
+        deinit { if let kb { NotificationCenter.default.removeObserver(kb) } }
         func attach(from v: UIView) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
+            sv.delaysContentTouches = false          // 长按选字第一次就成
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
                 let inset = sv.adjustedContentInset
@@ -173,9 +177,6 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            sv.delaysContentTouches = false          // 长按选字第一次就成（滚动区默认延迟触摸）
-            // 键盘升起：SwiftUI 把键盘高度当安全区塞进 adjustedContentInset（bounds 不变），
-            // 这里直接听键盘通知：原本钉底就把内容跟着上移同样高度，画面不动、底还是底
             let nc = NotificationCenter.default
             kb = nc.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self, weak sv] n in
                 guard let self, let sv, self.atBottom,
@@ -196,26 +197,31 @@ struct ScrollObserver: UIViewRepresentable {
     }
 }
 
+/// 进了窗口才回调（UIViewRepresentable 的 makeUIView 时视图还没进层级）
+final class HookView: UIView {
+    var onWindow: (() -> Void)?
+    override func didMoveToWindow() { super.didMoveToWindow(); if window != nil { onWindow?() } }
+}
+
 /// 系统级「点空白收键盘」：给窗口挂一只不吞触摸的点按识别器（SwiftUI 的 TapGesture 在滚动区里靠不住）。
 struct KeyboardDismisser: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView(frame: .zero); v.isUserInteractionEnabled = false
-        DispatchQueue.main.async {
-            guard let w = v.window, !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.dismiss" }) else { return }
+    func makeUIView(context: Context) -> HookView {
+        let v = HookView(); v.isUserInteractionEnabled = false
+        v.onWindow = { [weak v] in
+            guard let w = v?.window, !(w.gestureRecognizers ?? []).contains(where: { $0.name == "keep.dismiss" }) else { return }
             let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap))
             tap.name = "keep.dismiss"; tap.cancelsTouchesInView = false; tap.delegate = context.coordinator
             w.addGestureRecognizer(tap)
         }
         return v
     }
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: HookView, context: Context) {}
     func makeCoordinator() -> Coordinator { Coordinator() }
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         @objc func tap(_ g: UITapGestureRecognizer) {
-            // 点在输入框/按钮上不收（让它们自己处理）
             var v = g.view?.hitTest(g.location(in: g.view), with: nil)
             while let cur = v {
-                if let tv = cur as? UITextView, tv.isEditable { return }       // 只放过能打字的框；克正文那种只读文本照收
+                if let tv = cur as? UITextView, tv.isEditable { return }
                 if cur is UITextField || cur is UIControl { return }
                 v = cur.superview
             }

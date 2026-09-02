@@ -36,24 +36,46 @@ enum MD {
         return a
     }
     /// 同上，但产出 NSAttributedString 给 UITextView（粗体/代码/删除线原生生效；精确选字）。lineHeight＝网页 line-height 倍数。
+    /// 行内规则照网页 mdInline 那四条正则（`代码`、**粗**、~~紧贴删除线~~、*斜*），逐段落字。
     static func ns(_ s: String, base: UIFont, bold: UIFont, mono: UIFont, color: UIColor, lineHeight: CGFloat) -> NSAttributedString {
-        let a = inline(s)
-        let m = NSMutableAttributedString(string: String(a.characters))
+        struct Run { var text: String; var kind: Character }   // kind: n/c/b/d/e
+        var runs: [Run] = []
+        let pats: [(String, Character)] = [
+            ("`([^`]+)`", "c"),
+            ("\\*\\*([^*]+)\\*\\*", "b"),
+            ("~~(?=\\S)([^~\\n]*?\\S)~~", "d"),
+            ("(?<![*])\\*([^*]+)\\*", "e"),
+        ]
+        func split(_ t: String, _ pi: Int) -> [Run] {
+            if pi >= pats.count { return [Run(text: t, kind: "n")] }
+            guard let re = try? NSRegularExpression(pattern: pats[pi].0) else { return split(t, pi + 1) }
+            var out: [Run] = []; var last = 0
+            let ns = t as NSString
+            for mt in re.matches(in: t, range: NSRange(location: 0, length: ns.length)) {
+                if mt.range.location > last { out += split(ns.substring(with: NSRange(location: last, length: mt.range.location - last)), pi + 1) }
+                out.append(Run(text: ns.substring(with: mt.range(at: 1)), kind: pats[pi].1))
+                last = mt.range.location + mt.range.length
+            }
+            if last < ns.length { out += split(ns.substring(from: last), pi + 1) }
+            return out
+        }
+        runs = split(s, 0)
+        let m = NSMutableAttributedString()
         let para = NSMutableParagraphStyle()
         para.minimumLineHeight = base.pointSize * lineHeight
         para.maximumLineHeight = base.pointSize * lineHeight
-        let all = NSRange(location: 0, length: m.length)
-        m.addAttributes([.font: base, .foregroundColor: color, .paragraphStyle: para,
-                         .baselineOffset: max(0, (base.pointSize * lineHeight - base.lineHeight) / 4)], range: all)
-        for run in a.runs {
-            guard let intent = run.inlinePresentationIntent else { continue }
-            let r = NSRange(run.range, in: a)
-            if intent.contains(.stronglyEmphasized) { m.addAttribute(.font, value: bold, range: r) }
-            if intent.contains(.code) { m.addAttribute(.font, value: mono, range: r) }
-            if intent.contains(.strikethrough) {
-                m.addAttributes([.strikethroughStyle: NSUnderlineStyle.single.rawValue,
-                                 .foregroundColor: color.withAlphaComponent(0.65)], range: r)
+        let baseAttrs: [NSAttributedString.Key: Any] = [.font: base, .foregroundColor: color, .paragraphStyle: para,
+                                                        .baselineOffset: max(0, (base.pointSize * lineHeight - base.lineHeight) / 4)]
+        for r in runs {
+            var at = baseAttrs
+            switch r.kind {
+            case "b": at[.font] = bold
+            case "c": at[.font] = mono
+            case "d": at[.strikethroughStyle] = NSUnderlineStyle.single.rawValue; at[.foregroundColor] = color.withAlphaComponent(0.65)
+            case "e": at[.obliqueness] = 0.12
+            default: break
             }
+            m.append(NSAttributedString(string: r.text, attributes: at))
         }
         return m
     }

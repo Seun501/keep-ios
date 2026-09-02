@@ -78,9 +78,9 @@ final class BoardModel: ObservableObject {
 
 struct BoardScreen: View {
     let onLogout: () -> Void
+    var onWeb: (String) -> Void = { _ in }
     @StateObject private var m = BoardModel()
     @Environment(\.dismiss) private var dismiss
-    @State private var showLettersWeb = false
 
     private let motto = ["tickets": "修修补补。", "notes": "等你路过。", "letters": "见字如面。"]
 
@@ -111,8 +111,9 @@ struct BoardScreen: View {
             }
         }
         .task { await m.refresh() }
-        .onChange(of: m.tab) { t in if t == "letters" { showLettersWeb = true; m.tab = "notes" } }
-        .fullScreenCover(isPresented: $showLettersWeb) { WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: "#letters") }
+        .onChange(of: m.tab) { t in if t == "letters" { m.tab = "notes"; onWeb("#letters") } }
+        .navigationBarHidden(true)
+        .ignoresSafeArea(.keyboard)
     }
 
     @ViewBuilder private var list: some View {
@@ -161,7 +162,7 @@ struct BoardScreen: View {
         let first = msgs.first?.content ?? ""
         let replies = max(0, msgs.count - 1)
         return Button { m.open(n) } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).foregroundColor(Theme.text)
                     Spacer()
@@ -179,7 +180,8 @@ struct BoardScreen: View {
                         Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).foregroundColor(Theme.muted)
                     }
                 }
-                Text(first).font(Theme.serif(14.5, weight: .regular)).lineSpacing(3.5).foregroundColor(Theme.text)
+                Text(first.count <= 20 && !first.contains("\n") ? first + "\n…" : first)
+                    .font(Theme.serif(14, weight: .regular)).lineSpacing(3.5).foregroundColor(Theme.text)
                     .lineLimit(2).multilineTextAlignment(.leading)
                     .strikethrough(n.closed)
             }
@@ -245,6 +247,8 @@ struct NotePop: View {
     @ObservedObject var model: BoardModel
     @State private var text = ""
     @State private var firstFloorH: CGFloat = 0
+    @State private var thumb: CGFloat = 1
+    @State private var frac: CGFloat = 0
     @FocusState private var focused: Bool
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
@@ -252,46 +256,38 @@ struct NotePop: View {
         ZStack(alignment: .center) {   // 观感居中（网页按屏高换算 margin-top 居中）
             Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.38).ignoresSafeArea()
                 .onTapGesture { model.openId = nil }
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
-                                        .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
-                                    Spacer()
-                                    Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
-                                }
-                                RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
+                                    .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
+                                Spacer()
+                                Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
                             }
-                            .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
-                            .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
+                            RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
                         }
+                        .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
+                        .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
+                        if idx < (note.msgs ?? []).count - 1 { Rectangle().fill(Theme.border).frame(height: 1) }
                     }
+                    replyRow.padding(.top, 14)
                 }
-                .frame(maxHeight: foldHeight)
-                .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    TextField("", text: $text, prompt: Text("Reply…").foregroundColor(Theme.muted.opacity(0.6)))
-                        .font(.system(size: 15)).foregroundColor(Theme.text)
-                        .focused($focused)
-                        .padding(.vertical, 8).padding(.horizontal, 14)
-                        .background(Theme.composer, in: Capsule())
-                        .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
-                    Button {
-                        let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !v.isEmpty { text = ""; Task { await model.reply(note.id, v) } }
-                        else if note.isTicket && !note.closed { Task { await model.closeTicket(note.id) } }
-                    } label: {
-                        Text((note.isTicket && !note.closed && text.trimmingCharacters(in: .whitespaces).isEmpty) ? "✓" : "↑")
-                            .font(.system(size: 15)).foregroundColor(.white)
-                            .frame(width: 30, height: 30).background(Theme.accent, in: Circle())
-                    }
-                }
-                .padding(.top, 14)
+                .background(ScrollObserver { y, ch, vh in
+                    let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
+                })
             }
+            .scrollIndicators(.hidden)
+            .overlay(alignment: .topTrailing) {
+                GeometryReader { g in
+                    Capsule().fill(Theme.scrollTint.opacity(0.4)).frame(width: 3, height: max(20, g.size.height * thumb))
+                        .frame(maxWidth: .infinity, alignment: .trailing).offset(x: 12, y: g.size.height * frac)
+                        .opacity(thumb < 0.98 ? 1 : 0)
+                }.allowsHitTesting(false)
+            }
+            .frame(maxHeight: foldHeight)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(EdgeInsets(top: 4, leading: 18, bottom: 16, trailing: 18))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -299,11 +295,32 @@ struct NotePop: View {
         }
     }
 
-    /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼，往下翻才见后续
+    /// 跟帖输入排（照 .note-reply）：胶囊输入＋赤陶圆钮；未结工单空输入时圆钮变 ✓＝结单
+    private var replyRow: some View {
+        HStack(spacing: 8) {
+            TextField("", text: $text, prompt: Text("Reply…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
+                .font(.system(size: 15)).foregroundColor(Theme.text)
+                .focused($focused)
+                .padding(.vertical, 8).padding(.horizontal, 14)
+                .background(Theme.composer, in: Capsule())
+                .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
+            Button {
+                let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !v.isEmpty { text = ""; Task { await model.reply(note.id, v) } }
+                else if note.isTicket && !note.closed { Task { await model.closeTicket(note.id) } }
+            } label: {
+                Text((note.isTicket && !note.closed && text.trimmingCharacters(in: .whitespaces).isEmpty) ? "✓" : "↑")
+                    .font(.system(size: 15)).foregroundColor(.white)
+                    .frame(width: 30, height: 30).background(Theme.accent, in: Circle())
+            }
+        }
+    }
+
+    /// 点开先只见克的首楼（08-27 寻定）：有回复时卡高锁到首楼＋20，回复与输入排都藏在下面，往下翻才见
     private var foldHeight: CGFloat {
-        let cap = UIScreen.main.bounds.height * 0.74 - 90
+        let cap = UIScreen.main.bounds.height * 0.74
         let n = (note.msgs ?? []).count
-        if n > 1, firstFloorH > 0 { return min(cap, firstFloorH + 20) }   // 网页：首楼高 +20，不露下一楼的头
+        if n > 1, firstFloorH > 0 { return min(cap, firstFloorH + 20) }
         return cap
     }
 }
