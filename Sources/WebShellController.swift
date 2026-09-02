@@ -20,10 +20,12 @@ final class WebShellController: UIViewController {
 
     private let token: String
     private let onLogout: () -> Void
+    private let openDrawer: Bool
     private var webView: WKWebView!
 
-    init(token: String, onLogout: @escaping () -> Void) {
+    init(token: String, openDrawer: Bool = false, onLogout: @escaping () -> Void) {
         self.token = token
+        self.openDrawer = openDrawer
         self.onLogout = onLogout
         super.init(nibName: nil, bundle: nil)
     }
@@ -65,6 +67,10 @@ final class WebShellController: UIViewController {
         let seed = """
         (function(){
           try { localStorage.setItem("token", \(Self.jsString(token))); } catch(e) {}
+          // 从 App 的 ≡ 进来＝直接把抽屉推开（书架/相册/留言板/记忆/月历都在里面）
+          if (\(openDrawer ? "true" : "false")) document.addEventListener("DOMContentLoaded", function(){
+            var d = document.getElementById("drawer"); if (d) d.classList.add("open");
+          });
           document.addEventListener("DOMContentLoaded", function(){
             var login = document.getElementById("login");
             if (!login) return;

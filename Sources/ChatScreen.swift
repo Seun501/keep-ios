@@ -495,7 +495,7 @@ struct WebShellScreen: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(Theme.bg)
-            ShellView(token: Keychain.token ?? "", onLogout: { dismiss(); onLogout() })
+            ShellView(token: Keychain.token ?? "", openDrawer: true, onLogout: { dismiss(); onLogout() })
                 .ignoresSafeArea(edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         }
