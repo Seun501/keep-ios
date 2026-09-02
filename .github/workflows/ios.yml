@@ -20,6 +20,10 @@ on:
         description: "归档并上传 TestFlight"
         type: boolean
         default: false
+      screens:
+        description: "截图班要截的页（空格分隔）；macOS 分钟按十倍计费，只截要看的"
+        type: string
+        default: "chat drawer board boardpop boardreply greet"
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -65,15 +69,13 @@ jobs:
           APP=$(find build/DerivedData -name "Keep.app" -path "*iphonesimulator*" | head -1)
           xcrun simctl install "$UDID" "$APP"
           mkdir -p artifacts
-          # 预览模式：假对话，不登录不联网；每页起一次、等 6 秒、截一张
-          for SCREEN in chat drawer board boardpop boardreply; do
+          # 预览模式：假对话，不登录不联网；每页起一次、等 7 秒、截一张（只截 screens 里点名的页）
+          SCREENS="${{ github.event.inputs.screens }}"; [ -z "$SCREENS" ] && SCREENS="chat drawer board boardpop boardreply greet"
+          for SCREEN in $SCREENS; do
             SIMCTL_CHILD_KEEP_PREVIEW=1 SIMCTL_CHILD_KEEP_SCREEN=$SCREEN xcrun simctl launch --terminate-running-process "$UDID" cn.seunk.keep
-            sleep 9
+            sleep 7
             xcrun simctl io "$UDID" screenshot "artifacts/$SCREEN.png"
           done
-          SIMCTL_CHILD_KEEP_PREVIEW=1 SIMCTL_CHILD_KEEP_SCREEN=greet xcrun simctl launch --terminate-running-process "$UDID" cn.seunk.keep
-          sleep 5
-          xcrun simctl io "$UDID" screenshot "artifacts/greet.png"
           # 踩坑册：别信界面，看包。把最终 Info.plist 与授权一并留证。
           plutil -p "$APP/Info.plist" > artifacts/Info.plist.txt
 
