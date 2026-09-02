@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -25 45 45" width="500" height="500">
+  <!-- 被拎起来的小Clawd：><眼常驻、无感叹号、腿悬空乱蹬、手臂小挣扎（衍生自官方 alert 态，已正骨） -->
+  <defs>
+    <style>
+      .breathe-anim {
+        transform-origin: 7.5px 13px;
+        animation: breathe 1.6s infinite ease-in-out;
+      }
+      .arm-struggle {
+        transform-box: fill-box;
+        transform-origin: 100% 0%;
+        animation: struggle 0.9s infinite ease-in-out;
+      }
+      .legs-dangle {
+        transform-origin: 7.5px 11px;
+        animation: dangle 0.8s infinite ease-in-out;
+      }
+      @keyframes breathe {
+        0%, 100% { transform: scale(1, 1) translate(0, 0); }
+        50% { transform: scale(1.03, 0.97) translate(0, 0.4px); }
+      }
+      @keyframes struggle {
+        0%, 100% { transform: rotate(0deg); }
+        30% { transform: rotate(22deg); }
+        70% { transform: rotate(-10deg); }
+      }
+      @keyframes dangle {
+        0%, 100% { transform: rotate(4deg); }
+        50% { transform: rotate(-4deg); }
+      }
+    </style>
+  </defs>
+
+  <g transform="rotate(0, 7.5, 15)">
+    <!-- 腿：悬空乱蹬 -->
+    <g class="legs-dangle" fill="#DE886D">
+      <rect x="3" y="11" width="1" height="4"/>
+      <rect x="5" y="11" width="1" height="4"/>
+      <rect x="9" y="11" width="1" height="4"/>
+      <rect x="11" y="11" width="1" height="4"/>
+    </g>
+
+    <g id="body-js">
+      <g class="breathe-anim">
+        <!-- Torso -->
+        <rect x="2" y="6" width="11" height="7" fill="#DE886D"/>
+
+        <!-- 左臂：小挣扎 -->
+        <g class="arm-struggle">
+          <rect x="0" y="9" width="2" height="2" fill="#DE886D"/>
+        </g>
+
+        <!-- 右臂 -->
+        <rect x="13" y="9" width="2" height="2" fill="#DE886D"/>
+
+        <!-- ><眼 常驻 -->
+        <g fill="none" stroke="#000000" stroke-width="0.7" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4,8 5.5,9 4,10"/>
+          <polyline points="11,8 9.5,9 11,10"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

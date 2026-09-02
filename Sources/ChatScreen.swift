@@ -202,6 +202,11 @@ struct ChatScreen: View {
     @State private var pending: [String] = []
     @State private var picks: [PhotosPickerItem] = []
     @State private var showWeb = false
+    @State private var showMeal = false
+    @State private var greetOn = true
+    @State private var mealEchoes: [String] = []
+    @StateObject private var lintel = LintelModel()
+    @StateObject private var clawd = ClawdModel()
     @State private var atBottom = true
     @State private var farFromBottom = false
     @State private var scrollFrac: CGFloat = 0      // 自绘滚动条：可见区起点占比
@@ -215,6 +220,10 @@ struct ChatScreen: View {
             header
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
+                    GeometryReader { g in
+                        Color.clear.onAppear { clawd.layout(area: g.size) }
+                            .onChange(of: g.size) { sz in clawd.layout(area: sz) }
+                    }
                     ScrollView {
                         LazyVStack(spacing: 22) {
                             if model.renderFrom > 0 {
@@ -224,6 +233,9 @@ struct ChatScreen: View {
                             }
                             ForEach(model.items) { r in row(r.item) }
                             if let live = model.live { liveView(live) }
+                            ForEach(Array(mealEchoes.enumerated()), id: \.offset) { _, line in
+                                PingChipView(msg: Msg(role: "user", content: line, ts: nil), forceMeal: true)
+                            }
                             Color.clear.frame(height: 1).id("bottom")
                                 .onAppear { atBottom = true }.onDisappear { atBottom = false }
                         }
@@ -252,6 +264,8 @@ struct ChatScreen: View {
                     .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
                     .onAppear { Task { await model.load() } }
 
+                    ClawdView(m: clawd).zIndex(5)
+
                     if farFromBottom && !atBottom {
                         Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
                             Image(systemName: "arrow.down").font(.system(size: 15, weight: .semibold))
@@ -266,11 +280,21 @@ struct ChatScreen: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.82)))
                     }
                 }
+                .coordinateSpace(name: "clawdZone")
+                .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
             }
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
+        .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60) } }
+        .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
+        .onChange(of: model.sending) { s in clawd.busy(s) }
+        .onChange(of: model.live?.events ?? 0) { _ in
+            if let l = model.live, l.items.contains(where: { if case .seg(let sg) = $0 { return sg.error != nil }; return false }) { clawd.alert() }
+        }
+        .task { await lintel.refresh() }
+        .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
         .onAppear { model.onLogout = onLogout }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in if p == .active { Task { await model.pulse() } } }
@@ -292,9 +316,9 @@ struct ChatScreen: View {
         .allowsHitTesting(false)
     }
 
-    /// 顶栏：左上角展开钮（照网页 #menuBtn：42px 圆、发丝圈、三道 16×2 靠左），中间 Keep + 相遇天数（Snell Roundhand）。
+    /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
             Button { showWeb = true } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(0..<3, id: \.self) { _ in
@@ -309,16 +333,15 @@ struct ChatScreen: View {
                 .shadow(color: Color.black.opacity(0.08), radius: 14, y: 8)
             }
             .buttonStyle(.plain)
-            Spacer()
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text("Keep").font(.custom("Snell Roundhand", size: 30).weight(.bold)).foregroundColor(Theme.text)
-                Text("\(model.metDays)").font(.custom("Snell Roundhand", size: 26).weight(.semibold)).foregroundColor(Theme.accent)
-                    .baselineOffset(-8)
+            LintelColumn(m: lintel)
+            Button { showMeal = true } label: {
+                BowlIcon().frame(width: 34, height: 34)
             }
-            Spacer()
-            Color.clear.frame(width: 42, height: 42)
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 4)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+        .background(Theme.bg)
+        .zIndex(30)
     }
 
     @ViewBuilder private func row(_ item: TimelineItem) -> some View {

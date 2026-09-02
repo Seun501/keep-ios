@@ -175,13 +175,14 @@ struct ToolChipView: View {
 
 struct PingChipView: View {
     let msg: Msg
+    var forceMeal = false
     var body: some View {
         VStack(spacing: 6) {
             if let u = msg.images?.first {
                 RemoteImage(src: u).frame(maxWidth: 140, maxHeight: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            Text((msg.rainNote == true ? "" : (msg.meal == true ? "🍚 " : "🌙 ")) + (msg.content ?? ""))
+            Text((msg.rainNote == true ? "" : ((msg.meal == true || forceMeal) ? "🍚 " : "🌙 ")) + (msg.content ?? ""))
                 .font(Theme.round(12.5)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
