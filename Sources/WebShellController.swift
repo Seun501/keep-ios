@@ -13,7 +13,19 @@ final class WebShellController: UIViewController {
     static let home = URL(string: "https://ke.seunk.cn/")!
     static let ownHosts: Set<String> = ["ke.seunk.cn"]
 
+    private let token: String
+    private let onLogout: () -> Void
     private var webView: WKWebView!
+
+    init(token: String, onLogout: @escaping () -> Void) {
+        self.token = token
+        self.onLogout = onLogout
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit { webView?.configuration.userContentController.removeScriptMessageHandler(forName: "keep") }
     /// 键盘上沿在本视图坐标系里的 y；nil＝键盘收着。
     private var keyboardTop: CGFloat?
 
@@ -39,8 +51,33 @@ final class WebShellController: UIViewController {
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
-        cfg.websiteDataStore = .default()               // 口令/localStorage 持久，登一次就行
+        cfg.websiteDataStore = .default()               // localStorage 持久（草稿/已读等）
         cfg.applicationNameForUserAgent = "KeepShell/1"
+
+        // 口令由原生登录页拿到，在页面任何脚本跑之前种进 localStorage——网页照旧读 token 直入，
+        // 它的口令页不会出现。只对自家域注入。网页若把 token 清掉（登出/口令失效）会露出登录层，
+        // 那时通知原生回到原生口令页。
+        let seed = """
+        (function(){
+          try { localStorage.setItem("token", \(Self.jsString(token))); } catch(e) {}
+          document.addEventListener("DOMContentLoaded", function(){
+            var login = document.getElementById("login");
+            if (!login) return;
+            var seen = false;
+            new MutationObserver(function(){
+              var shown = getComputedStyle(login).display !== "none";
+              if (shown && !seen && !localStorage.getItem("token")) {
+                seen = true;
+                window.webkit && window.webkit.messageHandlers.keep &&
+                  window.webkit.messageHandlers.keep.postMessage({type:"logout"});
+              }
+            }).observe(login, {attributes:true, attributeFilter:["style","class"]});
+          });
+        })();
+        """
+        let uc = cfg.userContentController
+        uc.addUserScript(WKUserScript(source: seed, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        uc.add(self, name: "keep")
 
         let wv = WKWebView(frame: view.bounds, configuration: cfg)
         wv.navigationDelegate = self
@@ -129,6 +166,15 @@ final class WebShellController: UIViewController {
         }
     }
 
+    // MARK: - 工具
+
+    /// 把字符串安全地写成 JS 字面量。
+    private static func jsString(_ s: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: [s])
+        let arr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
+    }
+
     // MARK: - 站外链接
 
     private func isOwn(_ url: URL?) -> Bool {
@@ -161,5 +207,15 @@ extension WebShellController: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+}
+
+extension WebShellController: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == "keep",
+              let body = message.body as? [String: Any],
+              body["type"] as? String == "logout" else { return }
+        onLogout()
     }
 }
