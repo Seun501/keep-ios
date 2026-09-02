@@ -58,6 +58,7 @@ final class ClawdModel: ObservableObject {
 
     func layout(area: CGSize, areaTop: CGFloat = 0) {
         let size: CGFloat = 150
+        guard area.width > 200, area.height > 200 else { return }   // 还没量到真尺寸别落位（否则 clamp 到左上角）
         let y0 = -size * 0.42, y1 = max(y0, area.height - size + size * 0.11)
         zone = CGRect(x: 8, y: y0, width: max(0, area.width - size - 16), height: max(0, y1 - y0))
         if !placed {
@@ -179,21 +180,6 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
-            let nc = NotificationCenter.default
-            kb = nc.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self, weak sv] n in
-                guard let self, let sv, self.atBottom,
-                      let end = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
-                      let win = sv.window else { return }
-                let kbTop = win.convert(end, from: nil).minY
-                let svBottom = sv.convert(sv.bounds, to: win).maxY
-                let overlap = max(0, svBottom - kbTop - sv.adjustedContentInset.bottom)
-                guard overlap > 0 else { return }
-                let dur = n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
-                let curve = n.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt ?? 7
-                UIView.animate(withDuration: dur, delay: 0, options: UIView.AnimationOptions(rawValue: curve << 16)) {
-                    sv.contentOffset.y += overlap
-                }
-            }
             fire()
         }
     }
@@ -230,5 +216,24 @@ struct KeyboardDismisser: UIViewRepresentable {
             g.view?.endEditing(true)
         }
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+
+/// 导航条一隐藏，系统的「左缘右滑返回」就被关了；这里把手势重新打开（寻定：每个页面都要右滑退出）。
+struct SwipeBackEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        DispatchQueue.main.async { enable(from: vc) }
+        return vc
+    }
+    func updateUIViewController(_ vc: UIViewController, context: Context) { enable(from: vc) }
+    private func enable(from vc: UIViewController) {
+        var p = vc.parent
+        while let cur = p, !(cur is UINavigationController) { p = cur.parent }
+        if let nav = p as? UINavigationController ?? vc.navigationController {
+            nav.interactivePopGestureRecognizer?.delegate = nil
+            nav.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 }

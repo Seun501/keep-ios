@@ -20,8 +20,11 @@ struct DrawerView: View {
     @State private var notesBadge = 0
 
     var body: some View {
+        let w = min(UIScreen.main.bounds.width * 0.78, 300)
         ZStack(alignment: .leading) {
-            Color.black.opacity(0.35).ignoresSafeArea().onTapGesture { close() }.transition(.identity)   // 暗幕不淡入淡出
+            Color.black.opacity(shown ? 0.35 : 0).ignoresSafeArea()
+                .allowsHitTesting(shown).onTapGesture { close() }
+                .animation(nil, value: shown)                       // 暗幕不淡入淡出（寻定）
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("Keep").font(.custom("Snell Roundhand", size: 34).weight(.semibold)).tracking(1).foregroundColor(Theme.text)
@@ -60,21 +63,26 @@ struct DrawerView: View {
                 Spacer(minLength: 0)
 
                 calendar
-                    .padding(EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6))
+                    .padding(EdgeInsets(top: 12, leading: 6, bottom: 8, trailing: 6))
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.05), radius: 2, y: 1)
+                    .transaction { $0.animation = nil }                // 切月干干净净，不动画
 
-                Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity).padding(.top, 6)
+                Text(usage.isEmpty ? " " : usage).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)   // 先占位，晚到也不挪日历
             }
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 10, trailing: 22))
-            .frame(width: min(UIScreen.main.bounds.width * 0.78, 300))
+            .padding(EdgeInsets(top: 20, leading: 22, bottom: 6, trailing: 22))
+            .frame(width: w)
             .frame(maxHeight: .infinity)
             .background(Theme.boardBg.ignoresSafeArea())
             .overlay(alignment: .trailing) { Rectangle().fill(Theme.border).frame(width: 1).ignoresSafeArea() }
-            .transition(.move(edge: .leading))
+            .transaction { $0.animation = nil }                    // 面板内容一律不动画（额度/角标晚到不挪位）
+            .offset(x: shown ? 0 : -w - 8)                          // 只从左滑出/滑回
+            .animation(.easeOut(duration: 0.22), value: shown)
+            .gesture(DragGesture(minimumDistance: 20).onEnded { v in if v.translation.width < -50 { close() } })
         }
-        .task { await load() }
+        .allowsHitTesting(shown)
+        .task(id: shown) { if shown { await load() } }
     }
 
     private var hair: some View { Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1) }
@@ -90,7 +98,7 @@ struct DrawerView: View {
                         .background(Theme.accent, in: Capsule())
                 }
             }
-            .padding(EdgeInsets(top: 14, leading: 10, bottom: 14, trailing: 2))
+            .padding(EdgeInsets(top: 17, leading: 10, bottom: 17, trailing: 2))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -143,7 +151,7 @@ struct DrawerView: View {
         guard !s.isEmpty else { return }
         onNavigate(.web("#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s)))
     }
-    private func close() { withAnimation(.easeIn(duration: 0.18)) { shown = false } }
+    private func close() { shown = false }
 
     private var metDays: Int {
         var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current

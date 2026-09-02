@@ -245,8 +245,8 @@ struct ChatScreen: View {
                 .navigationBarHidden(true)
                 .navigationDestination(for: Route.self) { r in
                     switch r {
-                    case .board: BoardScreen(onLogout: onLogout, onWeb: { path.append(.web($0)) })
-                    case .web(let link): WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: link).navigationBarHidden(true)
+                    case .board: BoardScreen(onLogout: onLogout, onWeb: { path.append(.web($0)) }).background(SwipeBackEnabler())
+                    case .web(let link): WebShellScreen(onLogout: onLogout, openDrawer: false, deepLink: link).navigationBarHidden(true).background(SwipeBackEnabler())
                     }
                 }
         }
@@ -270,7 +270,7 @@ struct ChatScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
-            if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { withAnimation(.easeOut(duration: 0.22)) { drawerOn = true } }
+            if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { mealEchoes.append($0) }).zIndex(60) } }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
@@ -288,7 +288,7 @@ struct ChatScreen: View {
         }
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
-        .overlay { if drawerOn { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) } }
+        .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
             Button("好", role: .cancel) {}
         } message: { Text(model.doorAlert ?? "") }
@@ -343,6 +343,12 @@ struct ChatScreen: View {
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { n in
+                // 键盘升起：原本钉底就跟着键盘一起滚到底（一次，跟键盘同时长）
+                guard atBottom else { return }
+                let dur = n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+                withAnimation(.easeOut(duration: dur)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .onAppear { Task { await model.load() } }
     }
 
@@ -378,14 +384,14 @@ struct ChatScreen: View {
     /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
     private var header: some View {
         HStack(spacing: 0) {
-            Button { withAnimation(.easeOut(duration: 0.22)) { drawerOn = true } } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 1).fill(Theme.text).frame(width: 15, height: 1.8)
-                    }
+            Button { drawerOn = true } label: {
+                VStack(alignment: .leading, spacing: 4) {   // 照网页：三道 16/16/11 × 2，圆头，八成不透明
+                    RoundedRectangle(cornerRadius: 1).fill(Theme.text.opacity(0.8)).frame(width: 16, height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(Theme.text.opacity(0.8)).frame(width: 16, height: 2)
+                    RoundedRectangle(cornerRadius: 1).fill(Theme.text.opacity(0.8)).frame(width: 11, height: 2)
                 }
-                .padding(.leading, 11)
-                .frame(width: 39, height: 39, alignment: .leading)
+                .padding(.leading, 12)
+                .frame(width: 42, height: 42, alignment: .leading)
                 .background(Theme.menuFill, in: Circle())
                 .overlay(Circle().stroke(Theme.hairRing, lineWidth: 1.5))
                 .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
@@ -483,7 +489,7 @@ struct ChatScreen: View {
                         } else if canSend {
                             Text("↑").font(.system(size: 17, weight: .medium)).foregroundColor(.white)   // 照网页 #send .arr
                         } else {
-                            Image("wav").renderingMode(.template).resizable().frame(width: 28, height: 28)
+                            Image("wav").renderingMode(.template).resizable().frame(width: 25, height: 25)
                                 .foregroundColor(Theme.sendIdleFg)                              // 网页那份 SVG 原件
                         }
                     }

@@ -107,9 +107,8 @@ struct GreetOverlay: View {
             if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { bye() } }
             Task { await Greet.refreshCache() }
         }
-        .transition(.opacity)
     }
-    private func bye() { withAnimation(.easeInOut(duration: 0.7)) { shown = false } }
+    private func bye() { shown = false }   // 寻定：不淡出，直接走
 }
 
 /// 句尾全角标点悬挂（照网页 hanging-punctuation: force-end）：居中按没有它算——整块右移半个标点宽即等效。

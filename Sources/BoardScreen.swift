@@ -114,6 +114,7 @@ struct BoardScreen: View {
         .onChange(of: m.tab) { t in if t == "letters" { m.tab = "notes"; onWeb("#letters") } }
         .navigationBarHidden(true)
         .ignoresSafeArea(.keyboard)
+        .background(SwipeBackEnabler())
     }
 
     @ViewBuilder private var list: some View {
@@ -180,18 +181,27 @@ struct BoardScreen: View {
                         Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).foregroundColor(Theme.muted)
                     }
                 }
-                Text(first.count <= 20 && !first.contains("\n") ? first + "\n…" : first)
+                Text(oneLine(first) ? first + "\n…" : first)
                     .font(Theme.serif(14, weight: .regular)).lineSpacing(3.5).foregroundColor(Theme.text)
                     .lineLimit(2).multilineTextAlignment(.leading)
                     .strikethrough(n.closed)
             }
-            .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+            .padding(EdgeInsets(top: 16, leading: 15, bottom: 16, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.06), radius: 2, y: 1)
             .opacity(n.closed ? 0.55 : 1)
         }
         .buttonStyle(.plain)
+    }
+
+    /// 首行能不能一行放下（放得下就补一行「…」当预览占位，寻定）
+    private func oneLine(_ t: String) -> Bool {
+        if t.contains("\n") { return false }
+        let w = UIScreen.main.bounds.width - 44 - 30
+        let r = (t as NSString).boundingRect(with: CGSize(width: w, height: 1000), options: [.usesLineFragmentOrigin],
+                                             attributes: [.font: Theme.uiSerif(14)], context: nil)
+        return r.height < Theme.uiSerif(14).lineHeight * 1.5
     }
 
     private func dayEn(_ iso: String?) -> String {
@@ -249,6 +259,9 @@ struct NotePop: View {
     @State private var firstFloorH: CGFloat = 0
     @State private var thumb: CGFloat = 1
     @State private var frac: CGFloat = 0
+    @State private var barOn = false
+    @State private var lastY: CGFloat = -1
+    @State private var barHide: DispatchWorkItem? = nil
     @FocusState private var focused: Bool
     private let xunGreen = Theme.dyn(0x3F7D58, 0x8CC5A1)
 
@@ -270,12 +283,13 @@ struct NotePop: View {
                         }
                         .padding(EdgeInsets(top: 14, leading: 2, bottom: 15, trailing: 2))
                         .background(GeometryReader { g in Color.clear.onAppear { if idx == 0 { firstFloorH = g.size.height } } })
-                        if idx < (note.msgs ?? []).count - 1 { Rectangle().fill(Theme.border).frame(height: 1) }
                     }
-                    replyRow.padding(.top, 14)
+                    replyRow.padding(.top, 10)
                 }
                 .background(ScrollObserver { y, ch, vh in
                     let total = max(ch, 1); thumb = min(1, vh / total); frac = min(max(y / total, 0), 1 - thumb)
+                    if abs(y - lastY) > 0.5 { barOn = true; barHide?.cancel(); let w = DispatchWorkItem { barOn = false }; barHide = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w) }
+                    lastY = y
                 })
             }
             .scrollIndicators(.hidden)
@@ -283,12 +297,13 @@ struct NotePop: View {
                 GeometryReader { g in
                     Capsule().fill(Theme.scrollTint.opacity(0.4)).frame(width: 3, height: max(20, g.size.height * thumb))
                         .frame(maxWidth: .infinity, alignment: .trailing).offset(x: 12, y: g.size.height * frac)
-                        .opacity(thumb < 0.98 ? 1 : 0)
+                        .opacity(thumb < 0.98 && barOn ? 1 : 0)
+                        .animation(.easeOut(duration: 0.25), value: barOn)
                 }.allowsHitTesting(false)
             }
             .frame(maxHeight: foldHeight)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(EdgeInsets(top: 4, leading: 18, bottom: 16, trailing: 18))
+            .padding(EdgeInsets(top: 4, leading: 18, bottom: 10, trailing: 18))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
