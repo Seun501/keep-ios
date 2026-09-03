@@ -514,12 +514,9 @@ struct ChatScreen: View {
                 let dur = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                 withAnimation(.timingCurve(0.38, 0.7, 0.125, 1.0, duration: dur)) { proxy.scrollTo(id, anchor: .bottom) }
             }
-            // 键盘起/收走完再钉一次：懒列表在视口改高时末行常没排出来（模拟器实证：键盘起后内容高少了末行那 84、收后底下留一大截空），
-            // 照冷启动的路子——先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底（寻验：打字后点消息区收键盘，克的最新回复看不见）
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                guard atBottom, path.isEmpty, !showMeal, !drawerOn else { return }
-                scrollBottom(proxy)
-            }
+            // 键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
+            // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底（寻验：打字后点消息区收键盘，克的最新回复看不见）。
+            // 键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
                 guard atBottom, path.isEmpty, !showMeal, !drawerOn else { return }
                 scrollBottom(proxy)
