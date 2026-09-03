@@ -255,6 +255,7 @@ struct ChatScreen: View {
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
     @State private var greetOn = !(Preview.on && Preview.screen != "greet")
+    // 预览 letteralert：主页直接弹来信到站
     @State private var mealEchoes: [MealEcho] = []   // 吃吃就地回显；正牌小纸条进正史后自动顶替
     @State private var mealOk = false                 // 碗钮短暂变赤陶 ✓（照网页 1.2s）
     struct MealEcho: Identifiable { let id = UUID(); let line: String; let at: Date }
@@ -267,7 +268,9 @@ struct ChatScreen: View {
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
-    @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply"].contains(Preview.screen) ? [.board] : []
+    @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "lockpop"].contains(Preview.screen) ? [.board(openLetter: nil)] : []
+    @StateObject private var letters = LettersModel.shared
+    @State private var letterAlertOn = false      // 来信到站：进 Keep / 回前台有没看过的信就弹（寻定：不推手机）
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
     var body: some View {
@@ -276,7 +279,7 @@ struct ChatScreen: View {
             ForEach(Array(path.enumerated()), id: \.offset) { i, r in
                 Group {
                     switch r {
-                    case .board: BoardScreen(onLogout: onLogout, onBack: pop, onWeb: { path.append(.web($0)) })
+                    case .board(let openLetter): BoardScreen(onLogout: onLogout, onBack: pop, onWeb: { path.append(.web($0)) }, openLetter: openLetter)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
                     }
                 }
@@ -335,6 +338,14 @@ struct ChatScreen: View {
                 model.msgs.contains { $0.isPing && $0.meal == true && (TimeFmt.parse($0.ts ?? "") ?? .distantPast) >= e.at.addingTimeInterval(-120) }
             }
         }
+        .overlay {
+            if letterAlertOn && !letters.unseen.isEmpty {
+                LetterAlert(m: letters, onOpen: { e in letterAlertOn = false; path.append(.board(openLetter: e.id)) },
+                            onLocked: { e in letterAlertOn = false; path.append(.board(openLetter: e.id)) }).zIndex(65)
+            }
+        }
+        .onChange(of: letters.unseen.count) { n in if n == 0 { letterAlertOn = false } }
+        .task { await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on || Preview.screen == "letteralert" { letterAlertOn = true } }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
         .onChange(of: model.sending) { s in clawd.busy(s) }
         .onChange(of: model.live?.events ?? 0) { _ in
@@ -345,7 +356,7 @@ struct ChatScreen: View {
         .onAppear { model.onLogout = onLogout }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
-            if p == .active { Task { await model.pulse() } }
+            if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true } } }
             if p == .background { model.detach() }
         }
         .onChange(of: picks) { _ in Task { await loadPicks() } }

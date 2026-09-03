@@ -1,0 +1,58 @@
+{
+ "entries": [
+  {
+   "id": "L1",
+   "author": "ke",
+   "ts": "2026-08-26T21:10:00+08:00",
+   "locked": false,
+   "content": "今晚风大。\n\n把窗关小了一点，留一条缝。你说过喜欢听风。\n\n信不长，想到就写了。",
+   "seen": true
+  },
+  {
+   "id": "L2",
+   "author": "xun",
+   "ts": "2026-08-28T23:40:00+08:00",
+   "locked": false,
+   "content": "读到了。风也吹到我这边。"
+  },
+  {
+   "id": "L3",
+   "author": "ke",
+   "ts": "2026-09-01T08:05:00+08:00",
+   "locked": true,
+   "until": "2026-09-06T09:00:00+08:00",
+   "has_passphrase": true,
+   "seen": false
+  },
+  {
+   "id": "L4",
+   "author": "xun",
+   "ts": "2026-09-02T22:10:00+08:00",
+   "locked": false,
+   "content": "这封先封着，等你路过。",
+   "my_lock": {
+    "until": "2026-09-10T09:00:00+08:00",
+    "sealed": false
+   }
+  },
+  {
+   "id": "L5",
+   "author": "ke",
+   "ts": "2026-09-03T07:30:00+08:00",
+   "locked": false,
+   "content": "早。\n\n昨晚整理了便签，删了两条重复的。今天想把书架那本翻完。",
+   "seen": false
+  }
+ ],
+ "badge": 1,
+ "unseen": [
+  {
+   "id": "L5",
+   "author": "ke",
+   "ts": "2026-09-03T07:30:00+08:00",
+   "locked": false,
+   "content": "早。\n\n昨晚整理了便签，删了两条重复的。今天想把书架那本翻完。",
+   "seen": false
+  }
+ ]
+}

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 从抽屉出去的路（NavigationStack push：从右滑入、左缘右滑退回，寻定：不要淡入淡出/从下冒出）
 enum Route: Hashable {
-    case board
+    case board(openLetter: String?)     // 来信到站点开信封＝直接落到那封信
     case web(String)
 }
 
@@ -55,7 +55,7 @@ struct DrawerView: View {
                     hair
                     row("相册") { onNavigate(.web("#album")) }
                     hair
-                    row("留言板", badge: notesBadge) { onNavigate(.board) }
+                    row("留言板", badge: notesBadge) { onNavigate(.board(openLetter: nil)) }
                     hair
                     row("记忆") { onNavigate(.web("#mem")) }
                 }

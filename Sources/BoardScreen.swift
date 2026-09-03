@@ -108,7 +108,13 @@ struct BoardScreen: View {
     let onLogout: () -> Void
     var onBack: () -> Void = {}
     var onWeb: (String) -> Void = { _ in }
+    var openLetter: String? = nil
     @StateObject private var m = BoardModel()
+    @StateObject private var lm = LettersModel.shared
+    @State private var letterOpen: Letter? = nil
+    @State private var composing = false
+    @State private var composeDraft: LetterDraft? = nil
+    @State private var lockLetter: Letter? = nil
 
     private let motto = ["tickets": "修修补补。", "notes": "等你路过。", "letters": "见字如面。"]
 
@@ -138,9 +144,39 @@ struct BoardScreen: View {
             if let id = m.openId, let n = m.notes.first(where: { $0.id == id }) {
                 NotePop(note: n, model: m).zIndex(80)
             }
+            // 写信入口＝右下角小圆球（08-27 寻定：墨色，橙用太多了），钉在底栏上方
+            if m.tab == "letters" && letterOpen == nil && !composing {
+                Button { composeDraft = nil; composing = true } label: {
+                    Text("+").font(.system(size: 25, weight: .light)).foregroundColor(Theme.bg).padding(.bottom, 2)
+                        .frame(width: 44, height: 44).background(Theme.text, in: Circle())
+                        .shadow(color: Wax.ink.opacity(0.28), radius: 7, y: 5)
+                }.buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 20).padding(.bottom, 74)
+                .zIndex(75)
+            }
+            if let e = letterOpen { LetterReadView(e: e, m: lm, onBack: { letterOpen = nil }).zIndex(85) }
+            if composing { LetterComposeView(m: lm, draft: composeDraft, onClose: { composing = false }, onSent: { composing = false }).zIndex(86) }
+            if let l = lockLetter { LockPop(e: l, m: lm, onClose: { lockLetter = nil }).zIndex(90) }
         }
-        .task { await m.refresh() }
-        .onChange(of: m.tab) { t in if t == "letters" { m.tab = "notes"; onWeb("#letters") } }
+        .task {
+            await m.refresh(); await lm.refresh()
+            if Preview.on {
+                switch Preview.screen {
+                case "letters": m.tab = "letters"
+                case "letterread": m.tab = "letters"; letterOpen = lm.entries.first { $0.id == "L1" }
+                case "lettercompose", "seal": m.tab = "letters"; composing = true
+                case "lockpop": m.tab = "letters"; lockLetter = lm.entries.first { $0.id == "L3" }
+                default: break
+                }
+                return
+            }
+            if let id = openLetter, let e = lm.entries.first(where: { $0.id == id }) {
+                m.tab = "letters"
+                if e.locked { lockLetter = e } else { letterOpen = e }
+            }
+            await lm.markSeen()   // 翻开留言板＝这批信看过了（照网页 notesBtn）
+        }
     }
 
     @ViewBuilder private var list: some View {
@@ -151,6 +187,8 @@ struct BoardScreen: View {
             if !open.isEmpty { SecTitle("待处理"); ForEach(open) { card($0) } }
             if !done.isEmpty { SecTitle("已结"); ForEach(done) { card($0) } }
             if tickets.isEmpty && m.loaded { empty("没有工单——克没报什么毛病。") }
+        } else if m.tab == "letters" {
+            LettersList(m: lm, onOpen: { letterOpen = $0 }, onLocked: { lockLetter = $0 }, onDraft: { composeDraft = $0; composing = true })
         } else {
             let plain = newest.filter { !$0.isTicket }
             let nowMon = monLabel(Date())
