@@ -19,6 +19,7 @@ struct KeepApp: App {
                 // 吃吃笺/抽屉打字时用宿主的 safeAreaRegions 开关把让位关掉——主页纹丝不动
                 HostBox(content: ChatScreen(onLogout: {
                     Keychain.token = nil
+                    DiskCache.clear()
                     self.token = nil
                 }))
                 .ignoresSafeArea()

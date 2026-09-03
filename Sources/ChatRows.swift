@@ -206,20 +206,77 @@ struct ToolChipView: View {
     }
 }
 
+/// 吃吃/睡眠/雨情小纸条（09-03 寻挑的「时间线」款）：不要底色，一行小字、前头一个线图标、两边各一截短线；
+/// 图在字下面。多行时把宽度收到「行数不变的最窄」——最后一行不会只剩两三个字（寻问的）。
 struct PingChipView: View {
     let msg: Msg
     var forceMeal = false
+    private static let font = Theme.round(12.5)
+    private static let uiFont: UIFont = {
+        let d = UIFont.systemFont(ofSize: 12.5).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 12.5).fontDescriptor
+        return UIFont(descriptor: d, size: 12.5)
+    }()
+
+    private var isMeal: Bool { msg.meal == true || forceMeal }
+    private var icon: String { msg.rainNote == true ? "cloud" : (isMeal ? "bowl" : "moon") }
+
+    /// 文案：吃吃「12:40-寻吃了午餐：一碗豆花饭」→「12:40 午餐 · 一碗豆花饭」；雨情去掉自带的 🌧/🌤 头
+    private var line: String {
+        let raw = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if isMeal, raw.range(of: #"^\d{1,2}:\d{2}-寻吃"#, options: .regularExpression) != nil, let dash = raw.firstIndex(of: "-") {
+            let time = String(raw[..<dash])
+            var rest = String(raw[raw.index(after: dash)...])      // 寻吃了午餐：… / 寻吃过了：…
+            var note = ""
+            if let c = rest.firstIndex(of: "：") { note = String(rest[rest.index(after: c)...]); rest = String(rest[..<c]) }
+            let kind = rest.hasPrefix("寻吃了") ? String(rest.dropFirst(3)) : "吃过了"
+            return time + " " + kind + (note.isEmpty ? "" : " · " + note)
+        }
+        var s = raw
+        while let f = s.unicodeScalars.first, (f.properties.isEmoji && f.value > 0x2000) || f.value == 0xFE0F || f.value == 0x200D || f == " " {
+            s.unicodeScalars.removeFirst()
+        }
+        return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// 行数不变的最窄宽度（二分）：字排得均匀，最后一行不孤零零
+    private func balancedWidth(_ text: String, max maxW: CGFloat) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [.font: Self.uiFont]
+        func lines(_ w: CGFloat) -> Int {
+            let h = (text as NSString).boundingRect(with: CGSize(width: w, height: .greatestFiniteMagnitude),
+                                                     options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil).height
+            return max(1, Int((h / Self.uiFont.lineHeight).rounded()))
+        }
+        let n = lines(maxW)
+        if n == 1 {   // 一行：就用它本来的宽，短线贴着字
+            let w = (text as NSString).boundingRect(with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
+                                                     options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil).width
+            return ceil(w) + 1
+        }
+        var lo = maxW * 0.45, hi = maxW
+        for _ in 0..<12 {
+            let mid = (lo + hi) / 2
+            if lines(mid) > n { lo = mid } else { hi = mid }
+        }
+        return ceil(hi) + 1
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
+        let text = line
+        let maxW = min(UIScreen.main.bounds.width, 430) * 0.88 - 32 - 48 - 23   // 消息区留白、两截短线、图标
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Rectangle().fill(Theme.border).frame(width: 14, height: 1)
+                Image(icon).renderingMode(.template).resizable().frame(width: 13, height: 13).foregroundColor(Theme.muted)
+                Text(text).font(Self.font).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                    .frame(width: balancedWidth(text, max: maxW))
+                Rectangle().fill(Theme.border).frame(width: 14, height: 1)
+            }
+            .fixedSize()
             if let u = msg.images?.first {
                 RemoteImage(src: u).frame(maxWidth: 140, maxHeight: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            Text((msg.rainNote == true ? "" : ((msg.meal == true || forceMeal) ? "🍚 " : "🌙 ")) + (msg.content ?? ""))
-                .font(Theme.round(12.5)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 14).padding(.vertical, 8)
-        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .frame(maxWidth: .infinity)
     }
 }

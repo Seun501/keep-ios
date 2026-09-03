@@ -112,21 +112,33 @@ final class ChatModel: ObservableObject {
             }
             return
         }
-        do {
-            guard let id = try await GatewayAPI.latestConversationId() else { return }
-            let conv = try await GatewayAPI.conversation(id)
-            conversationId = conv.id
-            msgs = conv.messages
-            renderFrom = Self.startOfLastDays(msgs, days: 2)
-            rebuild()
-            lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
-            loadTick += 1
-            await refreshDoor()
-        } catch GatewayAPI.Failure.unauthorized {
-            onLogout()
-        } catch {
-            lastError = "连不上"
+        // 冷启动先亮上次落盘的正史（09-03 寻验：闲置两小时后开，通道卡四十秒整页白着），网上的到了再换
+        if msgs.isEmpty, let cached = GatewayAPI.cachedConversation(), !cached.messages.isEmpty { apply(cached) }
+        for attempt in 0..<2 {
+            do {
+                guard let id = try await GatewayAPI.latestConversationId() else { return }
+                let conv = try await GatewayAPI.conversation(id)
+                let p = Pulse(n: conv.messages.count, ts: conv.messages.last?.ts ?? "")
+                if conv.id != conversationId || p != lastPulse { apply(conv) }   // 和缓存一样就不重排不重滚
+                lastPulse = p; lastError = nil
+                await refreshDoor()
+                return
+            } catch GatewayAPI.Failure.unauthorized {
+                onLogout(); return
+            } catch {
+                if attempt == 0 { try? await Task.sleep(nanoseconds: 1_500_000_000); continue }   // 头一回失败歇一秒半再来一次
+                lastError = "连不上"
+            }
         }
+    }
+
+    private func apply(_ conv: ConversationPayload) {
+        conversationId = conv.id
+        msgs = conv.messages
+        renderFrom = Self.startOfLastDays(msgs, days: 2)
+        rebuild()
+        lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+        loadTick += 1
     }
 
     /// 页面开着每 15 秒摸一次脉，有变才整段重拉（吃饭卡/雨情卡/克的醒/网页那头发的话会自己冒出来）。
@@ -458,6 +470,13 @@ struct ChatScreen: View {
             .scrollBounceBehavior(.always, axes: .vertical)
             .scrollDismissesKeyboard(.interactively)
             .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
+            // 什么都没拉到（没缓存、两次都连不上）：一行小字，点一下再试（展示样式待寻审）
+            .overlay {
+                if model.items.isEmpty, model.live == nil, let e = model.lastError {
+                    Text(e).font(Theme.round(12.5)).tracking(1).foregroundColor(Theme.muted)
+                        .onTapGesture { Task { await model.load() } }
+                }
+            }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }

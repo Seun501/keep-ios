@@ -18,9 +18,10 @@ struct DrawerView: View {
     let onLogout: () -> Void
     var onNavigate: (Route) -> Void = { _ in }
     @State private var q = ""
-    @State private var days: [String] = []          // 档案馆有记录的日子 yyyy-MM-dd
+    // 日子和额度先用上次记下的（UserDefaults），拉到新的再换——通道慢时抽屉也别空着
+    @State private var days: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.days") ?? [])   // 档案馆有记录的日子 yyyy-MM-dd
     @State private var ym: (Int, Int) = (Calendar.current.component(.year, from: Date()), Calendar.current.component(.month, from: Date()))
-    @State private var usage = ""
+    @State private var usage = Preview.on ? "" : (UserDefaults.standard.string(forKey: "cache.usage") ?? "")
     @State private var notesBadge = 0
 
     var body: some View {
@@ -198,10 +199,12 @@ struct DrawerView: View {
         async let ls = get("api/letters")
         if let a = await a, let arr = a["days"] as? [[String: Any]] {
             days = arr.compactMap { $0["date"] as? String }
+            UserDefaults.standard.set(days, forKey: "cache.days")
             if let last = days.last, let y = Int(last.prefix(4)), let m = Int(last.dropFirst(5).prefix(2)) { ym = (y, m) }
         }
         if let u = await u, let fh = (u["five_hour"] as? [String: Any])?["pct"] as? Double, let sd = (u["seven_day"] as? [String: Any])?["pct"] as? Double {
             usage = "5h \(Int(fh))% · week \(Int(sd))%"
+            UserDefaults.standard.set(usage, forKey: "cache.usage")
         }
         let nb = (await nts)?["unread"] as? Int ?? 0
         let lb = (await ls)?["badge"] as? Int ?? 0

@@ -11,16 +11,20 @@ enum GatewayAPI {
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = body
-        r.timeoutInterval = 30
+        r.timeoutInterval = 15      // 断流 15 秒就算失败（09-03：出站通道卡住时 30 秒太久，脉搏也被挡着）
         return r
     }
 
-    private static func json<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {
+    private static func raw(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         let (data, resp) = try await URLSession.shared.data(for: try request(path, method: method, body: body))
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 { throw Failure.unauthorized }
         guard (200..<300).contains(code) else { throw Failure.http(code) }
-        return try JSONDecoder().decode(T.self, from: data)
+        return data
+    }
+
+    private static func json<T: Decodable>(_ path: String, method: String = "GET", body: Data? = nil) async throws -> T {
+        try JSONDecoder().decode(T.self, from: try await raw(path, method: method, body: body))
     }
 
     static func latestConversationId() async throws -> String? {
@@ -35,8 +39,16 @@ enum GatewayAPI {
         return w.door
     }
 
+    /// 当前对话整段；解出来的同时落盘，下次冷启动先亮它
     static func conversation(_ id: String) async throws -> ConversationPayload {
-        try await json("api/conversations/\(id)")
+        let d = try await raw("api/conversations/\(id)")
+        let conv = try JSONDecoder().decode(ConversationPayload.self, from: d)
+        DiskCache.write("conv.json", d)
+        return conv
+    }
+
+    static func cachedConversation() -> ConversationPayload? {
+        DiskCache.read("conv.json").flatMap { try? JSONDecoder().decode(ConversationPayload.self, from: $0) }
     }
 
     static func pulse(_ id: String) async throws -> Pulse {
