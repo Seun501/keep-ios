@@ -81,6 +81,9 @@ struct UserRowView: View {
     let text: String
     let stamp: String
     let images: [String]
+    var tagNo: String? = nil          // 档案馆条数开关：#N 贴时间旁（她的气泡时间顶右，编号从左边进）
+    var flash = false                 // #N 直跳：编号闪几秒
+    var highlight = ""                // 检索关键词标黄
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
@@ -88,13 +91,17 @@ struct UserRowView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                RichText(attr: MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n")))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
+                let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
+                RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
                     .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     .textSelection(.enabled)
             }
             if !stamp.isEmpty {
-                Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted)
+                HStack(spacing: 8) {
+                    if let t = tagNo { NoTag(t, flash: flash) }
+                    Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -135,9 +142,24 @@ struct ThinkView: View {
     }
 }
 
+/// 档案馆的条数小签：淡赤陶橙 10 号；直跳时闪几秒自己消失
+struct NoTag: View {
+    let t: String
+    var flash: Bool
+    @State private var dim = false
+    init(_ t: String, flash: Bool) { self.t = t; self.flash = flash }
+    var body: some View {
+        Text(t).font(Theme.round(flash ? 11 : 10)).foregroundColor(Theme.accent.opacity(flash ? (dim ? 0.12 : 0.8) : 0.55))
+            .onAppear { if flash { withAnimation(.easeInOut(duration: 0.5).repeatCount(8, autoreverses: true)) { dim = true } } }
+    }
+}
+
 struct AIRowView: View {
     let msg: Msg
     let showUsage: Bool
+    var tagNo: String? = nil
+    var flash = false
+    var highlight = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
@@ -151,13 +173,14 @@ struct AIRowView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 if let c = msg.content, !c.isEmpty {
-                    RichText(attr: MDWhole.make(c))
+                    RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                 }
             }
             .padding(.vertical, 11)
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(TimeFmt.stamp(msg.ts)).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    if let t = tagNo { NoTag(t, flash: flash) }
                     if showUsage, let u = msg.usage, let it = u.inputTokens {
                         (Text("\(it) tokens · ").foregroundColor(Theme.muted)
                          + Text("cache \(u.cachedTokens ?? 0)").foregroundColor(Theme.cacheTint))

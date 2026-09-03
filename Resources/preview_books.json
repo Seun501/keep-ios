@@ -1,0 +1,52 @@
+{
+ "books": [
+  {
+   "id": "b1",
+   "work_id": "w1",
+   "title": "山居笔记",
+   "author": "余秋雨",
+   "category": "散文",
+   "tags": [
+    "共读"
+   ],
+   "total_pages": 312
+  },
+  {
+   "id": "b2",
+   "work_id": "w1",
+   "title": "山居笔记（另一版）",
+   "author": "余秋雨",
+   "category": "散文",
+   "tags": [],
+   "total_pages": 300
+  },
+  {
+   "id": "b3",
+   "work_id": "w3",
+   "title": "成唯识论述记",
+   "author": "",
+   "edition_label": "影印本",
+   "category": "佛学",
+   "tags": [
+    "唯识",
+    "待读"
+   ],
+   "total_pages": 890
+  },
+  {
+   "id": "b4",
+   "work_id": "w4",
+   "title": "金融市场基础",
+   "author": "编委会",
+   "category": "课本",
+   "tags": [],
+   "total_pages": 420
+  }
+ ],
+ "categories": [
+  "散文",
+  "佛学",
+  "课本",
+  "小说"
+ ]
+}

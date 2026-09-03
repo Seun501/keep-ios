@@ -299,7 +299,18 @@ struct ChatScreen: View {
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
-    @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "lockpop"].contains(Preview.screen) ? [.board(openLetter: nil)] : []
+    @State private var path: [Route] = {
+        guard Preview.on else { return [] }
+        switch Preview.screen {
+        case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "lockpop": return [.board(openLetter: nil)]
+        case "books", "booksup": return [.books]
+        case "album", "albumbook", "albumlb": return [.album]
+        case "mem": return [.mem]
+        case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
+        case "archhits": return [.arch(day: nil, q: "安静", no: nil)]
+        default: return []
+        }
+    }()
     @StateObject private var letters = LettersModel.shared
     @StateObject private var alerts = AlertsModel()
     @State private var letterAlertOn = false      // 来信到站：进 Keep / 回前台有没看过的信就弹（寻定：不推手机）
@@ -312,6 +323,10 @@ struct ChatScreen: View {
                 Group {
                     switch r {
                     case .board(let openLetter): BoardScreen(onLogout: onLogout, onBack: pop, onWeb: { path.append(.web($0)) }, openLetter: openLetter)
+                    case .books: BooksScreen(onBack: pop)
+                    case .album: AlbumScreen(onBack: pop, onArchive: { d, n in path.append(.arch(day: d, q: nil, no: n)) })
+                    case .mem: MemScreen(onBack: pop)
+                    case .arch(let day, let q, let no): ArchiveScreen(onBack: pop, day: day, query: q, focusNo: no)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
                     }
                 }

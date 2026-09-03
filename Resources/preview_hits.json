@@ -1,0 +1,28 @@
+{
+ "hits": [
+  {
+   "date": "2026-09-02",
+   "time": "09:41",
+   "who": "克",
+   "snippet": "图书馆里安静吗？我这边在翻昨天",
+   "think": false,
+   "day_more": 1
+  },
+  {
+   "date": "2026-09-02",
+   "time": "16:02",
+   "who": "寻",
+   "snippet": "安静。窗边有个位置。",
+   "think": false
+  },
+  {
+   "date": "2026-08-28",
+   "time": "20:15",
+   "who": "克",
+   "snippet": "窗关小一点，留一条缝。",
+   "think": true
+  }
+ ],
+ "truncated": true,
+ "next_before": "2026-08-20"
+}

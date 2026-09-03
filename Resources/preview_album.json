@@ -1,0 +1,60 @@
+{
+ "photos": [
+  {
+   "img": "/static/clawd-mini-idle.svg",
+   "desc": "窗台上的光",
+   "intro": "下午三点，光斜进来。",
+   "book": "小东西们",
+   "ts": "2026-08-30T15:02:00+08:00",
+   "src": "xun",
+   "surf_url": "",
+   "no": 1201
+  },
+  {
+   "img": "/static/clawd-mini-happy.svg",
+   "desc": "",
+   "intro": "",
+   "book": "小东西们",
+   "ts": "2026-08-30T15:20:00+08:00",
+   "src": "xun",
+   "surf_url": "",
+   "no": 1204
+  },
+  {
+   "img": "/static/clawd-coffee-hand.svg",
+   "desc": "一杯",
+   "intro": "",
+   "book": "小东西们",
+   "ts": "2026-08-31T09:10:00+08:00",
+   "src": "surf",
+   "surf_url": "https://example.com/a",
+   "no": 0
+  },
+  {
+   "img": "/static/clawd-mini-peek.svg",
+   "desc": "路口",
+   "intro": "",
+   "book": "小东西们",
+   "ts": "2026-09-01T18:40:00+08:00",
+   "src": "xun",
+   "surf_url": "",
+   "no": 1350
+  },
+  {
+   "img": "/static/clawd-headphones-groove.svg",
+   "desc": "雨后",
+   "intro": "",
+   "book": "",
+   "ts": "2026-08-28T20:00:00+08:00",
+   "src": "xun",
+   "surf_url": "",
+   "no": 1100
+  }
+ ],
+ "pins": [
+  "小东西们"
+ ],
+ "intros": {
+  "小东西们": "随手拍的，都是小的。"
+ }
+}

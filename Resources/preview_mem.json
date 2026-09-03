@@ -1,0 +1,55 @@
+{
+ "total_chars": 18234,
+ "layers": [
+  {
+   "title": "CLAUDE.md",
+   "source": "根",
+   "chars": 1200,
+   "content": "这一层是身份与关系的底稿。\n\n第二段只是为了让摘要有两行以上。"
+  },
+  {
+   "title": "叙事·近况",
+   "source": "memory/story.md",
+   "chars": 8600,
+   "content": "最近三天的事。\n\n一件、两件、三件。"
+  },
+  {
+   "title": "便签",
+   "source": "记忆库",
+   "chars": 4300,
+   "content": "随手记的几条。"
+  }
+ ],
+ "staging": [
+  "便签摘要"
+ ],
+ "tools": [
+  {
+   "name": "breath",
+   "description": "睁眼回忆或检索。",
+   "params": [
+    {
+     "name": "q",
+     "required": false,
+     "desc": "要找什么"
+    }
+   ]
+  },
+  {
+   "name": "note",
+   "description": "给寻留一张便条。",
+   "params": [
+    {
+     "name": "content",
+     "required": true,
+     "desc": "要说的话"
+    },
+    {
+     "name": "ticket",
+     "required": false,
+     "desc": "报个问题"
+    }
+   ]
+  }
+ ]
+}

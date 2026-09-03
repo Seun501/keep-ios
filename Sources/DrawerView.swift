@@ -3,6 +3,10 @@ import SwiftUI
 /// 从抽屉出去的路（NavigationStack push：从右滑入、左缘右滑退回，寻定：不要淡入淡出/从下冒出）
 enum Route: Hashable {
     case board(openLetter: String?)     // 来信到站点开信封＝直接落到那封信
+    case books
+    case album
+    case mem
+    case arch(day: String?, q: String?, no: Int?)   // 档案馆：某一天 / 搜一个词 / #N 直跳
     case web(String)
 }
 
@@ -51,13 +55,13 @@ struct DrawerView: View {
                 .padding(.top, 6)
 
                 VStack(spacing: 0) {
-                    row("书架") { onNavigate(.web("#books")) }
+                    row("书架") { onNavigate(.books) }
                     hair
-                    row("相册") { onNavigate(.web("#album")) }
+                    row("相册") { onNavigate(.album) }
                     hair
                     row("留言板", badge: notesBadge) { onNavigate(.board(openLetter: nil)) }
                     hair
-                    row("记忆") { onNavigate(.web("#mem")) }
+                    row("记忆") { onNavigate(.mem) }
                 }
                 .padding(.top, 10)
 
@@ -152,7 +156,7 @@ struct DrawerView: View {
                                 }
                                 .frame(maxWidth: .infinity).frame(height: cellH)
                                 .contentShape(Rectangle())
-                                .onTapGesture { if on { onNavigate(.web(String(format: "#arch:%04d-%02d-%02d", y, m, d))) } }
+                                .onTapGesture { if on { onNavigate(.arch(day: String(format: "%04d-%02d-%02d", y, m, d), q: nil, no: nil)) } }
                             }
                         }
                     }
@@ -169,7 +173,7 @@ struct DrawerView: View {
     private func search() {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return }
-        onNavigate(.web("#search:" + (s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s)))
+        onNavigate(.arch(day: nil, q: s, no: nil))
     }
     private func close() { shown = false }
 
