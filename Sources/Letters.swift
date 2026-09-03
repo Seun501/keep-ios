@@ -339,7 +339,7 @@ struct LetterReadView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                RichText(attr: LetterReadView.body(e.content ?? ""))
+                RichText(attr: LetterReadView.bodyText(e.content ?? ""))
                 HStack {
                     Spacer()
                     Text(TimeFmt.stamp(e.ts) + (e.myLock.map { " · " + LetterFmt.lockLabel($0) } ?? ""))
@@ -366,7 +366,7 @@ struct LetterReadView: View {
         .onAppear { m.markOpened(e.id) }   // 摊开即算拆过——回列表蜡就转哑色
     }
     /// 正文照 .letter-read .pf-body：16.5/1.8、500 档（粗细对齐克主聊天正文，08-28 寻定）；原样文字，不解 markdown
-    static func body(_ s: String) -> NSAttributedString {
+    static func bodyText(_ s: String) -> NSAttributedString {
         let f = Theme.uiSerif(16.5, weight: .medium)
         let p = NSMutableParagraphStyle()
         let lh = 16.5 * 1.8
