@@ -339,6 +339,7 @@ struct ChatScreen: View {
     }()
     @StateObject private var letters = LettersModel.shared
     @StateObject private var alerts = AlertsModel()
+    @ObservedObject private var viewer = ImageViewer.shared   // 消息流/档案里点图 → 全屏看图（照网页 #imgView，盖在所有页之上）
     @State private var letterAlertOn = false      // 来信到站：进 Keep / 回前台有没看过的信就弹（寻定：不推手机）
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
@@ -359,6 +360,9 @@ struct ChatScreen: View {
                 .zIndex(Double(100 + i))
                 .background(EdgeSwipe(onBack: pop))
                 .transaction { $0.animation = nil }
+            }
+            if let img = viewer.image {
+                ImageViewerView(image: img, onClose: { viewer.image = nil }).zIndex(300).transaction { $0.animation = nil }
             }
         }
     }
@@ -420,7 +424,22 @@ struct ChatScreen: View {
         }
         .task { await lintel.refresh() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
-        .onAppear { model.onLogout = onLogout }
+        .onAppear {
+            model.onLogout = onLogout
+            guard Preview.on else { return }
+            switch Preview.screen {
+            case "imgview":   // 看图器：拿预览里她发的那张
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    guard let u = model.msgs.last(where: { $0.role == "user" && !($0.images ?? []).isEmpty })?.images?.first else { return }
+                    Task { viewer.image = await StreamImageCache.load(u) }
+                }
+            case "kbup", "kbhide":   // 键盘：打几个字唤起；kbhide 再在 4 秒时收起（截图在 7 秒）
+                draft = "试试看"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { composerFocused = true }
+                if Preview.screen == "kbhide" { DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { composerFocused = false } }
+            default: break
+            }
+        }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
             if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true } } }

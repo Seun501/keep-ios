@@ -86,9 +86,9 @@ struct UserRowView: View {
     var highlight = ""                // 检索关键词标黄
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
+            // 照网页 .row.user > img.att：图站在气泡外上方、素着不加修饰、贴右、圆角 26 同她的气泡、点开看大图；图下空 6
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
-                RemoteImage(src: u).frame(maxWidth: 200, maxHeight: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                StreamImage(src: u, maxW: 200, maxH: 200, radius: 26).padding(.bottom, 2)
             }
             if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
@@ -168,9 +168,9 @@ struct AIRowView: View {
                     .padding(.bottom, 4)
             }
             VStack(alignment: .leading, spacing: 8) {
+                // 照网页 .bubble img.att：克递来的相册照片 200 上限、圆角 12、点开看大图
                 ForEach(Array((msg.images ?? []).enumerated()), id: \.offset) { _, u in
-                    RemoteImage(src: u).frame(maxWidth: 260, maxHeight: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    StreamImage(src: u, maxW: 200, maxH: 200, radius: 12)
                 }
                 if let c = msg.content, !c.isEmpty {
                     RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
@@ -272,9 +272,8 @@ struct PingChipView: View {
                 Rectangle().fill(Theme.border).frame(width: 14, height: 1)
             }
             .fixedSize()
-            if let u = msg.images?.first {
-                RemoteImage(src: u).frame(maxWidth: 140, maxHeight: 140)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            if let u = msg.images?.first {   // 照网页 .pingchip img：宽 140 上限、圆角 10、点开看大图
+                StreamImage(src: u, maxW: 140, maxH: 420, radius: 10)
             }
         }
         .frame(maxWidth: .infinity)
@@ -331,6 +330,95 @@ struct RemoteImage: View {
     }
 }
 
+
+/// 消息流里的图（她发的、克递的、纸条附图）：先拿到真图再按真实比例装进 maxW×maxH，圆角贴图边、贴右不居中；
+/// 点一下全屏看（照网页 openImgView）。dataURL 直接解，/uploads 路径拼网关地址带口令头；解完进缓存不重解。
+struct StreamImage: View {
+    let src: String
+    var maxW: CGFloat = 200
+    var maxH: CGFloat = 200
+    var radius: CGFloat = 26
+    @State private var ui: UIImage?
+    init(src: String, maxW: CGFloat = 200, maxH: CGFloat = 200, radius: CGFloat = 26) {
+        self.src = src; self.maxW = maxW; self.maxH = maxH; self.radius = radius
+        _ui = State(initialValue: StreamImageCache.peek(src: src))   // 缓存里有就第一帧直接画（LazyVStack 滚回来重建行，别闪占位块）
+    }
+    var body: some View {
+        Group {
+            if let ui {
+                let s = min(maxW / max(ui.size.width, 1), maxH / max(ui.size.height, 1), 1)
+                let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+                Image(uiImage: ui).resizable()
+                    .frame(width: ui.size.width * s, height: ui.size.height * s)
+                    .clipShape(shape).contentShape(shape)
+                    .onTapGesture { ImageViewer.shared.image = ui }
+            } else {
+                Theme.panel.frame(width: min(maxW, 120), height: min(maxH, 90))
+                    .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            }
+        }
+        .task(id: src) {
+            if let c = StreamImageCache.peek(src: src) { ui = c; return }
+            ui = await StreamImageCache.load(src)
+        }
+    }
+}
+
+enum StreamImageCache {
+    private static let cache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 200; return c }()
+    static func peek(src: String) -> UIImage? { cache.object(forKey: src as NSString) }
+    static func load(_ src: String) async -> UIImage? {
+        let ui: UIImage?
+        if src.hasPrefix("data:"), let comma = src.firstIndex(of: ",") {
+            let b64 = String(src[src.index(after: comma)...])
+            ui = await Task.detached(priority: .userInitiated) { Data(base64Encoded: b64).flatMap(UIImage.init(data:)) }.value
+        } else if let url = URL(string: src, relativeTo: Gateway.home) {
+            var r = URLRequest(url: url)
+            if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            guard let (d, _) = try? await URLSession.shared.data(for: r) else { return nil }
+            ui = UIImage(data: d)
+        } else { ui = nil }
+        if let ui { cache.setObject(ui, forKey: src as NSString) }
+        return ui
+    }
+}
+
+/// 图片查看器（照网页 #imgView）：黑底 93%、图按原比例装满屏、轻点任意处关、左缘右滑关；捏合缩放同相册的看图。
+@MainActor
+final class ImageViewer: ObservableObject {
+    static let shared = ImageViewer()
+    @Published var image: UIImage? = nil
+}
+
+struct ImageViewerView: View {
+    let image: UIImage
+    var onClose: () -> Void
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.93).ignoresSafeArea()
+            Image(uiImage: image).resizable().scaledToFit()
+                .scaleEffect(scale)
+                .offset(offset)
+                .gesture(MagnificationGesture().onChanged { v in scale = min(6, max(1, lastScale * v)); if scale == 1 { offset = .zero; lastOffset = .zero } }
+                    .onEnded { _ in lastScale = scale })
+                .simultaneousGesture(DragGesture().onChanged { v in
+                    guard scale > 1 else { return }
+                    offset = CGSize(width: lastOffset.width + v.translation.width, height: lastOffset.height + v.translation.height)
+                }.onEnded { _ in lastOffset = offset })
+                .onTapGesture(count: 2) {
+                    withAnimation(.easeOut(duration: 0.2)) { if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }; lastScale = scale }
+                }
+        }
+        .ignoresSafeArea()
+        .contentShape(Rectangle())
+        .onTapGesture { onClose() }
+        .background(EdgeSwipe(onBack: onClose))
+    }
+}
 
 /// dataURL 图按真实比例装进 maxW×maxH 的框里再切圆角（圆角贴着图边，不是贴着框）。
 struct DataImage: View {
