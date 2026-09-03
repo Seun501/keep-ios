@@ -20,6 +20,14 @@ struct Note: Decodable, Identifiable {
     var isTicket: Bool { kind == "ticket" }
     var closed: Bool { isTicket && ticketState == "closed" }
     var lastTs: String? { msgs?.last?.ts ?? created }
+    /// 新消息数＝她上次开口之后克又写了几条（首楼不算）；从没开口过就是首楼之后克写的全部（寻定：角标是新消息数，不是回复总数）
+    var newCount: Int {
+        let ms = msgs ?? []
+        guard ms.count > 1 else { return 0 }
+        var n = 0
+        for m in ms.dropFirst().reversed() { if m.from == "xun" { break }; n += 1 }
+        return n
+    }
 }
 
 struct NotesPayload: Decodable {
@@ -50,7 +58,20 @@ final class BoardModel: ObservableObject {
               let p = try? JSONDecoder().decode(NotesPayload.self, from: d) else { return }
         notes = p.notes
         unread = p.unread ?? 0
+        if !loaded { await landOnTab(token) }   // 第一次翻开：哪栏有新进门直接落哪栏（照网页 notesBtn，寻验 44）
         loaded = true
+    }
+    /// 照网页：信＞工单；留言有新落默认栏本身
+    private func landOnTab(_ token: String) async {
+        var r = URLRequest(url: Gateway.home.appendingPathComponent("api/letters"))
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var lettersBadge = 0
+        if let (d, _) = try? await URLSession.shared.data(for: r),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { lettersBadge = j["badge"] as? Int ?? 0 }
+        let unreadTicket = notes.contains { $0.state == "unread" && $0.isTicket }
+        let unreadPlain = notes.contains { $0.state == "unread" && !$0.isTicket }
+        if lettersBadge > 0 { tab = "letters" }
+        else if unreadTicket && !unreadPlain { tab = "tickets" }
     }
 
     private func post(_ path: String, _ body: [String: Any]) async -> Bool {
@@ -174,15 +195,14 @@ struct BoardScreen: View {
                     Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
-                        if n.state == "unread" && replies == 0 { Circle().fill(Theme.accent).frame(width: 5, height: 5) }
-                        if replies > 0 {
-                            if n.state == "unread" {   // 照网页 .nu：16 高、最小 16 宽 → 一位数正圆（寻定：小圆圈）
-                                Text("\(replies)").font(Theme.round(10)).foregroundColor(.white)
-                                    .padding(.horizontal, 4).frame(minWidth: 16).frame(height: 16)
-                                    .background(Theme.accent, in: Capsule())
-                            } else {
-                                Text("\(replies)").font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.cacheTint)
-                            }
+                        let fresh = n.newCount
+                        if n.state == "unread" && fresh == 0 { Circle().fill(Theme.accent).frame(width: 5, height: 5) }
+                        if n.state == "unread" && fresh > 0 {   // 橙圆里是新消息数（寻定），一位数正圆
+                            Text("\(fresh)").font(Theme.round(10)).foregroundColor(.white)
+                                .padding(.horizontal, 4).frame(minWidth: 16).frame(height: 16)
+                                .background(Theme.accent, in: Capsule())
+                        } else if replies > 0 {
+                            Text("\(replies)").font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.cacheTint)
                         }
                         Text(TimeFmt.hm(n.lastTs)).font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
                     }

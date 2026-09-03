@@ -400,6 +400,11 @@ struct ChatScreen: View {
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
             .onChange(of: mealEchoes.count) { n in if n > 0, !farFromBottom { scrollBottom(proxy, animated: true) } }
+            .onReceive(NotificationCenter.default.publisher(for: .keepThinkToggled)) { _ in
+                // 末条的 thought 展开/折回改了内容高：原本在底就重新钉底，别留一截空（寻验 44）
+                guard atBottom, let id = lastId else { return }
+                DispatchQueue.main.async { proxy.scrollTo(id, anchor: .bottom) }
+            }
             // 键盘跟随只能走 SwiftUI 自己的 scrollTo（UIKit 改 offset 会被它每帧写回）：原本在底，键盘来/走都钉着最后一行，
             // 时长取键盘的，曲线取系统键盘曲线的近似
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in

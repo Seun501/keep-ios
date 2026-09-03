@@ -67,6 +67,8 @@ extension TimelineItem {
     }
 }
 
+extension Notification.Name { static let keepThinkToggled = Notification.Name("keep.thinkToggled") }
+
 struct DaySepView: View {
     let day: String
     var body: some View {
@@ -107,17 +109,19 @@ struct ThinkView: View {
     @State private var open = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { open.toggle() } label: {   // 照网页 .think-head：小时钟＋一行字，没有箭头；整行都能点（寻验 39）
-                HStack(spacing: 7) {
-                    Image(systemName: "clock").font(.system(size: 12))
-                    Text(label).font(Theme.serif(13))
-                }
-                .foregroundColor(Theme.muted)
-                .padding(.vertical, 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            // 照网页 .think-head：小时钟＋一行字，没有箭头；整行都能点。不用 Button——按下会闪一下高亮（寻验 44：别花里胡哨）
+            HStack(spacing: 7) {
+                Image(systemName: "clock").font(.system(size: 12))
+                Text(label).font(Theme.serif(13))
             }
-            .buttonStyle(.plain)
+            .foregroundColor(Theme.muted)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                open.toggle()
+                NotificationCenter.default.post(name: .keepThinkToggled, object: nil)   // 折回去时若在底，列表要跟着落回底（寻验 44）
+            }
             if open {
                 HStack(alignment: .top, spacing: 14) {
                     Rectangle().fill(Theme.border).frame(width: 1.5).padding(.leading, 4)
