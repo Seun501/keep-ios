@@ -688,7 +688,8 @@ struct MiniCalendar: View {
         ZStack {
             Wax.ink.opacity(0.25).ignoresSafeArea().onTapGesture { onClose() }
             VStack(spacing: 4) {
-                let (y, m) = ym.0 == 0 ? (cal.component(.year, from: date), cal.component(.month, from: date)) : ym
+                let ymNow = ym.0 == 0 ? (cal.component(.year, from: date), cal.component(.month, from: date)) : ym
+                let y = ymNow.0, m = ymNow.1
                 let first = cal.date(from: DateComponents(year: y, month: m, day: 1)) ?? t0
                 let lead = cal.component(.weekday, from: first) - 1
                 let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30

@@ -59,7 +59,7 @@ jobs:
             -destination "platform=iOS Simulator,name=$SIM_NAME" \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
-            build | tail -60
+            build 2>&1 | grep -E "error:|BUILD|\*\* " | tail -80
 
       - name: 模拟器截图
         run: |
@@ -155,7 +155,7 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="Keep AppStore" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            archive | tail -80
+            archive 2>&1 | grep -E "error:|ARCHIVE|\*\* |Signing Identity|Provisioning Profile" | tail -80
 
       - name: 查包（踩坑册：看包不看界面）
         run: |

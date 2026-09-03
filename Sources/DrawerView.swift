@@ -94,7 +94,7 @@ struct DrawerView: View {
     private func row(_ label: String, badge: Int = 0, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(label).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text)
+                Text(label).font(Theme.cjk(15, weight: .medium)).tracking(1.2).foregroundColor(Theme.text)   // 照网页 .nb-label letter-spacing .08em（寻验 44：字挤）
                 Spacer()
                 if badge > 0 {   // 照网页 #notesBadge：20 高、最小 20 宽 → 一位数就是正圆（寻定：小圆圈）
                     Text("\(badge)").font(Theme.round(12)).foregroundColor(.white)
