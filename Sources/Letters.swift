@@ -483,9 +483,12 @@ struct SealSheet: View {
     var onSend: ([String: Any]) -> Void
     enum Mode: Hashable { case days(Double), custom, at, never }
     @State private var pick: Mode = .days(1)
-    @State private var cD = 6, cH = 0, cM = 0            // 自定义：天/时/分（默认 6 天）
+    @State private var cD = 6                            // 自定义：天/时/分（默认 6 天）
+    @State private var cH = 0
+    @State private var cM = 0
     @State private var atDate = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
-    @State private var aH = 9, aM = 0                    // 挑日子：默认 09:00
+    @State private var aH = 9                            // 挑日子：默认 09:00
+    @State private var aM = 0
     @State private var sealed = false
     @State private var pass = ""
     @State private var passFocused = false

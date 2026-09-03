@@ -89,8 +89,9 @@ final class ChatModel: ObservableObject {
     @Published var items: [TimelineRow] = []
     @Published var live: LiveTurn? = nil
     @Published var sending = false
-    @Published var doorAlert: String? = nil
+    @Published var door: Door? = nil          // 门关着＝整页只剩门页（照网页 updateDoor）
     @Published var lastError: String? = nil
+    private var knockBusy = false
     @Published var loadTick = 0          // 每次整段重拉 +1，页面据此滚到底
     var onLogout: () -> Void = {}
 
@@ -104,6 +105,11 @@ final class ChatModel: ObservableObject {
         loading = true; defer { loading = false }
         if Preview.on, let d = Preview.json("preview"), let conv = try? JSONDecoder().decode(ConversationPayload.self, from: d) {
             conversationId = conv.id; msgs = conv.messages; renderFrom = Self.startOfLastDays(msgs, days: 2); rebuild(); loadTick += 1
+            if Preview.screen == "door" {
+                let until = TimeFmt.nowIso(); _ = until
+                door = Door(until: ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600 * 2)), note: "去睡一会儿。\n门口的灯给你留着。",
+                            knock: Door.Words(text: "我到家了。", ts: nil), reply: Door.Words(text: "好。灯在。", ts: nil))
+            }
             return
         }
         do {
@@ -115,6 +121,7 @@ final class ChatModel: ObservableObject {
             rebuild()
             lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
             loadTick += 1
+            await refreshDoor()
         } catch GatewayAPI.Failure.unauthorized {
             onLogout()
         } catch {
@@ -130,8 +137,30 @@ final class ChatModel: ObservableObject {
             if Date().timeIntervalSince(lastEventAt) > 120 { streamTask?.cancel() }
             return
         }
+        await refreshDoor()
         guard let p = try? await GatewayAPI.pulse(id), p != lastPulse else { return }
         await load()
+    }
+
+    /// 门的状态随脉搏捎回；门开了（到点或他提前开）就把关门期间落下的接回来
+    func refreshDoor() async {
+        guard !Preview.on else { return }
+        let wasClosed = door?.closed == true
+        let d = try? await GatewayAPI.door()
+        door = (d?.closed == true) ? d : nil
+        if wasClosed && door == nil { await load() }
+    }
+
+    /// 敲一句穿门：他的回应静静写进正史，门开再看；这里只把流喝完别断连接（照网页 sendKnock）
+    func knock(_ text: String) async {
+        guard door != nil, !knockBusy else { return }
+        knockBusy = true
+        let stream = GatewayAPI.chat(conversationId: conversationId, message: text, images: [], knock: true)
+        Task { do { for try await _ in stream {} } catch {} }
+        door?.knock = Door.Words(text: text, ts: nil)
+        try? await Task.sleep(nanoseconds: 520_000_000)
+        await refreshDoor()
+        knockBusy = false
     }
 
     func loadOlderDay() {
@@ -183,8 +212,10 @@ final class ChatModel: ObservableObject {
                 }
                 PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0) finished=\(live?.finished ?? false) textLen=\(live?.items.compactMap { if case .seg(let s) = $0 { return s.text.count }; return nil }.reduce(0, +) ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
-                doorAlert = "克把门关上了" + (until.isEmpty ? "" : "，\(TimeFmt.hm(until)) 开") + (note.isEmpty ? "" : "\n\(note)")
+                // 克把门关上了：撤下刚画的那条，字还给输入框（网页同款），门页自己升起来
+                door = Door(until: until, note: note, knock: nil, reply: nil)
                 msgs.removeLast(); rebuild()
+                await refreshDoor()
             } catch GatewayAPI.Failure.unauthorized {
                 onLogout()
             } catch {
@@ -270,6 +301,7 @@ struct ChatScreen: View {
 
     @State private var path: [Route] = Preview.on && ["board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "lockpop"].contains(Preview.screen) ? [.board(openLetter: nil)] : []
     @StateObject private var letters = LettersModel.shared
+    @StateObject private var alerts = AlertsModel()
     @State private var letterAlertOn = false      // 来信到站：进 Keep / 回前台有没看过的信就弹（寻定：不推手机）
 
     /// 页面切换照网页 #notesView.open{display:flex}：瞬间切、不滑不淡（寻定：干净利落）；左缘右滑＝退回上一页。
@@ -362,9 +394,11 @@ struct ChatScreen: View {
         .onChange(of: picks) { _ in Task { await loadPicks() } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
-        .alert("门", isPresented: Binding(get: { model.doorAlert != nil }, set: { if !$0 { model.doorAlert = nil } })) {
-            Button("好", role: .cancel) {}
-        } message: { Text(model.doorAlert ?? "") }
+        .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
+        .overlay { if let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }).zIndex(60) } }
+        .task { await alerts.poll(); await alerts.healthOnce() }
+        .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await alerts.poll() } }
+        .onChange(of: model.sending) { s in if !s { Task { await alerts.balance() } } }   // 克说完话后查余额（照网页 done 时 refreshBalance）
     }
 
     /// 量 Clawd 活动区（消息区尺寸）

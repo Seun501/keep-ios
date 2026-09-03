@@ -28,6 +28,13 @@ enum GatewayAPI {
         return p.conversations.first?.id
     }
 
+    /// 门的状态（/api/notes 顺带捎回：门关着时前端画门页+拦发送）
+    private struct DoorWrap: Decodable { var door: Door? }
+    static func door() async throws -> Door? {
+        let w: DoorWrap = try await json("api/notes")
+        return w.door
+    }
+
     static func conversation(_ id: String) async throws -> ConversationPayload {
         try await json("api/conversations/\(id)")
     }
@@ -54,12 +61,13 @@ enum GatewayAPI {
     }
 
     /// 发一条消息，事件按到达顺序吐出。HTTP 层的失败（401/423/其他）在第一次 yield 前以 Failure 抛出。
-    static func chat(conversationId: String?, message: String, images: [String]) -> AsyncThrowingStream<Event, Error> {
+    static func chat(conversationId: String?, message: String, images: [String], knock: Bool = false) -> AsyncThrowingStream<Event, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     var payload: [String: Any] = ["message": message, "images": images]
                     if let conversationId { payload["conversation_id"] = conversationId }
+                    if knock { payload["knock"] = true }   // 敲门：门关着时寻唯一能递进来的一句（08-30 寻定）
                     let body = try JSONSerialization.data(withJSONObject: payload)
                     var req = try request("api/chat", method: "POST", body: body)
                     req.timeoutInterval = 600
