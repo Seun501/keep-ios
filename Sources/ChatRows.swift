@@ -182,8 +182,8 @@ struct AIRowView: View {
                     Text(TimeFmt.stamp(msg.ts)).font(Theme.round(12)).foregroundColor(Theme.muted)
                     if let t = tagNo { NoTag(t, flash: flash) }
                     if showUsage, let u = msg.usage, let it = u.inputTokens {
-                        (Text("\(it) tokens · ").foregroundColor(Theme.muted)
-                         + Text("cache \(u.cachedTokens ?? 0)").foregroundColor(Theme.cacheTint))
+                        (Text(String(it) + " tokens · ").foregroundColor(Theme.muted)   // 拼字符串：Text 插值 Int 会自动加千分逗号（寻：不要逗号）
+                         + Text("cache " + String(u.cachedTokens ?? 0)).foregroundColor(Theme.cacheTint))
                             .font(Theme.round(11.5))
                     }
                 }

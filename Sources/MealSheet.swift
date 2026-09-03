@@ -42,6 +42,7 @@ struct MealSheet: View {
                             .textFieldStyle(.plain)
                             .font(Theme.round(13.5)).foregroundColor(Theme.text).tint(Theme.scrollTint)
                             .focused($focused)
+                            .submitLabel(.send).onSubmit(send)   // 回车直接发（寻）
                             .padding(.vertical, 7).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
                         PhotosPicker(selection: $pick, maxSelectionCount: 1, matching: .images) {

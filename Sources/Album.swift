@@ -360,7 +360,7 @@ struct MemScreen: View {
                         if failed { Text("没拿到数据，退出来再进一次试试").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
                         else if let d = data {
                             SecTitle("注入层 · \(fmt(d.total_chars ?? 0))字")
-                            ForEach(Array((d.layers ?? []).enumerated()), id: \.offset) { i, l in
+                            ForEach(Array((d.layers ?? []).enumerated()), id: \.element.title) { i, l in
                                 card("L\(i)", title: l.title, side: (l.source ?? "") + " · \(fmt(l.chars ?? 0))字", full: l.content)
                             }
                             if let s = d.staging, !s.isEmpty {
@@ -368,8 +368,8 @@ struct MemScreen: View {
                             }
                             let tools = d.tools ?? []
                             SecTitle("工具层 · \(tools.count)件")
-                            ForEach(Array(tools.enumerated()), id: \.offset) { i, t in
-                                card("T\(i)", title: t.name, side: (t.params ?? []).isEmpty ? "" : "\((t.params ?? []).count) 参数", full: toolFull(t))
+                            ForEach(tools, id: \.name) { t in   // 别再用 offset 当身份：和上面注入层那组撞了，懒列表就不画（截图实证）
+                                card("T-" + t.name, title: t.name, side: (t.params ?? []).isEmpty ? "" : "\((t.params ?? []).count) 参数", full: toolFull(t))
                             }
                         } else { Text("加载中…").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
                     }
