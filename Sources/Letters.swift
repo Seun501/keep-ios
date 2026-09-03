@@ -558,15 +558,16 @@ struct SealSheet: View {
                         .background(Theme.composer, in: Capsule())
                         .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1))
                 }.padding(.vertical, 12).padding(.horizontal, 2)
+                let footW = UIScreen.main.bounds.width - 44 - 10   // 取消 : 封起来 = 1 : 1.7（照 .seal-foot flex）
                 HStack(spacing: 10) {
                     Button { close() } label: {
-                        Text("取消").font(Theme.round(15)).foregroundColor(Theme.text).frame(maxWidth: .infinity).frame(minHeight: 47)
+                        Text("取消").font(Theme.round(15)).foregroundColor(Theme.text).frame(width: footW / 2.7).frame(minHeight: 47)
                             .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
                     }.buttonStyle(.plain)
                     Button { go() } label: {
-                        Text("封起来").font(Theme.round(15, weight: .semibold)).tracking(4.5).foregroundColor(Theme.bg).frame(maxWidth: .infinity).frame(minHeight: 47)
+                        Text("封起来").font(Theme.round(15, weight: .semibold)).tracking(4.5).foregroundColor(Theme.bg).frame(width: footW * 1.7 / 2.7).frame(minHeight: 47)
                             .background(Theme.text, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    }.buttonStyle(.plain).frame(maxWidth: .infinity).layoutPriority(1.7)
+                    }.buttonStyle(.plain)
                 }.padding(.top, 14)
             }
             .padding(.horizontal, 22).padding(.bottom, 12)

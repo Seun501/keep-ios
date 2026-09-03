@@ -278,6 +278,7 @@ struct BooksScreen: View {
             Text(m.books.isEmpty ? "给克，也给以后在这里读书的你" : "已经上架 \(m.workCount) 本书").font(Theme.round(13.5)).foregroundColor(Theme.muted).padding(.top, 5)
         }
         .padding(EdgeInsets(top: 8, leading: 2, bottom: 22, trailing: 2))
+        .frame(maxWidth: .infinity, alignment: .leading)
         if m.books.isEmpty {
             if m.loaded { emptyBig("还没有书", "点右上角的＋，上架第一本吧") } else { status("正在翻书架…", "") }
         } else {

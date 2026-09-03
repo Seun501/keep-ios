@@ -369,9 +369,7 @@ struct MemScreen: View {
                             let tools = d.tools ?? []
                             SecTitle("工具层 · \(tools.count)件")
                             ForEach(Array(tools.enumerated()), id: \.offset) { i, t in
-                                var full = t.description ?? ""
-                                let _ = (t.params ?? []).forEach { p in full += "\n\n· " + p.name + (p.required == true ? "（必填）" : "") + ((p.desc?.isEmpty == false) ? "：" + p.desc! : "") }
-                                card("T\(i)", title: t.name, side: (t.params ?? []).isEmpty ? "" : "\((t.params ?? []).count) 参数", full: full)
+                                card("T\(i)", title: t.name, side: (t.params ?? []).isEmpty ? "" : "\((t.params ?? []).count) 参数", full: toolFull(t))
                             }
                         } else { Text("加载中…").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
                     }
@@ -383,6 +381,12 @@ struct MemScreen: View {
         .task { await load() }
     }
     private func fmt(_ n: Int) -> String { NumberFormatter.localizedString(from: NSNumber(value: n), number: .decimal) }
+    /// 工具卡全文：说明 + 每个参数一行「· 名（必填）：说明」
+    private func toolFull(_ t: MemPayload.Tool) -> String {
+        var full = t.description ?? ""
+        for p in t.params ?? [] { full += "\n\n· " + p.name + (p.required == true ? "（必填）" : "") + ((p.desc?.isEmpty == false) ? "：" + p.desc! : "") }
+        return full
+    }
     /// 卡面照留言板裁：衬线卡题、两行摘要，点卡展开全文
     private func card(_ key: String, title: String, side: String, full: String) -> some View {
         let isOpen = open.contains(key)
