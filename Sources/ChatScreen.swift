@@ -186,7 +186,23 @@ final class ChatModel: ObservableObject {
         return 0
     }
 
+    /// 吃吃回显（寻：按时间顺序，别压到新消息下面）：本地小纸条按时间插进正史；
+    /// 服务器在她下一条消息时物化出正牌纸条（同一行文案），到了就撤本地那张。
+    private var localPings: [Msg] = []
+    func addLocalPing(_ line: String) {
+        var m = Msg(role: "user", content: line, ts: TimeFmt.nowIso()); m.meal = true; m.localEcho = true
+        localPings.append(m); rebuild()
+    }
+    private func mergeLocalPings() {
+        msgs.removeAll { $0.localEcho }
+        localPings.removeAll { lp in msgs.contains { $0.isPing && $0.content == lp.content } }
+        for lp in localPings {
+            let i = msgs.firstIndex { ($0.date ?? .distantPast) > (lp.date ?? .distantFuture) } ?? msgs.count
+            msgs.insert(lp, at: i)
+        }
+    }
     private func rebuild() {
+        mergeLocalPings()
         var lastUsage = -1
         for i in stride(from: msgs.count - 1, through: 0, by: -1) {
             let m = msgs[i]
@@ -287,9 +303,7 @@ struct ChatScreen: View {
     @State private var showMeal = false
     @State private var greetOn = !(Preview.on && Preview.screen != "greet")
     // 预览 letteralert：主页直接弹来信到站
-    @State private var mealEchoes: [MealEcho] = []   // 吃吃就地回显；正牌小纸条进正史后自动顶替
     @State private var mealOk = false                 // 碗钮短暂变赤陶 ✓（照网页 1.2s）
-    struct MealEcho: Identifiable { let id = UUID(); let line: String; let at: Date }
     @StateObject private var lintel = LintelModel()
     @StateObject private var clawd = ClawdModel()
     @State private var atBottom = true
@@ -376,15 +390,9 @@ struct ChatScreen: View {
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { line in
-            mealEchoes.append(MealEcho(line: line, at: Date()))
+            model.addLocalPing(line)
             mealOk = true; DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { mealOk = false }
         }).zIndex(60).ignoresSafeArea(.keyboard) } }
-        .onChange(of: model.loadTick) { _ in
-            // 正牌小纸条（服务器物化进正史的 meal ping）到了就把回显撤掉，不重影
-            mealEchoes.removeAll { e in
-                model.msgs.contains { $0.isPing && $0.meal == true && (TimeFmt.parse($0.ts ?? "") ?? .distantPast) >= e.at.addingTimeInterval(-120) }
-            }
-        }
         .overlay {
             if letterAlertOn && !letters.unseen.isEmpty {
                 LetterAlert(m: letters, onOpen: { e in letterAlertOn = false; path.append(.board(openLetter: e.id)) },
@@ -433,9 +441,6 @@ struct ChatScreen: View {
             }
             ForEach(model.items) { r in row(r.item) }
             if let live = model.live { VStack(alignment: .leading, spacing: 22) { liveView(live) }.id("live") }
-            ForEach(mealEchoes) { e in
-                PingChipView(msg: Msg(role: "user", content: e.line, ts: nil), forceMeal: true).id("echo-\(e.id)")
-            }
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)   // 网页 #messages padding-bottom 10
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
@@ -459,7 +464,6 @@ struct ChatScreen: View {
             .onChange(of: model.live?.events ?? 0) { _ in if atBottom { DispatchQueue.main.async { pinBottom() } } }   // 流式：字长出来就跟着到底（寻验：看不见流式）
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
-            .onChange(of: mealEchoes.count) { n in if n > 0, !farFromBottom { scrollBottom(proxy, animated: true) } }
             .onReceive(NotificationCenter.default.publisher(for: .keepThinkToggled)) { _ in
                 // 末条的 thought 展开/折回改了内容高：原本在底就重新钉底，别留一截空（寻验 44）
                 guard atBottom, let id = lastId else { return }
@@ -623,7 +627,6 @@ struct ChatScreen: View {
 
     /// 列表末尾的那一行（懒列表的「到底」锚点按估算高度定位，最后一行没排出来就停在它上头——寻验：最后一条克的话总看不见）
     private var lastId: String? {
-        if let e = mealEchoes.last { return "echo-\(e.id)" }
         if model.live != nil { return "live" }
         return model.items.last?.id
     }

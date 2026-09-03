@@ -18,6 +18,7 @@ struct Msg: Decodable {
     var knockText: String? = nil
     var usage: Usage? = nil
     var interrupted: Bool? = nil
+    var localEcho = false          // 吃吃就地回显：本地插进正史的小纸条，正牌纸条到了就撤
 
     enum CodingKeys: String, CodingKey {
         case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted
