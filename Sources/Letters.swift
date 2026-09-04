@@ -733,7 +733,7 @@ struct LockPop: View {
             Wax.ink.opacity(0.38).ignoresSafeArea().onTapGesture { onClose() }
             VStack(spacing: 0) {
                 if let until = e.until, let d = TimeFmt.parse(until) {
-                    Text(countdown(d)).font(.custom("Georgia", size: 30)).fontWeight(.light).tracking(1.5).foregroundColor(Theme.text).padding(.bottom, 6)
+                    Text(countdown(d)).font(.custom("Georgia", size: 27)).fontWeight(.light).tracking(1.4).foregroundColor(Theme.text).padding(.bottom, 4)
                     Text(LetterFmt.lockWhen(until)).font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Theme.muted).lineSpacing(4)
                 } else {
                     Text("没配钟点——要口令才打开").font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Theme.muted)
@@ -746,16 +746,17 @@ struct LockPop: View {
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
                         Button { go() } label: {
                             Text("启").font(Theme.round(12)).tracking(1.8).foregroundColor(Wax.paper)
-                                .padding(.horizontal, 14).padding(.vertical, 5)
+                                .padding(.horizontal, 13).padding(.vertical, 4)
                                 .background(e.mine ? Wax.xun : Wax.ke, in: Capsule())
                         }.buttonStyle(.plain)
                     }
-                    .frame(maxWidth: 190).padding(.top, 24).padding(.bottom, 2)
+                    .frame(maxWidth: 190).padding(.top, 14).padding(.bottom, 2)
+                    Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 6).frame(minHeight: 14 + 6)
                 }
-                Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 8).frame(minHeight: 15 + 8)
             }
             .frame(maxWidth: .infinity)
-            .padding(EdgeInsets(top: 64, leading: 22, bottom: 20, trailing: 22))
+            // 比网页的 64/22/20 收紧一圈（寻 09-05：卡再扁一点、精致一点）
+            .padding(EdgeInsets(top: 62, leading: 22, bottom: 14, trailing: 22))
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Wax.paper
