@@ -494,8 +494,10 @@ struct ChatScreen: View {
         }
     }
 
+    /// 非懒 VStack（09-05 定）：懒列表的内容高是估算的，视口一变（键盘起收）它会把行撤掉重估——偏移明明在底、视口却空白（sim-77 截到），
+    /// 末行滚不出来、钉底靠猜、起键盘露出中间的行全是它。主页只画最近两天（更早的按天手动加载），全排出来高度就是真的。
     private var listContent: some View {
-        LazyVStack(spacing: 22) {
+        VStack(spacing: 22) {
             if model.renderFrom > 0 {
                 Button { model.loadOlderDay() } label: {
                     Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
