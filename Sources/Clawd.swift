@@ -238,7 +238,9 @@ struct ScrollObserver: UIViewRepresentable {
                     // 滚动本身交给 SwiftUI 的 scrollTo（ChatScreen 里做）：UIKit 改的 contentOffset 会被 SwiftUI 每帧布局写回抹掉（构建 43 快照实证）
                     _ = (dur, curve)
                     self.kbBusy = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.15) { [weak self] in self?.kbBusy = false }
+                    // 动完再量一遍：偏移要是停在内容底下，fire 里的钳子只在有 KVO 事件时才跑——动完没事件就一直白着（寻验 09-05）
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.15) { [weak self] in self?.kbBusy = false; fire() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.6) { fire() }
                     if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
                 })
             }

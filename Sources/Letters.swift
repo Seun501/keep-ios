@@ -201,7 +201,7 @@ struct EnvelopeFlap: View {
             Path { p in p.move(to: .zero); p.addLine(to: CGPoint(x: w, y: 0)); p.addLine(to: CGPoint(x: w / 2, y: height)); p.closeSubpath() }
                 .fill(Wax.ink.opacity(0.045))
             Path { p in p.move(to: CGPoint(x: 0, y: height)); p.addLine(to: CGPoint(x: w / 2, y: 0)); p.addLine(to: CGPoint(x: w, y: height)) }
-                .stroke(Theme.border, lineWidth: 0.5)   // 发丝：网页那根是 1px 渐变虚化的，原生 0.8 显粗（寻验 09-04 二回）
+                .stroke(Theme.border.opacity(0.7), lineWidth: 0.4)   // 发丝：网页那根是 1px 渐变虚化的，原生 0.8 显粗、0.5 还显（寻验 09-04 二回、三回）
         }
         .frame(height: height)
     }
@@ -216,8 +216,9 @@ struct WaxSeal: View {
         ZStack {
             Circle().fill(color)
             if locked {
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: 1.5, height: size).rotationEffect(.degrees(-14))
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: 1.5, height: size).rotationEffect(.degrees(14))
+                // 网页 .wax.lockx：两道 1.5 白线走 14deg / 166deg 渐变＝近乎横着的扁 X（顺翻盖走向）；我之前画成竖的（寻 09-05 拿原图纠正）
+                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 1.5).rotationEffect(.degrees(14))
+                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 1.5).rotationEffect(.degrees(-14))
             }
         }
         .frame(width: size, height: size)

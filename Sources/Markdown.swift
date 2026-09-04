@@ -294,6 +294,8 @@ struct RichText: UIViewRepresentable {
         // TextKit 1：*斜体* 靠 .obliqueness 倾斜，TextKit 2 直接无视它（寻验 28「完全不渲染」——星号吃了、字没斜）
         let tv = UITextView(usingTextLayoutManager: false)
         tv.isEditable = false; tv.isSelectable = maxLines == 0; tv.isScrollEnabled = false
+        // 长按选字老是没选上（寻 09-05）：系统长按要按满 0.5 秒，手指稍一动外面的滚动区就把手势抢走；把 UITextView 自带的长按缩到 0.3 秒
+        for g in tv.gestureRecognizers ?? [] { if let lp = g as? UILongPressGestureRecognizer, lp.minimumPressDuration > 0.3 { lp.minimumPressDuration = 0.3 } }
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
         if maxLines > 0 { tv.textContainer.maximumNumberOfLines = maxLines; tv.textContainer.lineBreakMode = .byTruncatingTail; tv.isUserInteractionEnabled = false }

@@ -399,6 +399,8 @@ struct ChatScreen: View {
     private func pop() { if !path.isEmpty { path.removeLast() } }
 
     @State private var kbUp = false
+    @State private var wasAtBottom = true     // 键盘动之前在不在底（动的途中 atBottom 是过程值，不可信）
+    @State private var kbAnimating = false
     /// 键盘收着时才真正拨开关；键盘开着就等 keyboardDidHide 再拨
     private func syncAvoid() {
         let want = !(showMeal || drawerOn)
@@ -414,7 +416,7 @@ struct ChatScreen: View {
                     clawdProbe
                     messageList(proxy)
                     ClawdView(m: clawd).zIndex(5)
-                    if farFromBottom && !atBottom { jumpButton(proxy) }
+                    if farFromBottom && !atBottom && !kbAnimating { jumpButton(proxy) }   // 键盘起收途中量到的「离底」是过程值，别闪钮
                 }
                 .coordinateSpace(name: "clawdZone")
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
@@ -548,11 +550,21 @@ struct ChatScreen: View {
             }
             // iOS 16/17：键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
             // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底。键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
+            // iOS 18 也要：底边锚定按的是懒列表估算的内容高，收完键盘偶尔停在内容底下、视口一片白（寻验 09-05「拉到最底点退出输入框依旧白屏」）；
+            // 本来就在底时 scrollTo 末行是无感的，只有错位那回才会动
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
-                if #available(iOS 18, *) { return }
-                guard atBottom, path.isEmpty, !showMeal, !drawerOn else { return }
+                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn else { return }
                 scrollBottom(proxy)
             }
+            // 键盘起完：原本在底、起完却露出「到底」钮＝锚定差了几行，补一把（寻验 09-05：在最底打开输入框消息流抬一点、到底钮冒出来）
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                kbAnimating = false
+                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn, farFromBottom else { return }
+                scrollBottom(proxy)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbAnimating = false }
             .onAppear { Task { await model.load() } }
     }
 
