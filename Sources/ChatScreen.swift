@@ -285,8 +285,9 @@ final class ChatModel: ObservableObject {
                 m.thinking = s.thinking.isEmpty ? nil : s.thinking; m.thinkSecs = s.thinkSecs
                 cur = m
             case .chip(let n, _):
-                if cur == nil { cur = Msg(role: "assistant", content: "", ts: now) }
-                cur?.toolCalls = (cur?.toolCalls ?? []) + [ToolCall(function: .init(name: n, arguments: nil))]
+                var m = cur ?? Msg(role: "assistant", content: "", ts: now)
+                m.toolCalls = (m.toolCalls ?? []) + [ToolCall(function: .init(name: n, arguments: nil))]
+                cur = m
             }
         }
         if let c = cur { out.append(c) }
