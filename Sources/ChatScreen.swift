@@ -550,18 +550,14 @@ struct ChatScreen: View {
             }
             // iOS 16/17：键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
             // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底。键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
-            // iOS 18 也要：底边锚定按的是懒列表估算的内容高，收完键盘偶尔停在内容底下、视口一片白（寻验 09-05「拉到最底点退出输入框依旧白屏」）；
-            // 本来就在底时 scrollTo 末行是无感的，只有错位那回才会动
+            // 收完键盘：iOS 16/17 走老路（scrollTo 末行＋UIKit 按真实高钉底）；iOS 18 底边锚定已把大头做了，只让 SwiftUI 再滚到末行本身
+            // 把它真排出来（本来就在底＝无感）——**不钉** UIKit 偏移：钉是按懒列表估算的内容高算的，估高了就滚到内容外头、整片白
+            // （寻验 09-05 构建 72：刚开 App 点输入框直接大白屏，就是起键盘后那记补钉干的；记忆里 sim-63 早写过起键盘别钉）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
                 guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn else { return }
-                scrollBottom(proxy)
+                if #available(iOS 18, *) { if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } } else { scrollBottom(proxy) }
             }
-            // 键盘起完：原本在底、起完却露出「到底」钮＝锚定差了几行，补一把（寻验 09-05：在最底打开输入框消息流抬一点、到底钮冒出来）
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                kbAnimating = false
-                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn, farFromBottom else { return }
-                scrollBottom(proxy)
-            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in kbAnimating = false }   // 起键盘什么都不补
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbAnimating = false }
