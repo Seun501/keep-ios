@@ -14,8 +14,6 @@ on:
       - "ExportOptions.plist"
       - ".github/workflows/ios.yml"
     tags: ["v*"]
-  schedule:
-    - cron: "40 15 3 9 *"   # 一次性：09-03 23:40 北京时间传 TestFlight（Apple 每日上传上限 09-02 23:26 起算）；传完删掉这行
   workflow_dispatch:
     inputs:
       testflight:
@@ -37,7 +35,7 @@ env:
 
 jobs:
   build:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event.inputs.testflight != 'true' && github.event_name != 'schedule' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event.inputs.testflight != 'true' }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -88,7 +86,7 @@ jobs:
           retention-days: 7
 
   testflight:
-    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.testflight == 'true' || github.event_name == 'schedule' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.testflight == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 40
     env:
