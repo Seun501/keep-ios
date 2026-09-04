@@ -22,7 +22,7 @@ struct Composer: UIViewRepresentable {
         tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
         tv.typingAttributes = Self.attrs
         tv.font = Theme.uiUser(Self.size); tv.textColor = Theme.uiText
-        tv.tintColor = Theme.uiScrollTint.withAlphaComponent(0.65)  // 光标赤陶，比滚动条实一点（寻验 43：40% 太虚）
+        tv.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)  // 光标赤陶，比滚动条实（寻验 43：40% 太虚；09-04：65% 还虚，再实一点）
         tv.isScrollEnabled = false
         tv.keyboardDismissMode = .interactive
         tv.delegate = context.coordinator
@@ -77,14 +77,18 @@ struct PlainField: UIViewRepresentable {
     @Binding var focused: Bool
     var placeholder = ""
     var font = UIFont.systemFont(ofSize: 15)
+    var align: NSTextAlignment = .natural          // 拨盘打字要居中（寻验 09-04）
+    var returnKey: UIReturnKeyType = .send
+    var keyboard: UIKeyboardType = .default
     var onSubmit: () -> Void = {}
     func makeUIView(context: Context) -> UITextField {
         let tf = UITextField()
         tf.font = font; tf.textColor = Theme.uiText
         tf.backgroundColor = .clear; tf.borderStyle = .none
-        tf.tintColor = Theme.uiScrollTint.withAlphaComponent(0.65)
+        tf.textAlignment = align; tf.keyboardType = keyboard
+        tf.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)
         tf.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1), .font: font])
-        tf.returnKeyType = .send
+        tf.returnKeyType = returnKey
         tf.delegate = context.coordinator
         tf.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)
         tf.setContentHuggingPriority(.defaultLow, for: .horizontal)

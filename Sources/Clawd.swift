@@ -203,8 +203,9 @@ struct ScrollObserver: UIViewRepresentable {
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
             sv.contentInset = .zero
-            // 原生指示条（网页那根就是 WebKit 的它）：轨道底端抬 22、贴右 2；颜色照网页 rgba(217,119,87,.4)
-            sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: 12, right: 0)
+            // 原生指示条（网页那根就是 WebKit 的它）：颜色照网页 rgba(217,119,87,.4)；
+            // 主页轨道底端离输入卡上沿 6（寻验 09-04：12 偏高，要「现在和输入框上端的中间」），别页 12
+            sv.verticalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 0, bottom: name == "chat" ? 6 : 12, right: 0)
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
                 if sv.bounces != self.bounce || sv.alwaysBounceVertical != self.bounce { sv.bounces = self.bounce; sv.alwaysBounceVertical = self.bounce }   // SwiftUI 会改回去，每次都按住

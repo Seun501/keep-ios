@@ -142,14 +142,14 @@ struct ThinkView: View {
     }
 }
 
-/// 档案馆的条数小签：淡赤陶橙 10 号；直跳时闪几秒自己消失
+/// 档案馆的条数小签：赤陶橙 55%、字号同时间戳 12（寻验 09-04）；直跳时同一个色一明一暗闪几秒（原来暗到 12% 显得发白）
 struct NoTag: View {
     let t: String
     var flash: Bool
     @State private var dim = false
     init(_ t: String, flash: Bool) { self.t = t; self.flash = flash }
     var body: some View {
-        Text(t).font(Theme.round(flash ? 11 : 10)).foregroundColor(Theme.accent.opacity(flash ? (dim ? 0.12 : 0.8) : 0.55))
+        Text(t).font(Theme.round(12)).foregroundColor(Theme.accent.opacity(0.55)).opacity(flash && dim ? 0.3 : 1)
             .onAppear { if flash { withAnimation(.easeInOut(duration: 0.5).repeatCount(8, autoreverses: true)) { dim = true } } }
     }
 }

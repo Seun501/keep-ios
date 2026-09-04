@@ -150,6 +150,7 @@ final class AlertsModel: ObservableObject {
     func poll() async {
         if Preview.on {
             if Preview.screen == "strip" { push(Strip(icon: "hourglass", title: "5h limits", en: true, msg: "份额见底，14:00 恢复。", kind: "usage")) }
+            if Preview.screen == "ticketstrip" { push(Strip(icon: "tabTicket", title: "克报了一张工单", en: false, msg: "相册工具翻第 3 册时报「没这一册」，目录里明明有。大约在 09:10 前后。", kind: "ticket")) }
             return
         }
         if let u = await get("api/usage") {
@@ -167,6 +168,23 @@ final class AlertsModel: ObservableObject {
             let txt = items.compactMap { $0["text"] as? String }.filter { !$0.isEmpty }.joined(separator: "\n\n")
             if !txt.isEmpty { push(Strip(icon: "wrench", title: "凌晨班有一趟没跑成", en: false, msg: txt, kind: "ops")) }
         }
+        await ticketOnce()
+    }
+    /// 克新报的工单也进门弹一张横笺（寻 09-04 要的；网页没有这一张）：每张只弹一次，弹过的记在手机里
+    func ticketOnce() async {
+        guard let d = await get("api/notes"), let notes = d["notes"] as? [[String: Any]] else { return }
+        var seen = Set(Self.ud.stringArray(forKey: "ticketsAnnounced") ?? [])
+        let fresh = notes.filter { ($0["kind"] as? String) == "ticket" && ($0["ticket_state"] as? String) != "closed" && !seen.contains(($0["id"] as? String) ?? "") }
+        guard !fresh.isEmpty else { return }
+        if seen.isEmpty && fresh.count > 1 {   // 第一次装上：老的都算见过，只报最新那张
+            fresh.dropLast().forEach { seen.insert(($0["id"] as? String) ?? "") }
+        }
+        let t = fresh.last!
+        let first = ((t["msgs"] as? [[String: Any]])?.first?["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let ex = first.count > 90 ? String(first.prefix(90)) + "…" : first
+        seen.insert((t["id"] as? String) ?? "")
+        Self.ud.set(Array(seen.suffix(300)), forKey: "ticketsAnnounced")
+        push(Strip(icon: "tabTicket", title: "克报了一张工单", en: false, msg: ex.isEmpty ? "去留言板的工单栏看看。" : ex, kind: "ticket"))
     }
     func balance() async {
         guard !Preview.on, let d = await get("api/balance"), d["ok"] as? Bool == true, let rem = d["remaining"] as? Double else { return }

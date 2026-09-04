@@ -147,9 +147,8 @@ struct BoardScreen: View {
             // 写信入口＝右下角小圆球（08-27 寻定：墨色，橙用太多了），钉在底栏上方
             if m.tab == "letters" && letterOpen == nil && !composing {
                 Button { composeDraft = nil; composing = true } label: {
-                    Text("+").font(.system(size: 25, weight: .light)).foregroundColor(Theme.bg).padding(.bottom, 2)
-                        .frame(width: 44, height: 44).background(Theme.text, in: Circle())
-                        .shadow(color: Wax.ink.opacity(0.28), radius: 7, y: 5)
+                    Text("＋").font(.system(size: 25, weight: .light)).foregroundColor(Theme.bg).padding(.bottom, 2)   // 网页是全角＋（半角的太小，寻验 09-04）
+                        .frame(width: 44, height: 44).background(Circle().fill(Theme.text).shadow(color: Wax.ink.opacity(0.28), radius: 7, y: 5))
                 }.buttonStyle(.plain)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(.trailing, 20).padding(.bottom, 74)
@@ -381,8 +380,10 @@ struct NotePop: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(EdgeInsets(top: 4, leading: 4, bottom: 10, trailing: 4))
             .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))
-            .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16)
+            // 投影只挂在卡底那张纸上，不挂整张卡：挂整张卡时 SwiftUI 会给卡里每个 UIKit 子视图（输入框）各描一圈晕——
+            // 寻验 43/09-04「回复框始终有阴影边框」的病根（换 UITextField 也没好，就是它）
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.bg)
+                .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.28), radius: 24, y: 16))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         }

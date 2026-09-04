@@ -67,29 +67,51 @@ final class AlbumModel: ObservableObject {
     }
 }
 
-/// 网关上的图（带口令头）：相册与档案的附图都走这里
+/// 网关上的图（带口令头）：相册与档案的附图都走这里。
+/// ⚠️ 里面的 Image 是 scaledToFill/Fit，本身没有尺寸——外面必须给定 frame（寻验 09-04 相册整页都是原尺寸大图，就是没给框）
 struct GatewayImage<Placeholder: View>: View {
     let url: URL?
+    var fill = true
     @ViewBuilder var placeholder: () -> Placeholder
     @State private var image: UIImage? = nil
-    private static var cache: NSCache<NSURL, UIImage> { GatewayImageCache.shared }
     var body: some View {
         Group {
-            if let image { Image(uiImage: image).resizable().scaledToFill() } else { placeholder() }
+            if let image {
+                if fill { Image(uiImage: image).resizable().scaledToFill() } else { Image(uiImage: image).resizable().scaledToFit() }
+            } else { placeholder() }
         }
-        .task(id: url) { await load() }
-    }
-    private func load() async {
-        guard let url else { return }
-        if let c = Self.cache.object(forKey: url as NSURL) { image = c; return }
-        var r = URLRequest(url: url)
-        if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        guard let (d, _) = try? await URLSession.shared.data(for: r), let ui = UIImage(data: d) else { return }
-        Self.cache.setObject(ui, forKey: url as NSURL)
-        image = ui
+        .task(id: url) { image = await GatewayImageCache.load(url) }
     }
 }
-enum GatewayImageCache { static let shared: NSCache<NSURL, UIImage> = { let c = NSCache<NSURL, UIImage>(); c.countLimit = 300; return c }() }
+/// 按真实比例装进给定宽度（瀑布列/缩略）：先拿到图再定高，没拿到先按 4:3 占位
+struct FitImage: View {
+    let url: URL?
+    let width: CGFloat
+    var radius: CGFloat = 12
+    @State private var image: UIImage? = nil
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().frame(width: width, height: (width * image.size.height / max(image.size.width, 1)).rounded())
+            } else { Theme.panel.frame(width: width, height: (width * 0.75).rounded()) }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .task(id: url) { image = await GatewayImageCache.load(url) }
+    }
+}
+enum GatewayImageCache {
+    static let shared: NSCache<NSURL, UIImage> = { let c = NSCache<NSURL, UIImage>(); c.countLimit = 300; return c }()
+    static func peek(_ url: URL?) -> UIImage? { url.flatMap { shared.object(forKey: $0 as NSURL) } }
+    static func load(_ url: URL?) async -> UIImage? {
+        guard let url else { return nil }
+        if let c = shared.object(forKey: url as NSURL) { return c }
+        var r = URLRequest(url: url)
+        if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        guard let (d, _) = try? await URLSession.shared.data(for: r), let ui = UIImage(data: d) else { return nil }
+        shared.setObject(ui, forKey: url as NSURL)
+        return ui
+    }
+}
 
 struct AlbumScreen: View {
     var onBack: () -> Void
@@ -158,20 +180,21 @@ struct AlbumScreen: View {
                                 Text(it).font(Theme.serif(13.5)).italic().lineSpacing(3.5).foregroundColor(Theme.muted).padding(.top, 7)
                             }
                             let show = Array(ph.prefix(3))
+                            let cw = ((UIScreen.main.bounds.width - 48 - 12) / 3).rounded(.down)   // 三格正方：页边 20+4，格距 6
                             HStack(spacing: 6) {
                                 ForEach(Array(show.enumerated()), id: \.offset) { i, p in
                                     ZStack {
                                         Theme.panel
-                                        GatewayImage(url: p.url) { Theme.panel }
+                                        GatewayImage(url: p.url) { Theme.panel }.frame(width: cw, height: cw).clipped()
                                         if i == show.count - 1 && ph.count > show.count {
                                             Wax.ink.opacity(0.38)
                                             Text("+\(ph.count - show.count + 1)").font(.custom("Georgia", size: 19)).foregroundColor(.white)
                                         }
                                     }
-                                    .aspectRatio(1, contentMode: .fill)
+                                    .frame(width: cw, height: cw)
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
-                                if show.count < 3 { ForEach(0..<(3 - show.count), id: \.self) { _ in Color.clear.aspectRatio(1, contentMode: .fill) } }
+                                if show.count < 3 { ForEach(0..<(3 - show.count), id: \.self) { _ in Color.clear.frame(width: cw, height: cw) } }
                             }
                             .padding(.top, 12)
                         }
@@ -220,11 +243,11 @@ struct AlbumScreen: View {
         .padding(.bottom, 40)
     }
     private func column(_ arr: [Photo]) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        let cw = ((UIScreen.main.bounds.width - 40 - 14) / 2).rounded(.down)   // 两列瀑布：页边 20、列距 14
+        return VStack(alignment: .leading, spacing: 20) {
             ForEach(arr) { p in
                 VStack(alignment: .leading, spacing: 0) {
-                    GatewayImage(url: p.url) { Theme.panel.aspectRatio(1, contentMode: .fit) }
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    FitImage(url: p.url, width: cw, radius: 12)
                         .onTapGesture { lightbox = p }
                     Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(14, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text).padding(.top, 8).padding(.horizontal, 2)
                     if let n = p.intro, !n.isEmpty { Text(n).font(Theme.serif(13)).lineSpacing(3.5).foregroundColor(Theme.muted).padding(.top, 3).padding(.horizontal, 2) }
@@ -234,7 +257,7 @@ struct AlbumScreen: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: cw)
     }
     private func dayGroups(_ ph: [Photo]) -> [(String, [Photo])] {
         var out: [(String, [Photo])] = []
@@ -261,11 +284,14 @@ struct Lightbox: View {
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var sheet = false
+    @State private var sheetDrag: CGFloat = 0
     var body: some View {
         ZStack {
+            // 点图外的暗处也能退（寻验 09-04：原来只按图本体才关）；信息条开着先收信息条
             Color(red: 18/255, green: 18/255, blue: 17/255).opacity(0.96).ignoresSafeArea()
-            GatewayImage(url: p.url) { ProgressView().tint(.white) }
-                .aspectRatio(contentMode: .fit)
+                .contentShape(Rectangle())
+                .onTapGesture { if sheet { sheet = false } else { onClose() } }
+            GatewayImage(url: p.url, fill: false) { ProgressView().tint(.white) }
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.96, maxHeight: UIScreen.main.bounds.height * 0.88)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .scaleEffect(scale)
@@ -298,11 +324,14 @@ struct Lightbox: View {
                                 } else { Text("聊天") }
                             }
                         }
-                        .font(Theme.round(11.5)).lineSpacing(6).foregroundColor(Theme.muted).padding(.top, 10)
+                        .font(Theme.round(11.5)).lineSpacing(6).foregroundColor(Theme.muted).padding(.top, 32)   // 时间/来源离描述空两行（寻验 09-04）
                     }
                     .padding(EdgeInsets(top: 18, leading: 22, bottom: 20, trailing: 22))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.bg, in: UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18))
+                    .offset(y: max(0, sheetDrag))
+                    .gesture(DragGesture(minimumDistance: 6).onChanged { v in sheetDrag = v.translation.height }
+                        .onEnded { v in if v.translation.height > 60 { sheet = false }; sheetDrag = 0 })   // 往下一划收起（寻验 09-04：往下滑得卡）
                     .transition(.move(edge: .bottom))
                 }
             }

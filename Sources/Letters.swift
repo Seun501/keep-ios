@@ -188,7 +188,9 @@ enum Wax {
     static func color(mine: Bool, read: Bool) -> Color { mine ? (read ? xunRead : xun) : (read ? keRead : ke) }
 }
 
-/// 翻盖：三角影 + 两条发丝斜线
+/// 翻盖（照网页 .env-flap + .env-flapline）：三角影是 V（顶边到底中，不描边）；两条发丝线是 Λ——
+/// 从顶中分别斜到翻盖带的左下、右下角（网页两块半宽渐变的 50% 线各过一对对角）。V 和 Λ 交叉＝寻说的「四条对交的线」；
+/// 我之前把线描在 V 的边上，吞了 Λ 那两条（寻验 09-04）
 struct EnvelopeFlap: View {
     var height: CGFloat = 44
     var body: some View {
@@ -196,8 +198,8 @@ struct EnvelopeFlap: View {
             let w = g.size.width
             Path { p in p.move(to: .zero); p.addLine(to: CGPoint(x: w, y: 0)); p.addLine(to: CGPoint(x: w / 2, y: height)); p.closeSubpath() }
                 .fill(Wax.ink.opacity(0.045))
-            Path { p in p.move(to: .zero); p.addLine(to: CGPoint(x: w / 2, y: height)); p.addLine(to: CGPoint(x: w, y: 0)) }
-                .stroke(Theme.border, lineWidth: 1)
+            Path { p in p.move(to: CGPoint(x: 0, y: height)); p.addLine(to: CGPoint(x: w / 2, y: 0)); p.addLine(to: CGPoint(x: w, y: height)) }
+                .stroke(Theme.border, lineWidth: 0.8)
         }
         .frame(height: height)
     }
@@ -245,7 +247,7 @@ struct EnvelopeView: View {
         }
         .frame(height: 86)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.border, lineWidth: 0.8))   // 寻验 09-04：1 偏粗
         .contentShape(Rectangle())
     }
 }
@@ -299,11 +301,12 @@ struct DraftCard: View {
     @State private var opened = false
     var body: some View {
         ZStack(alignment: .trailing) {
-            Button(action: onDelete) {
-                Text("✕").font(.system(size: 24, weight: .light)).foregroundColor(.white)
-                    .frame(width: 40, height: 40).background(Theme.accent, in: Circle())
-                    .shadow(color: Theme.accent.opacity(0.32), radius: 7, y: 5)
-            }.buttonStyle(.plain).padding(.trailing, 6)
+            // 删除键（照 .draft-del：40 圆、橙、✕ 24 细）——不用 Button：卡划开后它露在卡的旧框里，Button 收不到点（寻验 09-04：草稿删不掉）
+            Text("✕").font(.system(size: 24, weight: .light)).foregroundColor(.white)
+                .frame(width: 40, height: 40).background(Circle().fill(Theme.accent).shadow(color: Theme.accent.opacity(0.32), radius: 7, y: 5))
+                .padding(.trailing, 6)
+                .contentShape(Circle())
+                .onTapGesture { onDelete() }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(LetterFmt.dayEn(d.ts)).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
@@ -314,13 +317,15 @@ struct DraftCard: View {
             }
             .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 86)   // 同信封一样高（寻验 09-04）
             .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])).foregroundColor(Theme.border))
             .offset(x: dx)
             .contentShape(Rectangle())
             .onTapGesture { if opened { opened = false; withAnimation(.easeOut(duration: 0.25)) { dx = 0 } } else { onOpen() } }
-            .gesture(DragGesture(minimumDistance: 8).onChanged { v in
-                guard abs(v.translation.height) < 40 else { return }
+            // 横划优先于外面的竖滚（不然滚动区先把手势拿走，卡划不开）
+            .highPriorityGesture(DragGesture(minimumDistance: 10).onChanged { v in
+                guard abs(v.translation.width) > abs(v.translation.height) else { return }
                 dx = min(0, max(-56, (opened ? -56 : 0) + v.translation.width))
             }.onEnded { _ in
                 opened = dx < -28
@@ -397,8 +402,9 @@ struct LetterComposeView: View {
                 .padding(.top, 54)
                 .padding(.bottom, 14)
                 .onChange(of: text) { t in draftId = m.upsertDraft(draftId, t) }
-            HStack {
-                Button { onClose() } label: { Text("✕").font(.system(size: 26)).foregroundColor(Theme.muted).padding(8) }.buttonStyle(.plain)
+            HStack(alignment: .center) {
+                // ✕ 同纸飞机一样大、一样高（寻验 09-04：26 太大）
+                Button { onClose() } label: { Text("✕").font(.system(size: 19, weight: .light)).foregroundColor(Theme.muted).frame(width: 23, height: 23).padding(8) }.buttonStyle(.plain)
                 Spacer()
                 Button {
                     let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -445,7 +451,7 @@ struct LetterTextArea: UIViewRepresentable {
         tv.backgroundColor = .clear
         tv.textContainerInset = UIEdgeInsets(top: 6, left: 0, bottom: 6, right: 0); tv.textContainer.lineFragmentPadding = 0
         tv.typingAttributes = Self.attrs
-        tv.tintColor = Theme.uiScrollTint.withAlphaComponent(0.65)
+        tv.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)
         tv.showsVerticalScrollIndicator = false
         tv.keyboardDismissMode = .interactive
         tv.delegate = context.coordinator
@@ -481,14 +487,12 @@ struct LetterTextArea: UIViewRepresentable {
 struct SealSheet: View {
     var onCancel: () -> Void
     var onSend: ([String: Any]) -> Void
-    enum Mode: Hashable { case days(Double), custom, at, never }
+    enum Mode: Hashable { case days(Double), custom, never }
     @State private var pick: Mode = .days(1)
     @State private var cD = 6                            // 自定义：天/时/分（默认 6 天）
     @State private var cH = 0
     @State private var cM = 0
-    @State private var atDate = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
-    @State private var aH = 9                            // 挑日子：默认 09:00
-    @State private var aM = 0
+    @State private var atDate = Calendar.current.date(byAdding: .day, value: 6, to: Calendar.current.startOfDay(for: Date())) ?? Date()   // 小日历挑的日子（并进自定义）
     @State private var sealed = false
     @State private var pass = ""
     @State private var passFocused = false
@@ -511,7 +515,8 @@ struct SealSheet: View {
                 ForEach(Array(presets.enumerated()), id: \.offset) { _, p in
                     row(p.0, to: LetterFmt.sealWhen(Date().addingTimeInterval(p.1 * 86400)), mode: .days(p.1))
                 }
-                // 自定义＝灰卡里三只拨盘 天/时/分，右下角实时报到几时
+                // 自定义＝灰卡里三只拨盘 天/时/分，右下角实时报到几时；那行「到 x月x日」本身可点＝翻小日历挑日子，
+                // 挑完倒计时跟着改（寻验 09-04：「挑个日子」并进自定义）
                 cus(mode: .custom) {
                     HStack(spacing: 10) {
                         NumCell(value: $cD, max: 30, label: "天")
@@ -519,24 +524,11 @@ struct SealSheet: View {
                         NumCell(value: $cM, max: 59, label: "分")
                     }
                     let t = Double(cD) + Double(cH) / 24 + Double(cM) / 1440
-                    Text(t > 0 ? LetterFmt.sealWhen(Date().addingTimeInterval(t * 86400)) : " ")
-                        .font(Theme.round(12.5)).foregroundColor(Theme.muted).frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 9)
-                }
-                // 挑个日子：日期格点开一本小日历，时/分照旧拨盘
-                cus(mode: .at) {
-                    HStack(spacing: 10) {
-                        VStack(spacing: 6) {
-                            Button { calOn = true } label: {
-                                Text(dateLbl(atDate)).font(Theme.round(14.5, weight: .semibold)).foregroundColor(Theme.text)
-                                    .frame(maxWidth: .infinity).frame(height: 44)
-                                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                                    .shadow(color: Wax.ink.opacity(0.05), radius: 1.5, y: 1)
-                            }.buttonStyle(.plain)
-                            Text("日期").font(Theme.round(11.5)).foregroundColor(Theme.muted)
-                        }.frame(maxWidth: .infinity).layoutPriority(1.9)
-                        NumCell(value: $aH, max: 23, label: "时")
-                        NumCell(value: $aM, max: 59, label: "分")
-                    }
+                    Text(t > 0 ? LetterFmt.sealWhen(Date().addingTimeInterval(t * 86400)) : "挑个日子")
+                        .font(Theme.round(12.5)).foregroundColor(Theme.muted).underline(true, pattern: .dot, color: Theme.muted.opacity(0.5))
+                        .frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 9)
+                        .contentShape(Rectangle())
+                        .onTapGesture { calOn = true }
                 }
                 row("无时限", to: "拿口令才开", mode: .never)
                 HStack(spacing: 13) {
@@ -578,15 +570,16 @@ struct SealSheet: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         .overlay { if calOn { MiniCalendar(date: $atDate, onClose: { calOn = false }).zIndex(9) } }
+        .onChange(of: atDate) { d in   // 挑了日子：倒计时拨到那天 09:00（天/时/分跟着滚）
+            let target = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: d) ?? d
+            let s = Swift.max(0, Int((target.timeIntervalSinceNow / 60).rounded()))   // 分钟数
+            cD = Swift.min(30, s / 1440); cH = s % 1440 / 60; cM = s % 60
+        }
         .alert("还没填好", isPresented: Binding(get: { alertMsg != nil }, set: { if !$0 { alertMsg = nil } })) { Button("好", role: .cancel) {} } message: { Text(alertMsg ?? "") }
         .onAppear { DispatchQueue.main.async { up = true } }
     }
 
     private func close() { up = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onCancel() } }
-    private func dateLbl(_ d: Date) -> String {
-        let c = Calendar.current
-        return "\(c.component(.month, from: d))月\(c.component(.day, from: d))日 周\(LetterFmt.wd[c.component(.weekday, from: d) - 1])"
-    }
     private func row(_ lb: String, to: String, mode: Mode) -> some View {
         HStack(spacing: 13) {
             SealDot(on: pick == mode)
@@ -595,19 +588,18 @@ struct SealSheet: View {
             Text(to).font(Theme.round(12.5)).foregroundColor(Theme.muted)
         }
         .padding(.vertical, 12).padding(.horizontal, 2).contentShape(Rectangle())
-        .onTapGesture { pick = mode }
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.4)) { pick = mode } }   // 选中点和卡一起走（寻验 09-04：点先到、卡后到，「魂在后面追」）
     }
-    /// 自定义/挑日子＝选中鼓成一张灰卡，缓缓展开（08-28 寻定：渐变别太快）
+    /// 自定义＝选中鼓成一张灰卡，缓缓展开（08-28 寻定：渐变别太快）
     private func cus<C: View>(mode: Mode, @ViewBuilder belt: () -> C) -> some View {
         let on = pick == mode
         return VStack(spacing: 0) {
-            row(mode == .custom ? "自定义" : "挑个日子", to: "", mode: mode)
+            row("自定义", to: "", mode: mode)
             if on { belt().padding(.horizontal, 2).padding(.top, 2) }
         }
         .padding(.horizontal, 10).padding(.bottom, on ? 13 : 0)
         .background(on ? Theme.userBubble : .clear, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .padding(.horizontal, -10)
-        .animation(.easeInOut(duration: 0.4), value: on)
     }
     private func go() {
         var payload: [String: Any] = [:]
@@ -617,9 +609,6 @@ struct SealSheet: View {
             let t = Double(cD) + Double(cH) / 24 + Double(cM) / 1440
             if t <= 0 { alertMsg = "封多久还没填"; return }
             payload["lock_days"] = t
-        case .at:
-            let c = Calendar.current
-            payload["lock_until"] = String(format: "%04d-%02d-%02dT%02d:%02d", c.component(.year, from: atDate), c.component(.month, from: atDate), c.component(.day, from: atDate), aH, aM)
         case .never:
             if pass.trimmingCharacters(in: .whitespaces).isEmpty { alertMsg = "无时限的锁得配口令，不然这封永远打不开"; return }
             payload["no_expiry"] = true
@@ -653,8 +642,9 @@ struct NumCell: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card).shadow(color: Wax.ink.opacity(0.05), radius: 1.5, y: 1)
                 if typing {
-                    PlainField(text: $buf, focused: $typingFocus, placeholder: "", font: UIFont.systemFont(ofSize: 18, weight: .semibold), onSubmit: { commit() })
-                        .multilineTextAlignment(.center)
+                    // 点进去＝空格子、光标居中、数字键盘；什么都没填就退出＝保留原数（寻验 09-04）
+                    PlainField(text: $buf, focused: $typingFocus, placeholder: "", font: UIFont.systemFont(ofSize: 18, weight: .semibold),
+                               align: .center, returnKey: .done, keyboard: .numberPad, onSubmit: { commit() })
                         .frame(height: 22).padding(.horizontal, 6)
                         .onChange(of: typingFocus) { f in if !f { commit() } }
                 } else {
@@ -664,7 +654,7 @@ struct NumCell: View {
             .frame(height: 44)
             .overlay { if typing { RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.accent, lineWidth: 1.5) } }
             .contentShape(Rectangle())
-            .onTapGesture { buf = String(value); typing = true; typingFocus = true }
+            .onTapGesture { buf = ""; typing = true; typingFocus = true }
             .gesture(DragGesture(minimumDistance: 6).onChanged { v in
                 let step = Int((v.translation.height - acc) / 18)
                 if step != 0 { value = Swift.max(0, Swift.min(max, value - step)); acc += CGFloat(step) * 18 }
@@ -675,7 +665,7 @@ struct NumCell: View {
     }
     private func commit() {
         guard typing else { return }
-        value = Swift.max(0, Swift.min(max, Int(buf.trimmingCharacters(in: .whitespaces)) ?? value))
+        if let n = Int(buf.trimmingCharacters(in: .whitespaces)) { value = Swift.max(0, Swift.min(max, n)) }   // 没填＝原数不动
         typing = false; typingFocus = false
     }
 }
@@ -794,8 +784,8 @@ struct LockPop: View {
             }
             .frame(width: min(UIScreen.main.bounds.width * 0.82, 310))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.border, lineWidth: 1))
-            .shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.border, lineWidth: 0.8))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Wax.paper).shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16))   // 投影挂纸上，别给口令框描晕
         }
         .onReceive(tick) { t in
             now = t

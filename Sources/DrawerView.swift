@@ -18,6 +18,11 @@ struct DrawerView: View {
     let onLogout: () -> Void
     var onNavigate: (Route) -> Void = { _ in }
     @State private var q = ""
+    @State private var qFocused = false
+    private static let searchFont: UIFont = {
+        let d = UIFont.systemFont(ofSize: 14).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 14).fontDescriptor
+        return UIFont(descriptor: d, size: 14)
+    }()
     // 日子和额度先用上次记下的（UserDefaults），拉到新的再换——通道慢时抽屉也别空着
     @State private var days: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.days") ?? [])   // 档案馆有记录的日子 yyyy-MM-dd
     @State private var ym: (Int, Int) = (Calendar.current.component(.year, from: Date()), Calendar.current.component(.month, from: Date()))
@@ -38,19 +43,18 @@ struct DrawerView: View {
                 }
                 .padding(.bottom, 6)
 
+                // 搜索框：纯 UITextField、定高 34（寻验 09-04：SwiftUI 的 TextField 一聚焦就上下变窄）
                 HStack(spacing: 0) {
-                    TextField("", text: $q, prompt: Text("Search…").foregroundColor(Color(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255)))
-                        .textFieldStyle(.plain)
-                        .font(Theme.round(14)).foregroundColor(Theme.text).tint(Theme.scrollTint)
+                    PlainField(text: $q, focused: $qFocused, placeholder: "Search…", font: Self.searchFont, returnKey: .search, onSubmit: search)
+                        .frame(height: 20)
                         .padding(.vertical, 7).padding(.horizontal, 12)
-                        .submitLabel(.search).onSubmit(search)
                     Button(action: search) {
                         Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)
-                            .padding(.horizontal, 13).frame(maxHeight: .infinity)
+                            .padding(.horizontal, 13).frame(height: 28)
                             .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }.buttonStyle(.plain).padding(3)
                 }
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(height: 34)
                 .background(Theme.bg, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border, lineWidth: 0.7))
                 .padding(.top, 6)
@@ -174,6 +178,7 @@ struct DrawerView: View {
     private func search() {
         let s = q.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty else { return }
+        qFocused = false
         onNavigate(.arch(day: nil, q: s, no: nil))
     }
     private func close() { shown = false }

@@ -250,7 +250,15 @@ final class ChatModel: ObservableObject {
                 PushRegistrar.diag("chat: error \(error.localizedDescription)")
                 if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")) }
             }
-            // 对账：服务器落盘的才是正史；半截也存了（拉不到隔一秒再试一次）
+            // 流一停先把这一轮就地落成正史：时间戳当场出现、token 数（done 事件带了就一起）——
+            // 原来要等整段正史（上百 KB）重拉回来才换上，末尾总卡一下（寻验 09-04）。出错那轮不落，照旧重拉。
+            let local = (live?.finished == true && !Task.isCancelled) ? Self.materialize(live!) : []
+            if !local.isEmpty { msgs.append(contentsOf: local) }
+            rebuild()
+            smoother?.invalidate(); smoother = nil
+            live = nil
+            sending = false
+            // 对账：服务器落盘的才是正史；半截也存了（拉不到隔一秒再试一次）。行的身份按下标，条数对得上就不重排不闪
             if let id = conversationId {
                 var conv = try? await GatewayAPI.conversation(id)
                 if conv == nil { try? await Task.sleep(nanoseconds: 1_000_000_000); conv = try? await GatewayAPI.conversation(id) }
@@ -258,13 +266,33 @@ final class ChatModel: ObservableObject {
                     msgs = conv.messages
                     renderFrom = min(renderFrom, max(0, msgs.count - 1))
                     lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+                    rebuild()
                 } else { PushRegistrar.diag("chat: reload failed after stream") }
             }
-            rebuild()
-            smoother?.invalidate(); smoother = nil
-            live = nil
-            sending = false
         }
+    }
+
+    /// 这一轮的分段 → 正史条目（每段一条 assistant，工具胶囊挂在前一段上；最后一条带 usage）
+    static func materialize(_ l: LiveTurn) -> [Msg] {
+        var out: [Msg] = []
+        var cur: Msg? = nil
+        let now = TimeFmt.nowIso()
+        for it in l.items {
+            switch it {
+            case .seg(let s):
+                if let c = cur { out.append(c) }
+                var m = Msg(role: "assistant", content: s.text, ts: now)
+                m.thinking = s.thinking.isEmpty ? nil : s.thinking; m.thinkSecs = s.thinkSecs
+                cur = m
+            case .chip(let n, _):
+                if cur == nil { cur = Msg(role: "assistant", content: "", ts: now) }
+                cur?.toolCalls = (cur?.toolCalls ?? []) + [ToolCall(function: .init(name: n, arguments: nil))]
+            }
+        }
+        if let c = cur { out.append(c) }
+        out = out.filter { !($0.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !$0.cleanThinking.isEmpty || $0.toolCalls != nil }
+        if var last = out.popLast() { last.usage = l.usage; out.append(last) }
+        return out
     }
 
     /// 打字机循环（照网页 smoothTick，逐帧放字，追平即停）
@@ -307,9 +335,8 @@ final class ChatModel: ObservableObject {
 struct ChatScreen: View {
     let onLogout: () -> Void
     @StateObject private var model = ChatModel()
-    @State private var draft = ""
+    @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
-    @State private var picks: [PhotosPickerItem] = []
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
@@ -333,6 +360,7 @@ struct ChatScreen: View {
         case "album", "albumbook", "albumlb": return [.album]
         case "mem": return [.mem]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
+        case "archno": return [.arch(day: "2026-09-02", q: nil, no: 1203)]   // #N 直跳的闪
         case "archhits": return [.arch(day: nil, q: "安静", no: nil)]
         default: return []
         }
@@ -445,7 +473,7 @@ struct ChatScreen: View {
             if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true } } }
             if p == .background { model.detach() }
         }
-        .onChange(of: picks) { _ in Task { await loadPicks() } }
+        .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.chat") } }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
@@ -485,6 +513,7 @@ struct ChatScreen: View {
 
     private func messageList(_ proxy: ScrollViewProxy) -> some View {
         ScrollView { listContent }
+            .modifier(BottomAnchor())                 // iOS 18+：视口高一变（键盘起/收）底边锚定，和键盘同一条曲线，不再事后补滚
             .scrollIndicators(.visible)               // 系统原生指示条（染成赤陶，见 ScrollObserver）：能拖、拉到头会缩、和网页同款
             .scrollBounceBehavior(.always, axes: .vertical)
             .scrollDismissesKeyboard(.interactively)
@@ -509,15 +538,17 @@ struct ChatScreen: View {
             }
             // 键盘跟随只能走 SwiftUI 自己的 scrollTo（UIKit 改 offset 会被它每帧写回）：原本在底，键盘来/走都钉着最后一行，
             // 时长取键盘的，曲线取系统键盘曲线的近似
+            // iOS 18 起这两段不跑：底边锚定（BottomAnchor）由系统在布局里做，起/收都跟着键盘走（寻验 09-04：收键盘/发送后先掉一下再上来＝事后补滚的锅）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+                if #available(iOS 18, *) { return }
                 guard atBottom, path.isEmpty, !showMeal, !drawerOn, let id = lastId else { return }
                 let dur = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                 withAnimation(.timingCurve(0.38, 0.7, 0.125, 1.0, duration: dur)) { proxy.scrollTo(id, anchor: .bottom) }
             }
-            // 键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
-            // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底（寻验：打字后点消息区收键盘，克的最新回复看不见）。
-            // 键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
+            // iOS 16/17：键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
+            // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底。键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                if #available(iOS 18, *) { return }
                 guard atBottom, path.isEmpty, !showMeal, !drawerOn else { return }
                 scrollBottom(proxy)
             }
@@ -625,7 +656,11 @@ struct ChatScreen: View {
             Composer(text: $draft, focused: $composerFocused)      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
-                PhotosPicker(selection: $picks, maxSelectionCount: 4, matching: .images) {
+                // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
+                Button {
+                    composerFocused = false
+                    PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
+                } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
@@ -653,10 +688,11 @@ struct ChatScreen: View {
             }
         }
         .padding(EdgeInsets(top: 18, leading: 18, bottom: 10, trailing: 14))   // 上面拉高一点（寻验 41）
-        .background(Theme.composer, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        // 投影只挂在卡底那张纸上（挂整张卡会给里面的 UIKit 输入框各描一圈晕）
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.composer)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+            .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
-        .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
-        .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14)
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)   // 消息区到输入卡＝网页 #messages padding-bottom 10，别再叠
     }
 
@@ -692,10 +728,9 @@ struct ChatScreen: View {
     }
 
     /// 选图 → 长边 1568 的 jpeg dataURL（Anthropic 最优尺寸），最多 4 张。
-    private func loadPicks() async {
-        for p in picks {
-            guard pending.count < 4, let data = try? await p.loadTransferable(type: Data.self),
-                  let ui = UIImage(data: data) else { continue }
+    private func addImages(_ imgs: [UIImage]) async {
+        for ui in imgs {
+            guard pending.count < 4 else { break }
             let L: CGFloat = 1568
             let s = min(1, L / max(ui.size.width, ui.size.height))
             let size = CGSize(width: (ui.size.width * s).rounded(), height: (ui.size.height * s).rounded())
@@ -705,7 +740,52 @@ struct ChatScreen: View {
                 pending.append("data:image/jpeg;base64," + jpg.base64EncodedString())
             }
         }
-        picks = []
+    }
+}
+
+/// 视口尺寸一变就把底边锚住（iOS 18 起有这个开关）：键盘起/收时最后一行跟着键盘走，和系统同一条曲线
+struct BottomAnchor: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) { content.defaultScrollAnchor(.bottom, for: .sizeChanges) } else { content }
+    }
+}
+
+/// 系统选图器自己弹（PHPicker 是别的进程画的远程视图，只认弹出前钉在它 view 上的 tintColor）
+@MainActor
+final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
+    static let shared = PhotoPickerBridge()
+    private var done: (([UIImage]) -> Void)? = nil
+    func present(max: Int, done: @escaping ([UIImage]) -> Void) {
+        guard max > 0, let top = Self.topVC() else { return }
+        var cfg = PHPickerConfiguration(photoLibrary: .shared())
+        cfg.selectionLimit = max; cfg.filter = .images
+        let p = PHPickerViewController(configuration: cfg)
+        p.delegate = self
+        p.view.tintColor = Theme.uiScrollTint      // 勾勾、右上角「完成」都用赤陶（寻：橙色好看，不要系统蓝）
+        self.done = done
+        top.present(p, animated: true)
+    }
+    nonisolated func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        Task { @MainActor in
+            picker.dismiss(animated: true)
+            let cb = self.done; self.done = nil
+            var imgs: [UIImage] = []
+            for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(ui) } }
+            cb?(imgs)
+        }
+    }
+    private static func load(_ ip: NSItemProvider) async -> UIImage? {
+        guard ip.canLoadObject(ofClass: UIImage.self) else { return nil }
+        return await withCheckedContinuation { c in
+            ip.loadObject(ofClass: UIImage.self) { o, _ in c.resume(returning: o as? UIImage) }
+        }
+    }
+    private static func topVC() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        var vc = (scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first)?.rootViewController
+        while let p = vc?.presentedViewController { vc = p }
+        return vc
     }
 }
 
