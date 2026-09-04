@@ -740,8 +740,7 @@ struct LockPop: View {
                 }
                 if e.hasPassphrase == true {
                     HStack(spacing: 12) {
-                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: UIFont.systemFont(ofSize: 13), onSubmit: { go() })
-                            .multilineTextAlignment(.center)
+                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: UIFont.systemFont(ofSize: 13), onSubmit: { go() })   // 「口令」靠左（寻 09-05：居左好看）
                             .frame(height: 18).padding(.vertical, 5).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
                         Button { go() } label: {
