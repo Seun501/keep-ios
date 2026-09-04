@@ -65,7 +65,10 @@ final class BooksModel: ObservableObject {
 
     private func api(_ path: String, method: String = "GET", body: Data? = nil, json: Bool = false) async throws -> Data {
         guard let token = Keychain.token else { throw GatewayAPI.Failure.unauthorized }
-        var r = URLRequest(url: Gateway.home.appendingPathComponent(path))
+        // 带 ?filename= 的地址不能走 appendingPathComponent——它会把 ? 编成 %3F 当路径，服务器答 Not Found（寻验 09-04：传 epub 显示 Not Found）
+        let url: URL = path.contains("?") ? (URL(string: path, relativeTo: Gateway.home)?.absoluteURL ?? Gateway.home.appendingPathComponent(path))
+                                          : Gateway.home.appendingPathComponent(path)
+        var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if json { r.setValue("application/json", forHTTPHeaderField: "Content-Type") }
