@@ -217,8 +217,9 @@ struct WaxSeal: View {
             Circle().fill(color)
             if locked {
                 // 网页 .wax.lockx：两道 1.5 白线走 14deg / 166deg 渐变＝近乎横着的扁 X（顺翻盖走向）；我之前画成竖的（寻 09-05 拿原图纠正）
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 1.5).rotationEffect(.degrees(14))
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 1.5).rotationEffect(.degrees(-14))
+                // 线 0.6（网页 1.5 是渐变虚化的；寻 09-05：「再细！得细很多」）
+                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 0.6).rotationEffect(.degrees(14))
+                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 0.6).rotationEffect(.degrees(-14))
             }
         }
         .frame(width: size, height: size)
