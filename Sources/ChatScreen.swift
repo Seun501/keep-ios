@@ -544,8 +544,9 @@ struct ChatScreen: View {
             // 键盘跟随只能走 SwiftUI 自己的 scrollTo（UIKit 改 offset 会被它每帧写回）：原本在底，键盘来/走都钉着最后一行，
             // 时长取键盘的，曲线取系统键盘曲线的近似
             // iOS 18 起这两段不跑：底边锚定（BottomAnchor）由系统在布局里做，起/收都跟着键盘走（寻验 09-04：收键盘/发送后先掉一下再上来＝事后补滚的锅）
+            // 所有版本都走这条（09-05 sim-78：iOS 18 的 sizeChanges 锚底对键盘让位这种内边距变化不起作用，起键盘偏移纹丝不动）；
+            // 列表已是非懒 VStack、高度是真的，scrollTo 末行滚得准
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
-                if #available(iOS 18, *) { return }
                 guard atBottom, path.isEmpty, !showMeal, !drawerOn, let id = lastId else { return }
                 let dur = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                 withAnimation(.timingCurve(0.38, 0.7, 0.125, 1.0, duration: dur)) { proxy.scrollTo(id, anchor: .bottom) }
