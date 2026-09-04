@@ -356,7 +356,7 @@ struct ChatScreen: View {
     @State private var path: [Route] = {
         guard Preview.on else { return [] }
         switch Preview.screen {
-        case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "lockpop": return [.board(openLetter: nil)]
+        case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop": return [.board(openLetter: nil)]
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
         case "mem": return [.mem]
@@ -762,9 +762,19 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
         cfg.selectionLimit = max; cfg.filter = .images
         let p = PHPickerViewController(configuration: cfg)
         p.delegate = self
-        p.view.tintColor = Theme.uiScrollTint      // 勾勾、右上角「完成」都用赤陶（寻：橙色好看，不要系统蓝）
+        // 勾勾、右上角「完成」都用赤陶（寻：橙色好看，不要系统蓝）。远程视图连上来有先有后：
+        // 弹出前钉一次，弹完再拨一次（换个值再换回来，逼它把 tint 再发一遍）——寻验 09-04 二回：只钉一次时头一回还是蓝
+        top.view.window?.tintColor = Theme.uiScrollTint
+        p.view.tintColor = Theme.uiScrollTint
         self.done = done
-        top.present(p, animated: true)
+        top.present(p, animated: true) {
+            p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
+            p.view.tintColor = Theme.uiScrollTint
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
+                p.view.tintColor = Theme.uiScrollTint
+            }
+        }
     }
     nonisolated func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         Task { @MainActor in

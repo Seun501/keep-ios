@@ -42,7 +42,9 @@ final class LettersModel: ObservableObject {
     @Published var unseen: [Letter] = []
     @Published var badge = 0
     @Published var loaded = false
-    @Published var drafts: [LetterDraft] = LettersModel.loadDrafts()
+    @Published var drafts: [LetterDraft] = Preview.on
+        ? [LetterDraft(id: "d1", ts: TimeFmt.nowIso(), content: "写到一半的一封，明天再接着。")]   // 截图用的假草稿（我自己的字）
+        : LettersModel.loadDrafts()
 
     private static let ud = UserDefaults.standard
 
@@ -199,7 +201,7 @@ struct EnvelopeFlap: View {
             Path { p in p.move(to: .zero); p.addLine(to: CGPoint(x: w, y: 0)); p.addLine(to: CGPoint(x: w / 2, y: height)); p.closeSubpath() }
                 .fill(Wax.ink.opacity(0.045))
             Path { p in p.move(to: CGPoint(x: 0, y: height)); p.addLine(to: CGPoint(x: w / 2, y: 0)); p.addLine(to: CGPoint(x: w, y: height)) }
-                .stroke(Theme.border, lineWidth: 0.8)
+                .stroke(Theme.border, lineWidth: 0.5)   // 发丝：网页那根是 1px 渐变虚化的，原生 0.8 显粗（寻验 09-04 二回）
         }
         .frame(height: height)
     }
@@ -301,8 +303,8 @@ struct DraftCard: View {
     @State private var opened = false
     var body: some View {
         ZStack(alignment: .trailing) {
-            // 删除键（照 .draft-del：40 圆、橙、✕ 24 细）——不用 Button：卡划开后它露在卡的旧框里，Button 收不到点（寻验 09-04：草稿删不掉）
-            Text("✕").font(.system(size: 24, weight: .light)).foregroundColor(.white)
+            // 删除键（照 .draft-del：40 圆、橙）：叉＝右下角那个全角＋原样转 45°（寻验 09-04 二回：和＋一般大，「相当于旋转一下」）
+            Text("＋").font(.system(size: 25, weight: .light)).foregroundColor(.white).rotationEffect(.degrees(45))
                 .frame(width: 40, height: 40).background(Circle().fill(Theme.accent).shadow(color: Theme.accent.opacity(0.32), radius: 7, y: 5))
                 .padding(.trailing, 6)
                 .contentShape(Circle())
@@ -320,7 +322,6 @@ struct DraftCard: View {
             .frame(height: 86)   // 同信封一样高（寻验 09-04）
             .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])).foregroundColor(Theme.border))
-            .offset(x: dx)
             .contentShape(Rectangle())
             .onTapGesture { if opened { opened = false; withAnimation(.easeOut(duration: 0.25)) { dx = 0 } } else { onOpen() } }
             // 横划优先于外面的竖滚（不然滚动区先把手势拿走，卡划不开）
@@ -331,6 +332,9 @@ struct DraftCard: View {
                 opened = dx < -28
                 withAnimation(.easeOut(duration: 0.25)) { dx = opened ? -56 : 0 }
             })
+            // 点击区和手势都放在 offset 里头，跟着卡一起挪。原来挂在 offset 外头：卡划开了、点击区还留在原位盖着 ✕，
+            // 点叉＝卡缩回、删不掉（寻验 09-04 两回「还是无法删除草稿」的病根）
+            .offset(x: dx)
         }
     }
 }
@@ -429,8 +433,9 @@ struct LetterComposeView: View {
         .alert("没寄出", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好", role: .cancel) {} } message: { Text(error ?? "") }
         .onAppear {
             text = draft?.content ?? ""; draftId = draft?.id
-            if !(Preview.on && Preview.screen == "seal") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focused = true } }
-            if Preview.on && Preview.screen == "seal" { sealing = true }
+            let sealShot = Preview.on && (Preview.screen == "seal" || Preview.screen == "sealdate")
+            if !sealShot { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { focused = true } }
+            if sealShot { sealing = true }
         }
     }
 }
@@ -492,11 +497,14 @@ struct SealSheet: View {
     @State private var cD = 6                            // 自定义：天/时/分（默认 6 天）
     @State private var cH = 0
     @State private var cM = 0
-    @State private var atDate = Calendar.current.date(byAdding: .day, value: 6, to: Calendar.current.startOfDay(for: Date())) ?? Date()   // 小日历挑的日子（并进自定义）
+    // 自定义卡的另一面：直接填 月/日/时（寻验 09-04 二回：小日历难翻，填日子省事——点「到 x月x日」翻面，三只格子换成 月/日/时）
+    @State private var byDate = false
+    @State private var tMo = 1
+    @State private var tDy = 1
+    @State private var tHr = 9
     @State private var sealed = false
     @State private var pass = ""
     @State private var passFocused = false
-    @State private var calOn = false
     @State private var up = false
     @State private var alertMsg: String? = nil
     private let presets: [(String, Double)] = [("1 小时", 1.0/24), ("6 小时", 0.25), ("一天", 1), ("一周", 7), ("一个月", 30), ("半年", 182)]
@@ -515,20 +523,33 @@ struct SealSheet: View {
                 ForEach(Array(presets.enumerated()), id: \.offset) { _, p in
                     row(p.0, to: LetterFmt.sealWhen(Date().addingTimeInterval(p.1 * 86400)), mode: .days(p.1))
                 }
-                // 自定义＝灰卡里三只拨盘 天/时/分，右下角实时报到几时；那行「到 x月x日」本身可点＝翻小日历挑日子，
-                // 挑完倒计时跟着改（寻验 09-04：「挑个日子」并进自定义）
+                // 自定义＝灰卡里三只拨盘，正面 天/时/分、右下角实时报到几时；点那行「到 x月x日」翻到背面，格子换成 月/日/时 直接填，
+                // 右下角改报封多久。两面说的是同一个时刻，改哪面另一面都跟着（寻验 09-04：「挑个日子」并进自定义；二回：日历难翻→填日子）
                 cus(mode: .custom) {
-                    HStack(spacing: 10) {
-                        NumCell(value: $cD, max: 30, label: "天")
-                        NumCell(value: $cH, max: 23, label: "时")
-                        NumCell(value: $cM, max: 59, label: "分")
-                    }
                     let t = Double(cD) + Double(cH) / 24 + Double(cM) / 1440
-                    Text(t > 0 ? LetterFmt.sealWhen(Date().addingTimeInterval(t * 86400)) : "挑个日子")
-                        .font(Theme.round(12.5)).foregroundColor(Theme.muted).underline(true, pattern: .dot, color: Theme.muted.opacity(0.5))
-                        .frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 9)
-                        .contentShape(Rectangle())
-                        .onTapGesture { calOn = true }
+                    if byDate {
+                        HStack(spacing: 10) {
+                            NumCell(value: $tMo, min: 1, max: 12, label: "月")
+                            NumCell(value: $tDy, min: 1, max: 31, label: "日")
+                            NumCell(value: $tHr, max: 23, label: "时")
+                        }
+                        Text(t > 0 ? "封 " + spanLabel : "填个日子")
+                            .font(Theme.round(12.5)).foregroundColor(Theme.muted).underline(true, pattern: .dot, color: Theme.muted.opacity(0.5))
+                            .frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 9)
+                            .contentShape(Rectangle())
+                            .onTapGesture { byDate = false }
+                    } else {
+                        HStack(spacing: 10) {
+                            NumCell(value: $cD, max: 366, label: "天")
+                            NumCell(value: $cH, max: 23, label: "时")
+                            NumCell(value: $cM, max: 59, label: "分")
+                        }
+                        Text(t > 0 ? LetterFmt.sealWhen(Date().addingTimeInterval(t * 86400)) : "填个日子")
+                            .font(Theme.round(12.5)).foregroundColor(Theme.muted).underline(true, pattern: .dot, color: Theme.muted.opacity(0.5))
+                            .frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 9)
+                            .contentShape(Rectangle())
+                            .onTapGesture { flipToDate(t) }
+                    }
                 }
                 row("无时限", to: "拿口令才开", mode: .never)
                 HStack(spacing: 13) {
@@ -569,17 +590,40 @@ struct SealSheet: View {
             .gesture(DragGesture(minimumDistance: 12).onEnded { v in if v.translation.height > 110 { close() } })
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .overlay { if calOn { MiniCalendar(date: $atDate, onClose: { calOn = false }).zIndex(9) } }
-        .onChange(of: atDate) { d in   // 挑了日子：倒计时拨到那天 09:00（天/时/分跟着滚）
-            let target = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: d) ?? d
+        .onChange(of: tMo * 10000 + tDy * 100 + tHr) { _ in   // 背面填了月/日/时：倒计时拨到那个钟点（今年已过就算明年的）
+            guard byDate else { return }
+            let cal = Calendar.current
+            let y = cal.component(.year, from: Date())
+            guard var target = cal.date(from: DateComponents(year: y, month: tMo, day: tDy, hour: tHr)) else { return }
+            if target <= Date() { target = cal.date(from: DateComponents(year: y + 1, month: tMo, day: tDy, hour: tHr)) ?? target }
             let s = Swift.max(0, Int((target.timeIntervalSinceNow / 60).rounded()))   // 分钟数
-            cD = Swift.min(30, s / 1440); cH = s % 1440 / 60; cM = s % 60
+            cD = Swift.min(366, s / 1440); cH = s % 1440 / 60; cM = s % 60
         }
         .alert("还没填好", isPresented: Binding(get: { alertMsg != nil }, set: { if !$0 { alertMsg = nil } })) { Button("好", role: .cancel) {} } message: { Text(alertMsg ?? "") }
-        .onAppear { DispatchQueue.main.async { up = true } }
+        .onAppear {
+            DispatchQueue.main.async { up = true }
+            if Preview.on, Preview.screen == "seal" { pick = .custom }                       // 截图：自定义正面（天/时/分）
+            if Preview.on, Preview.screen == "sealdate" { pick = .custom; flipToDate(6) }    // 截图：自定义背面（月/日/时）
+        }
     }
 
     private func close() { up = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { onCancel() } }
+    /// 翻到背面：把当前倒计时落到的那个时刻拆成 月/日/时（还没填过就默认明天 09:00）
+    private func flipToDate(_ t: Double) {
+        let cal = Calendar.current
+        var target = Date().addingTimeInterval(t * 86400)
+        if t <= 0 { target = cal.date(bySettingHour: 9, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: Date()) ?? Date()) ?? Date() }
+        tMo = cal.component(.month, from: target); tDy = cal.component(.day, from: target); tHr = cal.component(.hour, from: target)
+        byDate = true
+    }
+    /// 「6 天 3 时」
+    private var spanLabel: String {
+        var s: [String] = []
+        if cD > 0 { s.append("\(cD) 天") }
+        if cH > 0 { s.append("\(cH) 时") }
+        if cM > 0 { s.append("\(cM) 分") }
+        return s.joined(separator: " ")
+    }
     private func row(_ lb: String, to: String, mode: Mode) -> some View {
         HStack(spacing: 13) {
             SealDot(on: pick == mode)
@@ -631,6 +675,7 @@ struct SealDot: View {
 /// 单格拨盘（08-28 寻定：不露上下的数字，一只白格，上下拨换数、点进去直接打字）
 struct NumCell: View {
     @Binding var value: Int
+    var min: Int = 0
     var max: Int
     var label: String
     @State private var typing = false
@@ -657,7 +702,7 @@ struct NumCell: View {
             .onTapGesture { buf = ""; typing = true; typingFocus = true }
             .gesture(DragGesture(minimumDistance: 6).onChanged { v in
                 let step = Int((v.translation.height - acc) / 18)
-                if step != 0 { value = Swift.max(0, Swift.min(max, value - step)); acc += CGFloat(step) * 18 }
+                if step != 0 { value = Swift.max(min, Swift.min(max, value - step)); acc += CGFloat(step) * 18 }
             }.onEnded { _ in acc = 0 })
             Text(label).font(Theme.round(11.5)).foregroundColor(Theme.muted)
         }
@@ -665,74 +710,8 @@ struct NumCell: View {
     }
     private func commit() {
         guard typing else { return }
-        if let n = Int(buf.trimmingCharacters(in: .whitespaces)) { value = Swift.max(0, Swift.min(max, n)) }   // 没填＝原数不动
+        if let n = Int(buf.trimmingCharacters(in: .whitespaces)) { value = Swift.max(min, Swift.min(max, n)) }   // 没填＝原数不动
         typing = false; typingFocus = false
-    }
-}
-
-/// 小日历（08-28 寻定三稿：再小再精致——不铺灰底、不标今天，选中＝橙色正圆）；能选的日子＝今天起 366 天
-struct MiniCalendar: View {
-    @Binding var date: Date
-    var onClose: () -> Void
-    @State private var ym: (Int, Int) = (0, 0)
-    var body: some View {
-        let cal = Calendar.current
-        let t0 = cal.startOfDay(for: Date())
-        let maxD = cal.date(byAdding: .day, value: 366, to: t0) ?? t0
-        ZStack {
-            Wax.ink.opacity(0.25).ignoresSafeArea().onTapGesture { onClose() }
-            VStack(spacing: 4) {
-                let ymNow = ym.0 == 0 ? (cal.component(.year, from: date), cal.component(.month, from: date)) : ym
-                let y = ymNow.0, m = ymNow.1
-                let first = cal.date(from: DateComponents(year: y, month: m, day: 1)) ?? t0
-                let lead = cal.component(.weekday, from: first) - 1
-                let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
-                let prevOK = !(y == cal.component(.year, from: t0) && m <= cal.component(.month, from: t0))
-                let nextOK = !(y == cal.component(.year, from: maxD) && m >= cal.component(.month, from: maxD))
-                HStack {
-                    Button { shift(-1, from: (y, m)) } label: { Text("‹").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12).opacity(prevOK ? 1 : 0.25) }.buttonStyle(.plain).disabled(!prevOK)
-                    Spacer()
-                    Text("\(String(y)) 年 \(m) 月").font(Theme.round(13.5)).foregroundColor(Theme.text)
-                    Spacer()
-                    Button { shift(1, from: (y, m)) } label: { Text("›").font(.system(size: 20)).foregroundColor(Theme.accent).padding(.horizontal, 12).opacity(nextOK ? 1 : 0.25) }.buttonStyle(.plain).disabled(!nextOK)
-                }
-                let cells: [Int] = Array(repeating: 0, count: lead) + Array(1...n)
-                let total = Int(ceil(Double(cells.count) / 7)) * 7
-                let padded = cells + Array(repeating: 0, count: total - cells.count)
-                VStack(spacing: 2) {
-                    HStack(spacing: 2) { ForEach(LetterFmt.wd, id: \.self) { w in Text(w).font(Theme.round(10)).foregroundColor(Theme.muted.opacity(0.6)).frame(maxWidth: .infinity).padding(.top, 2).padding(.bottom, 3) } }
-                    ForEach(0..<(total / 7), id: \.self) { r in
-                        HStack(spacing: 2) {
-                            ForEach(0..<7, id: \.self) { c in
-                                let d = padded[r * 7 + c]
-                                if d == 0 { Color.clear.frame(maxWidth: .infinity).frame(height: 28) }
-                                else {
-                                    let cd = cal.date(from: DateComponents(year: y, month: m, day: d)) ?? t0
-                                    let ok = cd >= t0 && cd <= maxD
-                                    let sel = cal.isDate(cd, inSameDayAs: date)
-                                    Text(String(d)).font(Theme.round(12, weight: sel ? .semibold : (ok ? .medium : .regular)))
-                                        .foregroundColor(sel ? .white : (ok ? Theme.text : Theme.muted.opacity(0.45)))
-                                        .frame(width: 28, height: 28)
-                                        .background(sel ? Theme.accent : .clear, in: Circle())
-                                        .frame(maxWidth: .infinity)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { if ok { date = cd; onClose() } }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
-            .frame(width: 252)
-            .background(Theme.bg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16)
-        }
-    }
-    private func shift(_ d: Int, from: (Int, Int)) {
-        var (y, m) = from; m += d
-        if m < 1 { m = 12; y -= 1 }; if m > 12 { m = 1; y += 1 }
-        ym = (y, m)
     }
 }
 

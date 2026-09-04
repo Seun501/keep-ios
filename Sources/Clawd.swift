@@ -212,7 +212,14 @@ struct ScrollObserver: UIViewRepresentable {
                 self.tintIndicator(sv)
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
-                let y = sv.contentOffset.y + inset.top
+                var y = sv.contentOffset.y + inset.top
+                // 内容忽然变矮（流一停：直播段撤下、正史行换上，懒列表按估算重排）时偏移可能留在内容底下——
+                // 视口里就一片空白（寻验 09-04 二回：发完消息有概率「白屏、消息流都没了」）。没在手上拖、没在惯性滚就钳回底
+                let maxY = sv.contentSize.height - vh
+                if !self.kbBusy, !sv.isTracking, !sv.isDragging, !sv.isDecelerating, maxY >= 0, y > maxY + 2 {
+                    sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY - inset.top)
+                    y = maxY
+                }
                 self.atBottom = (sv.contentSize.height - y - vh) < 40
                 // 视口高度没在变的时候才更新「底边以下量」——系统让位先于我改帧，改帧后量到的数是错的（寻验 41：又不跟了）
                 if !self.kbBusy, abs(sv.bounds.height - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }

@@ -128,7 +128,7 @@ struct ArchiveScreen: View {
             }
             if m.view == "day" {   // 条数开关（08-31 寻定）：点亮＝每条尾巴挂全局编号
                 Button { m.showNums.toggle() } label: {
-                    Text("#").font(.custom("Georgia", size: 15)).foregroundColor(m.showNums ? Theme.accent.opacity(0.8) : Theme.muted).frame(width: 30, height: 30)
+                    Text("#").font(.custom("Georgia", size: 15)).foregroundColor(m.showNums ? Theme.accent : Theme.muted).frame(width: 30, height: 30)
                 }.buttonStyle(.plain)
             }
         }

@@ -94,6 +94,13 @@ enum Theme {
             .addingAttributes([.cascadeList: [songti]])
         return Font(UIFont(descriptor: d, size: size))
     }
+    /// 相册标题那一套（网页 Georgia, 'Lora', 'Songti SC', 'Noto Serif SC'，600）：英文 Georgia 粗 → 中文思源宋 SemiBold → 系统宋体
+    static func georgiaCJK(_ size: CGFloat) -> Font {
+        let songti = UIFontDescriptor(name: "Songti SC", size: size)
+        let cjk = descriptor(cjkName(.semibold), size: size, fallback: songti)
+        let g = descriptor("Georgia-Bold", size: size, fallback: cjk).addingAttributes([.cascadeList: [cjk, songti]])
+        return Font(UIFont(descriptor: g, size: size))
+    }
     static func round(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .rounded)
     }

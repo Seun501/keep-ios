@@ -1,4 +1,6 @@
 import SwiftUI
+import ImageIO
+import CryptoKit
 
 // MARK: - 相册（2026-08-31 寻定稿改版：Gallery 总览 + 分册内页 + 全图查看）
 
@@ -72,6 +74,7 @@ final class AlbumModel: ObservableObject {
 struct GatewayImage<Placeholder: View>: View {
     let url: URL?
     var fill = true
+    var maxPixel: CGFloat = 0            // >0＝按这个长边解码成小图（缩略格/瀑布用，别把整张原图塞进内存）
     @ViewBuilder var placeholder: () -> Placeholder
     @State private var image: UIImage? = nil
     var body: some View {
@@ -80,7 +83,7 @@ struct GatewayImage<Placeholder: View>: View {
                 if fill { Image(uiImage: image).resizable().scaledToFill() } else { Image(uiImage: image).resizable().scaledToFit() }
             } else { placeholder() }
         }
-        .task(id: url) { image = await GatewayImageCache.load(url) }
+        .task(id: url) { image = await GatewayImageCache.load(url, maxPixel: maxPixel) }
     }
 }
 /// 按真实比例装进给定宽度（瀑布列/缩略）：先拿到图再定高，没拿到先按 4:3 占位
@@ -96,20 +99,85 @@ struct FitImage: View {
             } else { Theme.panel.frame(width: width, height: (width * 0.75).rounded()) }
         }
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-        .task(id: url) { image = await GatewayImageCache.load(url) }
+        .task(id: url) { image = await GatewayImageCache.load(url, maxPixel: GatewayImageCache.waterfallPx) }
     }
 }
+/// 相册/档案的图：内存缓存 → 磁盘缓存（Caches/gwimg，App 退出再开也不用重下）→ 网关。
+/// 解码在后台线程，缩略按长边降采样（寻验 09-04：相册加载慢——原来每次进相册都整张原图重下、再在主线程解码）
 enum GatewayImageCache {
-    static let shared: NSCache<NSURL, UIImage> = { let c = NSCache<NSURL, UIImage>(); c.countLimit = 300; return c }()
-    static func peek(_ url: URL?) -> UIImage? { url.flatMap { shared.object(forKey: $0 as NSURL) } }
-    static func load(_ url: URL?) async -> UIImage? {
+    static let thumbPx: CGFloat = 480        // 总览三格（≈110pt）
+    static let waterfallPx: CGFloat = 720    // 分册两列（≈170pt）
+    static let fullPx: CGFloat = 2600        // 看图器（屏幕 3 倍够用；原图有时上万像素）
+    static let shared: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 400; c.totalCostLimit = 180 * 1024 * 1024; return c }()
+    private static func key(_ url: URL, _ px: CGFloat) -> NSString { "\(url.absoluteString)#\(Int(px))" as NSString }
+    static func peek(_ url: URL?, maxPixel: CGFloat = 0) -> UIImage? { url.flatMap { shared.object(forKey: key($0, maxPixel)) } }
+    /// 已经解过的任何一档（缩略也行）——看图器开门先拿它垫着，原图到了再换
+    static func peekAny(_ url: URL?) -> UIImage? {
         guard let url else { return nil }
-        if let c = shared.object(forKey: url as NSURL) { return c }
-        var r = URLRequest(url: url)
-        if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        guard let (d, _) = try? await URLSession.shared.data(for: r), let ui = UIImage(data: d) else { return nil }
-        shared.setObject(ui, forKey: url as NSURL)
+        for px in [fullPx, waterfallPx, thumbPx, 0] { if let c = shared.object(forKey: key(url, px)) { return c } }
+        return nil
+    }
+    static func load(_ url: URL?, maxPixel: CGFloat = 0) async -> UIImage? {
+        guard let url else { return nil }
+        if let c = shared.object(forKey: key(url, maxPixel)) { return c }
+        var data = Disk.read(url)
+        if data == nil {
+            var r = URLRequest(url: url)
+            if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return nil }
+            if let h = resp as? HTTPURLResponse, !(200..<300).contains(h.statusCode) { return nil }
+            data = d
+            if url.host == Gateway.home.host { Disk.write(url, d) }   // 只落网关上的图（data: 图不走这里）
+        }
+        guard let d = data else { return nil }
+        let px = maxPixel
+        guard let ui = await Task.detached(priority: .userInitiated, operation: { decode(d, maxPixel: px) }).value else { return nil }
+        shared.setObject(ui, forKey: key(url, maxPixel), cost: Int(ui.size.width * ui.size.height * ui.scale * ui.scale * 4))
         return ui
+    }
+    nonisolated private static func decode(_ d: Data, maxPixel: CGFloat) -> UIImage? {
+        guard let src = CGImageSourceCreateWithData(d as CFData, nil) else { return UIImage(data: d) }
+        var opts: [CFString: Any] = [kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true,
+                                     kCGImageSourceCreateThumbnailFromImageAlways: true]
+        if maxPixel > 0 { opts[kCGImageSourceThumbnailMaxPixelSize] = maxPixel }
+        else if let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                let w = props[kCGImagePropertyPixelWidth] as? CGFloat, let h = props[kCGImagePropertyPixelHeight] as? CGFloat {
+            opts[kCGImageSourceThumbnailMaxPixelSize] = Swift.max(w, h)   // 不缩，但走同一条解码路（已解好的位图，上屏不再卡）
+        }
+        if let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) { return UIImage(cgImage: cg) }
+        return UIImage(data: d)
+    }
+    /// 磁盘缓存：文件名＝地址的 SHA256；上限约 200MB，超了从最旧的删
+    enum Disk {
+        private static let dir: URL = {
+            let d = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())).appendingPathComponent("gwimg", isDirectory: true)
+            try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+            return d
+        }()
+        private static func path(_ url: URL) -> URL {
+            let h = SHA256.hash(data: Data(url.absoluteString.utf8)).map { String(format: "%02x", $0) }.joined()
+            return dir.appendingPathComponent(h)
+        }
+        static func read(_ url: URL) -> Data? { try? Data(contentsOf: path(url)) }
+        static func write(_ url: URL, _ d: Data) {
+            try? d.write(to: path(url), options: .atomic)
+            trimIfNeeded()
+        }
+        private static var writes = 0
+        private static func trimIfNeeded() {
+            writes += 1; guard writes % 40 == 0 else { return }
+            DispatchQueue.global(qos: .utility).async {
+                let fm = FileManager.default
+                guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]) else { return }
+                var files = items.compactMap { u -> (URL, Int, Date)? in
+                    guard let v = try? u.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
+                    return (u, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
+                }
+                var total = files.reduce(0) { $0 + $1.1 }
+                files.sort { $0.2 < $1.2 }
+                for f in files where total > 200 * 1024 * 1024 { try? fm.removeItem(at: f.0); total -= f.1 }
+            }
+        }
     }
 }
 
@@ -171,7 +239,7 @@ struct AlbumScreen: View {
                         let ph = m.photos(in: k)
                         VStack(alignment: .leading, spacing: 0) {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(k.isEmpty ? "未分册" : k).font(.custom("Georgia-Bold", size: 24)).foregroundColor(Theme.text)
+                                Text(k.isEmpty ? "未分册" : k).font(Theme.georgiaCJK(24)).foregroundColor(Theme.text)   // 中文回落思源宋（寻验 09-04）
                                 if !k.isEmpty && m.pins.contains(k) { Text("★").font(.system(size: 14)).foregroundColor(Theme.dyn(0xE0A896, 0xC98A76)).offset(y: -2) }
                                 Spacer()
                                 Text("\(ph.count)").font(Theme.round(13.5)).foregroundColor(Theme.muted)
@@ -185,7 +253,7 @@ struct AlbumScreen: View {
                                 ForEach(Array(show.enumerated()), id: \.offset) { i, p in
                                     ZStack {
                                         Theme.panel
-                                        GatewayImage(url: p.url) { Theme.panel }.frame(width: cw, height: cw).clipped()
+                                        GatewayImage(url: p.url, maxPixel: GatewayImageCache.thumbPx) { Theme.panel }.frame(width: cw, height: cw).clipped()
                                         if i == show.count - 1 && ph.count > show.count {
                                             Wax.ink.opacity(0.38)
                                             Text("+\(ph.count - show.count + 1)").font(.custom("Georgia", size: 19)).foregroundColor(.white)
@@ -214,7 +282,7 @@ struct AlbumScreen: View {
         let ph = m.photos(in: k)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(k.isEmpty ? "未分册" : k).font(.custom("Georgia-Bold", size: 34)).foregroundColor(Theme.text)
+                Text(k.isEmpty ? "未分册" : k).font(Theme.georgiaCJK(34)).foregroundColor(Theme.text)
                 if !k.isEmpty {
                     Text("★").font(.system(size: 17)).foregroundColor(m.pins.contains(k) ? Theme.dyn(0xE0A896, 0xC98A76) : Theme.border)
                         .onTapGesture { m.togglePin(k) }   // 你点的：置顶/取消
@@ -291,7 +359,10 @@ struct Lightbox: View {
             Color(red: 18/255, green: 18/255, blue: 17/255).opacity(0.96).ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { if sheet { sheet = false } else { onClose() } }
-            GatewayImage(url: p.url, fill: false) { ProgressView().tint(.white) }
+            // 开门先拿列表里已解好的缩略垫着（立刻有图），大图到了再换
+            GatewayImage(url: p.url, fill: false, maxPixel: GatewayImageCache.fullPx) {
+                if let t = GatewayImageCache.peekAny(p.url) { Image(uiImage: t).resizable().scaledToFit() } else { ProgressView().tint(.white) }
+            }
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.96, maxHeight: UIScreen.main.bounds.height * 0.88)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .scaleEffect(scale)
