@@ -749,24 +749,24 @@ struct LockPop: View {
                                 .background(e.mine ? Wax.xun : Wax.ke, in: Capsule())
                         }.buttonStyle(.plain)
                     }
-                    .frame(maxWidth: 190).padding(.top, 14).padding(.bottom, 2)
+                    .frame(maxWidth: 190).padding(.top, 12).padding(.bottom, 2)
                     Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 6).frame(minHeight: 14 + 6)
                 }
             }
             .frame(maxWidth: .infinity)
-            // 比网页的 64/22/20 收紧一圈（寻 09-05：卡再扁一点、精致一点）
-            .padding(EdgeInsets(top: 62, leading: 22, bottom: 14, trailing: 22))
+            // 比例照 08-27 那张来信卡（寻 09-05 指定：300 宽、22 圆角、矮胖）：翻盖 40、蜡 20，上 56 下 16
+            .padding(EdgeInsets(top: 56, leading: 24, bottom: 16, trailing: 24))
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Wax.paper
-                    EnvelopeFlap(height: 46)
-                    WaxSeal(color: e.mine ? Wax.xun : Wax.ke, locked: true, size: 22).offset(y: 46 - 11)
+                    EnvelopeFlap(height: 40)
+                    WaxSeal(color: e.mine ? Wax.xun : Wax.ke, locked: true, size: 20).offset(y: 40 - 10)
                 }
             }
-            .frame(width: min(UIScreen.main.bounds.width * 0.82, 310))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.border, lineWidth: 0.8))
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Wax.paper).shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16))   // 投影挂纸上，别给口令框描晕
+            .frame(width: min(UIScreen.main.bounds.width * 0.80, 300))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.border, lineWidth: 0.8))
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Wax.paper).shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16))   // 投影挂纸上，别给口令框描晕
         }
         .onReceive(tick) { t in
             now = t
