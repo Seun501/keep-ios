@@ -546,12 +546,8 @@ struct ChatScreen: View {
             // iOS 18 起这两段不跑：底边锚定（BottomAnchor）由系统在布局里做，起/收都跟着键盘走（寻验 09-04：收键盘/发送后先掉一下再上来＝事后补滚的锅）
             // 所有版本都走这条（09-05 sim-78：iOS 18 的 sizeChanges 锚底对键盘让位这种内边距变化不起作用，起键盘偏移纹丝不动）；
             // 列表已是非懒 VStack、高度是真的，scrollTo 末行滚得准
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
-                guard atBottom, path.isEmpty, !showMeal, !drawerOn, let id = lastId else { return }
-                let dur = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
-                // 晚一拍：通知到的这一刻 SwiftUI 还没把视口缩小，当场 scrollTo 算出来「已在底」就不动（sim-79）；下一个运行环再滚
-                DispatchQueue.main.async { withAnimation(.timingCurve(0.38, 0.7, 0.125, 1.0, duration: dur)) { proxy.scrollTo(id, anchor: .bottom) } }
-            }
+            // 起键盘跟随在 ScrollObserver 里做（键盘动的那段逐帧钉底，见 Clawd.swift）：真机 diag 实证 SwiftUI 是把滚动区的框压矮（749→437）、
+            // 偏移纹丝不动，iOS 18 的 sizeChanges 锚底没跟；SwiftUI 的 scrollTo 又不认让位（sim-78～80、构建 81 寻验「不跟着抬」），这里不再 scrollTo
             // iOS 16/17：键盘收完再钉一次：视口放高时懒列表的内容高是估的，滚到「底」底下会留一大截空、末行漂在上头（模拟器 sim-62 实证）——
             // 照冷启动的路子先滚到末行让它真排出来，再由 UIKit 按真实内容高钉底。键盘起时别这么钉（sim-63 实证：起的时候钉反而滚到半路）
             // 收完键盘：iOS 16/17 走老路（scrollTo 末行＋UIKit 按真实高钉底）；iOS 18 底边锚定已把大头做了，只让 SwiftUI 再滚到末行本身
@@ -561,11 +557,11 @@ struct ChatScreen: View {
                 guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn else { return }
                 if #available(iOS 18, *) { if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } } else { scrollBottom(proxy) }
             }
-            // 起完键盘还差一截就用 SwiftUI 的 scrollTo 补（高度是真的，准；不是之前按估算高的 UIKit 硬钉）
+            // 起完键盘还差一截就按真实内容高钉一次（列表是非懒 VStack、高度是真的；72 那回白屏是懒列表估算高的锅）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
                 kbAnimating = false
-                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn, farFromBottom, let id = lastId else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .bottom) }
+                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn, farFromBottom else { return }
+                pinBottom()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }

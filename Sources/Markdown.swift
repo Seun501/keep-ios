@@ -294,8 +294,14 @@ struct RichText: UIViewRepresentable {
         // TextKit 1：*斜体* 靠 .obliqueness 倾斜，TextKit 2 直接无视它（寻验 28「完全不渲染」——星号吃了、字没斜）
         let tv = UITextView(usingTextLayoutManager: false)
         tv.isEditable = false; tv.isSelectable = maxLines == 0; tv.isScrollEnabled = false
-        // 长按选字老是没选上（寻 09-05）：系统长按要按满 0.5 秒，手指稍一动外面的滚动区就把手势抢走；把 UITextView 自带的长按缩到 0.3 秒
-        for g in tv.gestureRecognizers ?? [] { if let lp = g as? UILongPressGestureRecognizer, lp.minimumPressDuration > 0.3 { lp.minimumPressDuration = 0.3 } }
+        // 长按选字老是没选上（寻 09-05，缩系统长按到 0.3s 没用）：自己挂一只 0.3s 长按——按到就选中手指下那个词、震一下、弹复制菜单，
+        // 系统自带的那几只长按都让给它（要它失败才跑），网页 WebKit 的长按就是这个手感；选中后拉柄照旧能拖
+        if tv.isSelectable {
+            let lp = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.longPress(_:)))
+            lp.minimumPressDuration = 0.3
+            for g in tv.gestureRecognizers ?? [] where g is UILongPressGestureRecognizer { g.require(toFail: lp) }
+            tv.addGestureRecognizer(lp)
+        }
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
         if maxLines > 0 { tv.textContainer.maximumNumberOfLines = maxLines; tv.textContainer.lineBreakMode = .byTruncatingTail; tv.isUserInteractionEnabled = false }
@@ -309,7 +315,25 @@ struct RichText: UIViewRepresentable {
         if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr; context.coordinator.cache = nil }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var cache: (w: CGFloat, size: CGSize)? = nil }
+    final class Coordinator: NSObject {
+        var cache: (w: CGFloat, size: CGSize)? = nil
+        @objc func longPress(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began, let tv = g.view as? UITextView else { return }
+            let pt = g.location(in: tv)
+            guard let pos = tv.closestPosition(to: pt) else { return }
+            let tk = tv.tokenizer
+            let range = tk.rangeEnclosingPosition(pos, with: .word, inDirection: UITextDirection.storage(.backward))
+                ?? tk.rangeEnclosingPosition(pos, with: .word, inDirection: UITextDirection.storage(.forward))
+                ?? tk.rangeEnclosingPosition(pos, with: .character, inDirection: UITextDirection.storage(.forward))
+            guard let range else { return }
+            if !tv.isFirstResponder { tv.becomeFirstResponder() }
+            tv.selectedTextRange = range
+            UISelectionFeedbackGenerator().selectionChanged()
+            if let emi = tv.interactions.first(where: { $0 is UIEditMenuInteraction }) as? UIEditMenuInteraction {
+                emi.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: pt))
+            }
+        }
+    }
     /// 键盘让位/滚动区改帧时 SwiftUI 每帧都来问尺寸——同宽同文就直接给上次算的（寻验 39：收键盘卡顿）
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         let maxW = proposal.width ?? (UIScreen.main.bounds.width - 32)

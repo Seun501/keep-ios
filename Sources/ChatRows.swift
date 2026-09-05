@@ -142,15 +142,31 @@ struct ThinkView: View {
     }
 }
 
-/// 档案馆的条数小签：赤陶橙实色、字号同时间戳 12（寻验 09-04 两回：55% 还是浅，直接实色）；直跳时一明一暗闪几秒
+/// 档案馆的条数小签：赤陶橙实色、字号同时间戳 12、字重细一档（寻验 81）；直跳时一明一暗闪几秒；长按＝把「#N」抄进剪贴板（寻：记数字累）
 struct NoTag: View {
     let t: String
     var flash: Bool
     @State private var dim = false
+    @State private var copied = false
     init(_ t: String, flash: Bool) { self.t = t; self.flash = flash }
     var body: some View {
-        Text(t).font(Theme.round(12)).foregroundColor(Theme.accent).opacity(flash && dim ? 0.25 : 1)
-            .onAppear { if flash { withAnimation(.easeInOut(duration: 0.5).repeatCount(8, autoreverses: true)) { dim = true } } }
+        Text(copied ? "已复制" : t).font(Theme.round(12, weight: .light)).foregroundColor(Theme.accent)
+            .opacity(dim ? 0.2 : 1)
+            // 闪用 .animation(value:) 驱动、且晚一拍再起：出现那一拍和推页/滚动同一笔事务，onAppear 里的 withAnimation 被吞掉，
+            // 结果就是不闪、整段 25% 淡着待 4 秒再消失（寻验 81「颜色很惨淡、4 秒后消失」）。7 段收在暗、随后无动画回实色
+            .animation(dim ? .easeInOut(duration: 0.5).repeatCount(7, autoreverses: true) : nil, value: dim)
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: 0.4) {
+                UIPasteboard.general.string = t
+                UISelectionFeedbackGenerator().selectionChanged()
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+            }
+            .onAppear {
+                guard flash else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { dim = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.7) { dim = false }
+            }
     }
 }
 

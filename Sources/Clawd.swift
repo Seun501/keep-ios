@@ -235,8 +235,14 @@ struct ScrollObserver: UIViewRepresentable {
                     guard let self, let sv = self.sv else { return }
                     let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                     let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt) ?? 7
-                    // 滚动本身交给 SwiftUI 的 scrollTo（ChatScreen 里做）：UIKit 改的 contentOffset 会被 SwiftUI 每帧布局写回抹掉（构建 43 快照实证）
-                    _ = (dur, curve)
+                    _ = curve
+                    // 起键盘跟随（构建 81 寻验：非懒 VStack 后消息流不跟键盘抬了——iOS 18 的 sizeChanges 锚底原来是被懒列表重估内容高「顺带」触发的，
+                    // 内容高一真它就不动；SwiftUI 的 scrollTo 又不认键盘让位的内边距）：原本在底，就在键盘动的这段时间里逐帧把底边钉在
+                    // 让位后的视口底（CADisplayLink，dur+0.2s），内容高是真的、钉得准。收键盘不用跟：视口放高底边自然还在
+                    if n != UIResponder.keyboardWillHideNotification, self.name == "chat", self.atBottom,
+                       let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue, end.minY < UIScreen.main.bounds.height - 1 {
+                        self.startFollow(dur)
+                    }
                     self.kbBusy = true
                     // 键盘前后一秒内钳子都不动：起键盘时懒列表的内容高是重估的（sim-76：估成 1850、真 2623），这时钳一下等于按假数硬拨，
                     // 列表反而停在半路露出到底钮。收键盘的白屏交给 ChatScreen 里 keyboardDidHide 的 scrollTo 末行
@@ -245,6 +251,20 @@ struct ScrollObserver: UIViewRepresentable {
                 })
             }
             fire()
+        }
+        private var link: CADisplayLink? = nil
+        private var followUntil: CFTimeInterval = 0
+        private func startFollow(_ dur: Double) {
+            followUntil = CACurrentMediaTime() + dur + 0.2
+            if link == nil { let l = CADisplayLink(target: self, selector: #selector(tick)); l.add(to: .main, forMode: .common); link = l }
+        }
+        @objc private func tick() {
+            guard let sv, CACurrentMediaTime() <= followUntil else { link?.invalidate(); link = nil; return }
+            guard !sv.isTracking, !sv.isDragging else { return }
+            let inset = sv.adjustedContentInset
+            let vh = sv.bounds.height - inset.top - inset.bottom
+            let maxY = sv.contentSize.height - vh - inset.top
+            if maxY > -inset.top, sv.contentOffset.y < maxY - 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY) }
         }
         /// 排查用：键盘前后滚动区的帧/内容高/偏移/底距，进服务器 diag 日志（一次会话最多四回）
         private func snapshot(_ tag: String, _ note: Notification) {
