@@ -223,8 +223,9 @@ struct ScrollObserver: UIViewRepresentable {
                 }
                 self.atBottom = (sv.contentSize.height - y - vh) < 40
                 // 视口高度没在变的时候才更新「底边以下量」——系统让位先于我改帧，改帧后量到的数是错的（寻验 41：又不跟了）
-                if !self.kbBusy, abs(sv.bounds.height - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }
-                self.lastH = sv.bounds.height
+                // 量的是「内边距扣完的视口高」：模拟器上让位走 contentInset、bounds 不变（sim-83 实证），按 bounds 判稳会把压矮后的量记进去
+                if !self.kbBusy, abs(vh - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }
+                self.lastH = vh
                 self.onChange(y, sv.contentSize.height, vh)
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
@@ -242,12 +243,15 @@ struct ScrollObserver: UIViewRepresentable {
                     // 起键盘跟随（构建 81 寻验：非懒 VStack 后消息流不跟键盘抬了——iOS 18 的 sizeChanges 锚底原来是被懒列表重估内容高「顺带」触发的，
                     // 内容高一真它就不动；SwiftUI 的 scrollTo 又不认键盘让位的内边距）：原本在底，就在键盘动的这段时间里逐帧把底边钉在
                     // 让位后的视口底（CADisplayLink，dur+0.2s），内容高是真的、钉得准。收键盘不用跟：视口放高底边自然还在
-                    if n != UIResponder.keyboardWillHideNotification, self.name == "chat", self.atBottom,
+                    // 「在不在底」用键盘来之前记下的 lastDist 判：SwiftUI 的键盘观察者排在我前头，通知到我这儿时视口已经压矮、
+                    // atBottom 已被算成「差一截」（sim-83：kb skip ab=false）
+                    if n != UIResponder.keyboardWillHideNotification, self.name == "chat", self.lastDist < 40,
                        let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue, end.minY < UIScreen.main.bounds.height - 1 {
                         self.startFollow(dur)
-                        ScrollObserver.note = String(format: "kb dur=%.2f end=%.0f ab=1", dur, end.minY)
+                        ScrollObserver.note = String(format: "kb dur=%.2f end=%.0f d=%.0f", dur, end.minY, self.lastDist)
+                        self.followPin()   // 视口若已经压矮就当场钉一次（后面的每帧变化再由 KVO 接）
                     } else if self.name == "chat" {
-                        ScrollObserver.note = "kb skip ab=\(self.atBottom)"
+                        ScrollObserver.note = String(format: "kb skip d=%.0f", self.lastDist)
                     }
                     self.kbBusy = true
                     if self.name == "chat" { DispatchQueue.main.async { fire() } }   // 让预览里的调试字刷一下
