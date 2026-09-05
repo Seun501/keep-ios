@@ -512,7 +512,7 @@ struct ChatScreen: View {
             let total = max(ch, 1)
             farFromBottom = (total - y - vh) > 40
             atBottom = !farFromBottom
-            if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f", y, ch, vh) }
+            if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note }
         })
     }
 

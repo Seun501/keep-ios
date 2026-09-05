@@ -171,6 +171,7 @@ struct ScrollObserver: UIViewRepresentable {
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
+    static var note = ""               // 预览截图里的调试字（键盘跟随钩子跑没跑）
     static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
@@ -228,6 +229,8 @@ struct ScrollObserver: UIViewRepresentable {
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })
+            obs.append(sv.observe(\.bounds) { [weak self] _, _ in self?.followPin() })          // 键盘让位改框
+            obs.append(sv.observe(\.contentInset) { [weak self] _, _ in self?.followPin(); fire() })   // 万一是走内边距
             // 键盘：系统让位把视口压矮/放高（它跑在我前面），我拿「键盘来之前底边以下的内容量」算出新偏移，
             // 用键盘同一条曲线同一时长把 contentOffset 动过去——底边锚定（iMessage 做法），和键盘一起走、不逐帧硬掰。
             for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
@@ -242,8 +245,12 @@ struct ScrollObserver: UIViewRepresentable {
                     if n != UIResponder.keyboardWillHideNotification, self.name == "chat", self.atBottom,
                        let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue, end.minY < UIScreen.main.bounds.height - 1 {
                         self.startFollow(dur)
+                        ScrollObserver.note = String(format: "kb dur=%.2f end=%.0f ab=1", dur, end.minY)
+                    } else if self.name == "chat" {
+                        ScrollObserver.note = "kb skip ab=\(self.atBottom)"
                     }
                     self.kbBusy = true
+                    if self.name == "chat" { DispatchQueue.main.async { fire() } }   // 让预览里的调试字刷一下
                     // 键盘前后一秒内钳子都不动：起键盘时懒列表的内容高是重估的（sim-76：估成 1850、真 2623），这时钳一下等于按假数硬拨，
                     // 列表反而停在半路露出到底钮。收键盘的白屏交给 ChatScreen 里 keyboardDidHide 的 scrollTo 末行
                     DispatchQueue.main.asyncAfter(deadline: .now() + dur + 1.0) { [weak self] in self?.kbBusy = false }
@@ -252,19 +259,17 @@ struct ScrollObserver: UIViewRepresentable {
             }
             fire()
         }
-        private var link: CADisplayLink? = nil
+        // 跟随窗口：键盘动的这段（dur+0.3s）里，滚动区的框/内边距每改一次（SwiftUI 布局那一刻的 KVO）就钉一次底。
+        // 不能用 CADisplayLink：它在每帧开头跑、SwiftUI 布局在后头把偏移写回（sim-82 实证纹丝不动）；KVO 是在它改完框之后回调，钉了才算数
         private var followUntil: CFTimeInterval = 0
-        private func startFollow(_ dur: Double) {
-            followUntil = CACurrentMediaTime() + dur + 0.2
-            if link == nil { let l = CADisplayLink(target: self, selector: #selector(tick)); l.add(to: .main, forMode: .common); link = l }
-        }
-        @objc private func tick() {
-            guard let sv, CACurrentMediaTime() <= followUntil else { link?.invalidate(); link = nil; return }
-            guard !sv.isTracking, !sv.isDragging else { return }
+        private var pins = 0
+        private func startFollow(_ dur: Double) { followUntil = CACurrentMediaTime() + dur + 0.3; pins = 0 }
+        private func followPin() {
+            guard let sv, CACurrentMediaTime() <= followUntil, !sv.isTracking, !sv.isDragging else { return }
             let inset = sv.adjustedContentInset
             let vh = sv.bounds.height - inset.top - inset.bottom
             let maxY = sv.contentSize.height - vh - inset.top
-            if maxY > -inset.top, sv.contentOffset.y < maxY - 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY) }
+            if maxY > -inset.top, sv.contentOffset.y < maxY - 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY); pins += 1; ScrollObserver.note = "pins=\(pins)" }
         }
         /// 排查用：键盘前后滚动区的帧/内容高/偏移/底距，进服务器 diag 日志（一次会话最多四回）
         private func snapshot(_ tag: String, _ note: Notification) {
