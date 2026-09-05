@@ -257,7 +257,16 @@ struct ScrollObserver: UIViewRepresentable {
                     if self.name == "chat" { DispatchQueue.main.async { fire() } }   // 让预览里的调试字刷一下
                     // 键盘前后一秒内钳子都不动：起键盘时懒列表的内容高是重估的（sim-76：估成 1850、真 2623），这时钳一下等于按假数硬拨，
                     // 列表反而停在半路露出到底钮。收键盘的白屏交给 ChatScreen 里 keyboardDidHide 的 scrollTo 末行
-                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 1.0) { [weak self] in self?.kbBusy = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dur + 1.0) { [weak self] in
+                        guard let self else { return }
+                        self.kbBusy = false
+                        // 键盘落定后把底距重新记一次：起键盘那阵 lastDist 可能停在压矮前后的旧数（sim-84 收键盘时 d=301），下次起键盘会误判
+                        if let sv = self.sv {
+                            let inset = sv.adjustedContentInset
+                            let vh = sv.bounds.height - inset.top - inset.bottom
+                            self.lastDist = max(0, sv.contentSize.height - (sv.contentOffset.y + inset.top) - vh); self.lastH = vh
+                        }
+                    }
                     if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
                 })
             }
