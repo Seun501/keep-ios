@@ -739,11 +739,17 @@ struct LockPop: View {
     @State private var passFocused = false
     @State private var err = ""
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    /// 截图用：假信的解封时间写死在 json 里会过期（09-08 lockpop 场景弹不出来），预览里改成三天后早九点
+    private var untilIso: String? {
+        guard Preview.on else { return e.until }
+        let base = Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()
+        return TimeFmt.isoString(Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: base) ?? base)
+    }
     var body: some View {
         ZStack {
             Wax.ink.opacity(0.38).ignoresSafeArea().onTapGesture { onClose() }
             VStack(spacing: 0) {
-                if let until = e.until, let d = TimeFmt.parse(until) {
+                if let until = untilIso, let d = TimeFmt.parse(until) {
                     Text(countdown(d)).font(.custom("Georgia", size: 27)).fontWeight(.light).tracking(1.4).foregroundColor(Theme.text).padding(.bottom, 4)
                     Text(LetterFmt.lockWhen(until)).font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Theme.muted).lineSpacing(4)
                 } else {
@@ -781,7 +787,7 @@ struct LockPop: View {
         }
         .onReceive(tick) { t in
             now = t
-            if let until = e.until, let d = TimeFmt.parse(until), d <= t { Task { await m.refresh(); onClose() } }   // 倒到零：信自己开了
+            if !Preview.on, let until = e.until, let d = TimeFmt.parse(until), d <= t { Task { await m.refresh(); onClose() } }   // 倒到零：信自己开了
         }
     }
     private func countdown(_ d: Date) -> String {

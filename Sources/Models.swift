@@ -117,4 +117,5 @@ enum TimeFmt {
     static func stamp(_ iso: String?) -> String { iso.flatMap(parse).map(stamp) ?? "" }
     static func hm(_ iso: String?) -> String { iso.flatMap(parse).map(hm) ?? "" }
     static func nowIso() -> String { iso.string(from: Date()) }
+    static func isoString(_ d: Date) -> String { iso.string(from: d) }
 }
