@@ -473,7 +473,8 @@ struct ChatScreen: View {
         }
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
-            if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true } } }
+            if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true }
+                                     await alerts.uvOnce(); await alerts.healthOnce() } }   // 「当天首开」也算回前台那次（App 常驻内存时 .task 不会再跑）
             if p == .background { model.detach() }
         }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.chat") } }
@@ -481,7 +482,7 @@ struct ChatScreen: View {
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
         .overlay { if let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }).zIndex(60) } }
-        .task { await alerts.poll(); await alerts.healthOnce() }
+        .task { await alerts.poll(); await alerts.uvOnce(); await alerts.healthOnce() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await alerts.poll() } }
         .onChange(of: model.sending) { s in if !s { Task { await alerts.balance() } } }   // 克说完话后查余额（照网页 done 时 refreshBalance）
     }

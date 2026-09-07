@@ -151,6 +151,7 @@ final class AlertsModel: ObservableObject {
         if Preview.on {
             if Preview.screen == "strip" { push(Strip(icon: "hourglass", title: "5h limits", en: true, msg: "份额见底，14:00 恢复。", kind: "usage")) }
             if Preview.screen == "ticketstrip" { push(Strip(icon: "tabTicket", title: "克报了一张工单", en: false, msg: "相册工具翻第 3 册时报「没这一册」，目录里明明有。大约在 09:10 前后。", kind: "ticket")) }
+            if Preview.screen == "uvstrip" { push(Strip(icon: "sun", title: "今日紫外线", en: false, msg: Self.uvMsg(max: 7.4, level: "强", advice: "记得高倍防晒"), kind: "uv")) }
             return
         }
         if let u = await get("api/usage") {
@@ -200,5 +201,19 @@ final class AlertsModel: ObservableObject {
         guard let d = await get("api/health/pushed_today") else { return }
         Self.ud.set(day, forKey: "healthRemindDay")
         if d["pushed"] as? Bool != true { push(Strip(icon: "leaf", title: "今天还没传健康数据", en: false, msg: "去开一下触发 App，让快捷指令跑一趟。", kind: "health")) }
+    }
+    /// 7 点后当天第一次进 Keep：今日紫外线最高 + 防晒建议（09-07 寻要的）。拿不到就不弹、也不算弹过，下次进来再试
+    func uvOnce() async {
+        guard !Preview.on, Calendar.current.component(.hour, from: Date()) >= 7 else { return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; let day = f.string(from: Date())
+        guard Self.ud.string(forKey: "uvPopDay") != day else { return }
+        guard let d = await get("api/uv"), d["ok"] as? Bool == true, let mx = d["max"] as? Double else { return }
+        Self.ud.set(day, forKey: "uvPopDay")
+        push(Strip(icon: "sun", title: "今日紫外线", en: false,
+                   msg: Self.uvMsg(max: mx, level: d["level"] as? String ?? "", advice: d["advice"] as? String ?? ""), kind: "uv"))
+    }
+    static func uvMsg(max: Double, level: String, advice: String) -> String {
+        let n = max == max.rounded() ? String(Int(max)) : String(format: "%.1f", max)
+        return "今天紫外线最高 \(n)" + (level.isEmpty ? "" : "，\(level)") + "。" + (advice.isEmpty ? "" : advice + "。")
     }
 }
