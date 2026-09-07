@@ -513,7 +513,7 @@ struct ChatScreen: View {
             let total = max(ch, 1)
             farFromBottom = (total - y - vh) > 40
             atBottom = !farFromBottom
-            if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note }
+            if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
         })
     }
 
@@ -554,9 +554,11 @@ struct ChatScreen: View {
             // 收完键盘：iOS 16/17 走老路（scrollTo 末行＋UIKit 按真实高钉底）；iOS 18 底边锚定已把大头做了，只让 SwiftUI 再滚到末行本身
             // 把它真排出来（本来就在底＝无感）——**不钉** UIKit 偏移：钉是按懒列表估算的内容高算的，估高了就滚到内容外头、整片白
             // （寻验 09-05 构建 72：刚开 App 点输入框直接大白屏，就是起键盘后那记补钉干的；记忆里 sim-63 早写过起键盘别钉）
+            // 寻验 85：收完键盘一秒后消息流往下挪一点＝这里 scrollTo 末行把末行贴到视口底、把底下 10pt 的留白挤出去，
+            // 而底边锚定/钳子随后又按真实内容高（含留白）拨回——两个「底」差 10pt。列表已是非懒 VStack，直接按真实内容高钉一次即可
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
                 guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn else { return }
-                if #available(iOS 18, *) { if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } } else { scrollBottom(proxy) }
+                if #available(iOS 18, *) { pinBottom() } else { scrollBottom(proxy) }
             }
             // 起完键盘还差一截就按真实内容高钉一次（列表是非懒 VStack、高度是真的；72 那回白屏是懒列表估算高的锅）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
@@ -708,6 +710,13 @@ struct ChatScreen: View {
             .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
             .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
+        // 整张卡都算输入框（寻验 85）：点卡上文字以外的空白不收键盘，反而把焦点给输入框——选字时误触上沿不再退出
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .onTapGesture { if !composerFocused { composerFocused = true } }
+        .background(GeometryReader { g in
+            Color.clear.onAppear { KeyboardDismisser.keep["composer"] = g.frame(in: .global) }
+                .onChange(of: g.frame(in: .global)) { r in KeyboardDismisser.keep["composer"] = r }
+        })
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)   // 消息区到输入卡＝网页 #messages padding-bottom 10，别再叠
     }
 

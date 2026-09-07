@@ -172,6 +172,7 @@ struct ScrollObserver: UIViewRepresentable {
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
     static var note = ""               // 预览截图里的调试字（键盘跟随钩子跑没跑）
+    static var trail: [String] = []    // 预览截图里：偏移跳动的轨迹（寻验 85：收键盘后一秒消息流往下挪一点）
     static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
@@ -189,6 +190,8 @@ struct ScrollObserver: UIViewRepresentable {
         private var lastDist: CGFloat = 0    // 视口底边以下还有多少内容——一直记着「键盘来之前」那个数（底边锚定，iMessage 做法）
         private var lastH: CGFloat = 0
         private var kbBusy = false
+        private var trailY: CGFloat = -1
+        private var kbAt: CFTimeInterval = 0
         private var bounce = true
         private weak var sv: UIScrollView? = nil
         private var name: String? = nil
@@ -222,6 +225,11 @@ struct ScrollObserver: UIViewRepresentable {
                     y = maxY
                 }
                 self.atBottom = (sv.contentSize.height - y - vh) < 40
+                if Preview.on, self.name == "chat", abs(y - self.trailY) > 0.5 {   // 截图排查：偏移每次跳动的时刻与数值（相对最近一次键盘通知）
+                    self.trailY = y
+                    ScrollObserver.trail.append(String(format: "+%.2f y=%.0f", CACurrentMediaTime() - self.kbAt, y))
+                    if ScrollObserver.trail.count > 8 { ScrollObserver.trail.removeFirst() }
+                }
                 // 视口高度没在变的时候才更新「底边以下量」——系统让位先于我改帧，改帧后量到的数是错的（寻验 41：又不跟了）
                 // 量的是「内边距扣完的视口高」：模拟器上让位走 contentInset、bounds 不变（sim-83 实证），按 bounds 判稳会把压矮后的量记进去
                 if !self.kbBusy, abs(vh - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }
@@ -237,6 +245,7 @@ struct ScrollObserver: UIViewRepresentable {
             for n in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
                 kb.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { [weak self] note in
                     guard let self, let sv = self.sv else { return }
+                    self.kbAt = CACurrentMediaTime()
                     let dur = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
                     let curve = (note.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt) ?? 7
                     _ = curve
@@ -317,6 +326,8 @@ final class HookView: UIView {
 
 /// 系统级「点空白收键盘」：给窗口挂一只不吞触摸的点按识别器（SwiftUI 的 TapGesture 在滚动区里靠不住）。
 struct KeyboardDismisser: UIViewRepresentable {
+    /// 点这些框里不收键盘（窗口坐标）：输入卡整张——寻验 85「点到输入框上沿到文字之间的空白也退出输入框，选字时老误触」
+    static var keep: [String: CGRect] = [:]
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
         v.onWindow = { [weak v] in
@@ -331,7 +342,9 @@ struct KeyboardDismisser: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         @objc func tap(_ g: UITapGestureRecognizer) {
-            var v = g.view?.hitTest(g.location(in: g.view), with: nil)
+            let p = g.location(in: g.view)
+            if KeyboardDismisser.keep.values.contains(where: { $0.contains(p) }) { return }
+            var v = g.view?.hitTest(p, with: nil)
             while let cur = v {
                 if let tv = cur as? UITextView, tv.isEditable { return }
                 if cur is UITextField || cur is UIControl { return }

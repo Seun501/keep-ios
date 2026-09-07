@@ -161,7 +161,17 @@ enum LetterFmt {
         guard let d = TimeFmt.parse(iso) else { return "" }
         let c = Calendar.current
         let y = c.component(.year, from: d) != c.component(.year, from: Date()) ? "\(c.component(.year, from: d))年" : ""
-        return "解封于 \(y)\(c.component(.month, from: d))月\(c.component(.day, from: d))日 周\(wd[c.component(.weekday, from: d) - 1]) \(TimeFmt.hm(d))"
+        // 寻 09-08 排版稿：「解封于 九月一日 · 周二 · 九点整」——汉字数目、间隔点，整点「整」、半点「半」
+        let h = c.component(.hour, from: d), mi = c.component(.minute, from: d)
+        let when = cn(h) + "点" + (mi == 0 ? "整" : (mi == 30 ? "半" : cn(mi) + "分"))
+        return "解封于 \(y)\(cn(c.component(.month, from: d)))月\(cn(c.component(.day, from: d)))日 · 周\(wd[c.component(.weekday, from: d) - 1]) · \(when)"
+    }
+    /// 0–59 → 零/一…十/十一…二十/二十一…五十九（十位：十、二十、三十…）
+    static func cn(_ n: Int) -> String {
+        let d = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        if n < 10 { return d[n] }
+        let t = n / 10, o = n % 10
+        return (t == 1 ? "十" : d[t] + "十") + (o == 0 ? "" : d[o])
     }
     /// 信封左下角衬线英文：这封几号开（08-29 寻定：同年不标年份）
     static func lockLine(_ e: Letter) -> String {
@@ -218,8 +228,9 @@ struct WaxSeal: View {
             if locked {
                 // 网页 .wax.lockx：两道 1.5 白线走 14deg / 166deg 渐变＝近乎横着的扁 X（顺翻盖走向）；我之前画成竖的（寻 09-05 拿原图纠正）
                 // 线 0.6（网页 1.5 是渐变虚化的；寻 09-05：「再细！得细很多」）
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 0.6).rotationEffect(.degrees(14))
-                Rectangle().fill(Color.white.opacity(0.72)).frame(width: size, height: 0.6).rotationEffect(.degrees(-14))
+                // 寻 09-08：「稍微再明显一些」——0.72→0.9、0.6→0.75
+                Rectangle().fill(Color.white.opacity(0.9)).frame(width: size, height: 0.75).rotationEffect(.degrees(14))
+                Rectangle().fill(Color.white.opacity(0.9)).frame(width: size, height: 0.75).rotationEffect(.degrees(-14))
             }
         }
         .frame(width: size, height: size)
@@ -311,7 +322,7 @@ struct DraftCard: View {
                 .padding(.trailing, 6)
                 .contentShape(Circle())
                 .onTapGesture { onDelete() }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 9) {   // 寻 09-08「太紧凑」：照留言板卡——题到正文 9、上下 15
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(LetterFmt.dayEn(d.ts)).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
                     Spacer()
@@ -319,7 +330,7 @@ struct DraftCard: View {
                 }
                 Text(d.content.replacingOccurrences(of: "\n", with: " ")).font(Theme.serif(14.5)).foregroundColor(Theme.muted).lineLimit(1)
             }
-            .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+            .padding(EdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 86)   // 同信封一样高（寻验 09-04）
             .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -776,7 +787,8 @@ struct LockPop: View {
     private func countdown(_ d: Date) -> String {
         let s = Swift.max(0, Int(d.timeIntervalSince(now)))
         let dd = s / 86400
-        return (dd > 0 ? "\(dd)天 " : "") + String(format: "%02d:%02d:%02d", s % 86400 / 3600, s % 3600 / 60, s % 60)
+        // 寻 09-08：全角冒号、天数也做一段（「2：13：05：41」），半角挤成一团
+        return (dd > 0 ? "\(dd)：" : "") + String(format: "%02d：%02d：%02d", s % 86400 / 3600, s % 3600 / 60, s % 60)
     }
     private func go() {
         let p = pass.trimmingCharacters(in: .whitespaces)
