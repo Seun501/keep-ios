@@ -242,7 +242,7 @@ struct ToolChipView: View {
         // 同 ThinkView 的 .think-head：线图标 + 一行 13 宋体灰字，没有底色（寻 09-08：和 thought 同一族）
         HStack(spacing: 7) {
             Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 12, height: 12)
-            Text((Self.labels[name] ?? name) + (done ? "" : "…"))
+            Text(name + (done ? "" : "…"))   // 寻 09-08：不写中文，工具原名（labels 留着备用）
                 .font(Theme.serif(13))
         }
         .foregroundColor(Theme.muted)
