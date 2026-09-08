@@ -203,7 +203,7 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                .padding(.top, tools.isEmpty ? 11 : 6).padding(.bottom, 11)
+                .padding(.top, tools.isEmpty ? 11 : 2).padding(.bottom, 11)   // 正文 1.6 行高自带 ~5 顶空，sim-123 实测 6 仍偏大
             }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
