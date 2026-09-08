@@ -576,7 +576,7 @@ struct ChatScreen: View {
                     for d in [3.0, 4.5] { DispatchQueue.main.asyncAfter(deadline: .now() + d) {
                         guard let sv = ScrollObserver.view("chat"), !model.items.isEmpty else { return }
                         // 按工具行在列表里的位次粗估偏移（滚顶后它在视口外，sim-104）
-                        let idx = model.items.firstIndex { if case .toolChip = $0.item { return true } else { return false } } ?? 0
+                        let idx = model.items.firstIndex { if case .ai(_, let m, _) = $0.item { return !(m.toolCalls ?? []).isEmpty } else { return false } } ?? 0
                         let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - 240)
                         sv.setContentOffset(CGPoint(x: 0, y: y), animated: false)
                     } }
