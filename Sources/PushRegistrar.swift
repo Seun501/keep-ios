@@ -13,6 +13,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Self.registerIfAuthorized()
+        Task { @MainActor in HealthSync.shared.setupBackground() }   // 健康库后台投递：每次启动都要装（09-08）
         return true
     }
 

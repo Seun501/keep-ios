@@ -37,6 +37,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: true
         UIRequiresFullScreen: false
         ITSAppUsesNonExemptEncryption: false
+        # 健康原生化（09-08 寻定）：读健康库直推网关，取代快捷指令；位置只在推的时候取一次给天气
+        NSHealthShareUsageDescription: Keep 读取你的睡眠、心率、步数等，只推给你自己的网关，不经第三方。
+        NSHealthUpdateUsageDescription: Keep 不写入健康数据。
+        NSLocationWhenInUseUsageDescription: 只在同步健康数据时取一次位置，给克那边的天气用。
         UIAppFonts:
           - NotoSerifSC-Regular.otf
           - NotoSerifSC-Medium.otf
@@ -47,6 +51,12 @@ targets:
       path: Keep.entitlements
       properties:
         aps-environment: production      # 推送；TestFlight/App Store 包一律 production
+        com.apple.developer.healthkit: true                       # 09-08：App ID 已由 API 加 HEALTHKIT 能力、描述文件重做
+        com.apple.developer.healthkit.access: []
+        com.apple.developer.healthkit.background-delivery: true   # 新样本落库时后台叫醒（解锁后才读得到）
+    dependencies:
+      - sdk: HealthKit.framework
+      - sdk: CoreLocation.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
