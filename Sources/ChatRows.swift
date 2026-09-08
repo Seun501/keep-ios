@@ -226,14 +226,22 @@ struct ToolChipView: View {
     static let labels: [String: String] = [
         "note": "翻了留言板", "breath": "回忆了一下", "hold": "记了一笔", "feel": "记了一点感受", "trace": "修了一条记忆",
         "digest": "回看了最近的记忆", "narrative": "翻了叙事", "root": "翻了笔记本", "album": "翻了相册", "surf": "去冲浪了",
-        "web": "查了网页", "web_read": "读了网页", "web_search": "搜了一下", "weather": "看了天气", "knock": "敲了敲她",
-        "letter": "写了信", "shelf": "翻了书架", "darkroom_write": "进了暗室", "darkroom_read": "进了暗室",
-        "wake_me": "定了个闹钟", "health": "看了她的身体", "archive": "翻了档案馆", "diary": "写了日记",
+        "web": "查了网页", "weather": "看了天气", "knock": "敲了敲她", "letter": "写了信", "book": "翻了书架",
+        "darkroom": "进了暗室", "wake_me": "定了个闹钟", "health": "看了她的身体", "archive": "翻了档案馆",
+        "diary": "翻了日记本", "door": "动了门", "greet": "换了开屏句",
+    ]
+    /// 每个工具一枚线图标（寻 09-08 点的「小扳手」：各工具找合适的 SVG；同 24 视框、1.7 描边一族），没对上的用扳手
+    static let icons: [String: String] = [
+        "note": "tabNotes", "letter": "tabLetters", "weather": "cloud", "health": "leaf",
+        "web": "tool-globe", "breath": "tool-wind", "hold": "tool-bookmark", "feel": "tool-heart", "trace": "tool-pencil",
+        "digest": "tool-book-open", "narrative": "tool-scroll", "root": "tool-notebook", "album": "tool-image",
+        "surf": "tool-waves", "knock": "tool-bell", "darkroom": "tool-eye-off", "wake_me": "tool-alarm",
+        "archive": "tool-archive", "diary": "tool-pen", "book": "tool-library", "door": "tool-door", "greet": "tool-smile",
     ]
     var body: some View {
         // 同 ThinkView 的 .think-head：线图标 + 一行 13 宋体灰字，没有底色（寻 09-08：和 thought 同一族）
         HStack(spacing: 7) {
-            Image("wrench").renderingMode(.template).resizable().frame(width: 12, height: 12)
+            Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 12, height: 12)
             Text((Self.labels[name] ?? name) + (done ? "" : "…"))
                 .font(Theme.serif(13))
         }
