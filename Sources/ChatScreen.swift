@@ -573,7 +573,13 @@ struct ChatScreen: View {
                 Task { await model.load() }
                 // 截图场景 chips：工具行在预览对话靠前的位置，滚到顶把它露出来
                 if Preview.on, Preview.screen == "chips" {
-                    for d in [3.0, 4.5] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { ScrollObserver.view("chat")?.setContentOffset(.zero, animated: false) } }
+                    for d in [3.0, 4.5] { DispatchQueue.main.asyncAfter(deadline: .now() + d) {
+                        guard let sv = ScrollObserver.view("chat"), !model.items.isEmpty else { return }
+                        // 按工具行在列表里的位次粗估偏移（滚顶后它在视口外，sim-104）
+                        let idx = model.items.firstIndex { if case .toolChip = $0.item { return true } else { return false } } ?? 0
+                        let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - 240)
+                        sv.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+                    } }
                 }
             }
     }
