@@ -186,8 +186,11 @@ struct AIRowView: View {
             // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
             let tools = msg.toolCalls ?? []
             let hasBody = !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty
+            // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；
+            // 正文上沿从 11 收到 6（只在有工具行时）。连排工具行之间照旧 4
             ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in
                 ToolChipView(name: tc.shortName, done: true, inRow: true)
+                    .padding(.top, (i == 0 && !th.isEmpty) ? 4 : 0)
                     .padding(.bottom, (i == tools.count - 1 && !hasBody) ? 0 : 4)
             }
             if hasBody {
@@ -200,7 +203,7 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                .padding(.vertical, 11)
+                .padding(.top, tools.isEmpty ? 11 : 6).padding(.bottom, 11)
             }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
