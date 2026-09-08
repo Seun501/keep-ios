@@ -624,7 +624,7 @@ struct ChatScreen: View {
         case .daySep(let d): DaySepView(day: d)
         case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
         case .ai(_, let m, let u): AIRowView(msg: m, showUsage: u)
-        case .toolChip(let n): ToolChipView(name: n, done: true)
+        case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
         case .ping(let m): PingChipView(msg: m)
         case .wakeChip(let hm): WakeChipView(hm: hm)
         case .knock(let t, let s): KnockRowView(text: t, stamp: s)
@@ -632,9 +632,10 @@ struct ChatScreen: View {
     }
 
     @ViewBuilder private func liveView(_ live: LiveTurn) -> some View {
-        ForEach(Array(live.items.enumerated()), id: \.offset) { _, it in
+        ForEach(Array(live.items.enumerated()), id: \.offset) { idx, it in
             switch it {
-            case .chip(let n, let d): ToolChipView(name: n, done: d)
+            case .chip(let n, let d):
+                ToolChipView(name: n, done: d, first: !(idx > 0 && { if case .chip = live.items[idx - 1] { return true } else { return false } }()))
             case .seg(let s):
                 VStack(alignment: .leading, spacing: 6) {
                     if !s.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

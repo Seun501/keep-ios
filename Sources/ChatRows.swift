@@ -5,7 +5,7 @@ enum TimelineItem {
     case daySep(String)
     case user(text: String, stamp: String, images: [String])
     case ai(index: Int, msg: Msg, showUsage: Bool)
-    case toolChip(String)
+    case toolChip(String, first: Bool)   // first＝上一行不是胶囊（网页 .toolchip 负边距只在连排的头一颗吃上边）
     case ping(Msg)
     case wakeChip(String)
     case knock(text: String, stamp: String)
@@ -52,7 +52,13 @@ extension TimelineItem {
                 if hasText || !m.cleanThinking.isEmpty {
                     out.append(.ai(index: i, msg: m, showUsage: i == lastUsageIdx))
                 }
-                if let tcs = m.toolCalls { for tc in tcs { out.append(.toolChip(tc.name)) } }
+                if let tcs = m.toolCalls {
+                    for tc in tcs {
+                        var first = true
+                        if case .toolChip = out.last { first = false }
+                        out.append(.toolChip(tc.name, first: first))
+                    }
+                }
             } else if m.role == "user" {
                 if m.isPing { out.append(.ping(m)) }
                 else if m.knock == true {
@@ -213,12 +219,16 @@ struct AIRowView: View {
 struct ToolChipView: View {
     let name: String
     let done: Bool
+    var first = true
     var body: some View {
         Text(name + (done ? " ✓" : ""))
             .font(Theme.round(12.5)).foregroundColor(Theme.muted)
             .padding(.horizontal, 13).padding(.vertical, 4)
             .background(Theme.panel, in: Capsule())
             .frame(maxWidth: .infinity, alignment: .leading)
+            // 照网页 .toolchip { margin: -18px 0 }：列表行距 22，胶囊上下各吃掉 18 → 离上下内容 4；
+            // 连排胶囊上边不吃（.toolchip + .toolchip { margin-top: 0 }），不然两颗叠一起（寻 09-08：上下留空太大）
+            .padding(.top, first ? -18 : 0).padding(.bottom, -18)
     }
 }
 
