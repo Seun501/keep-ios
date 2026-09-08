@@ -796,6 +796,7 @@ struct LockPop: View {
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.border, lineWidth: 0.8))
             .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Wax.paper).shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16))   // 投影挂纸上，别给口令框描晕
         }
+        .onAppear { if Preview.on, Preview.screen == "lockerr" { err = "不是这句——再想想" } }   // 截图：口令错了的样子（文案同网页）
         .onReceive(tick) { t in
             now = t
             if !Preview.on, let until = e.until, let d = TimeFmt.parse(until), d <= t { Task { await m.refresh(); onClose() } }   // 倒到零：信自己开了

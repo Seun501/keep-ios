@@ -165,7 +165,7 @@ struct BoardScreen: View {
                 case "letters": m.tab = "letters"
                 case "letterread": m.tab = "letters"; letterOpen = lm.entries.first { $0.id == "L1" }
                 case "lettercompose", "seal", "sealdate": m.tab = "letters"; composing = true
-                case "lockpop": m.tab = "letters"; lockLetter = lm.entries.first { $0.id == "L3" }
+                case "lockpop", "lockerr": m.tab = "letters"; lockLetter = lm.entries.first { $0.id == "L3" }
                 default: break
                 }
                 return

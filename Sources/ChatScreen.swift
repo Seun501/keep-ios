@@ -356,7 +356,7 @@ struct ChatScreen: View {
     @State private var path: [Route] = {
         guard Preview.on else { return [] }
         switch Preview.screen {
-        case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop": return [.board(openLetter: nil)]
+        case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop", "lockerr": return [.board(openLetter: nil)]
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
         case "mem": return [.mem]
