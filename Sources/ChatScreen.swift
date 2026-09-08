@@ -739,9 +739,9 @@ struct ChatScreen: View {
     /// 到底：先让 SwiftUI 滚到最后一行本身（把它真排出来），再由 UIKit 按真实内容高精确钉底（含底部 10 留白）。
     /// 补钉只在真的没到底时才动（寻验：开屏后界面上下弹几下＝反复重滚）。
     private func scrollBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
-        let go = {
-            if let id = lastId { proxy.scrollTo(id, anchor: .bottom) } else { proxy.scrollTo("bottom", anchor: .bottom) }
-        }
+        // 一律滚到「bottom」锚（列表底部留白之下）：滚末行会把底下 10pt 留白挤出去，随后 pinBottom 又按真实内容高拨回，
+        // 开屏就是 1542→1552→1542→1552 那几下（sim-97 轨迹实录；寻早前「界面弹几下」）。列表已是非懒 VStack，锚点位置是真的
+        let go = { proxy.scrollTo("bottom", anchor: .bottom) }
         if animated { withAnimation(.easeOut(duration: 0.25)) { go() } } else { go() }
         for d in [0.05, 0.2, 0.5, 1.0] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { pinBottom() } }
     }
