@@ -109,7 +109,8 @@ struct GreetOverlay: View {
         .onTapGesture { bye() }
         .onAppear {
             line = Greet.pick()
-            if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { bye() } }
+            // 网页是 2.6s 后起 0.8s 淡出＝实际能看 3.4s；这边瞬切（寻定不淡出），2.6 就显得跳得快（寻 09-08）→ 3.4
+            if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) { bye() } }
             Task { await Greet.refreshCache() }
         }
     }

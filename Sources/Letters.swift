@@ -307,9 +307,19 @@ struct LettersList: View {
     }
 }
 
-/// 草稿卡：虚线框素卡，正文灰一行；往左划露出删除键（08-28 寻定，不打「草稿」二字）
+/// 草稿卡：虚线框素卡，正文灰两行（同留言板卡）；往左划露出删除键（08-28 寻定，不打「草稿」二字）
 struct DraftCard: View {
     let d: LetterDraft
+    /// 两行预览，排版照留言板卡（首行 + 第二行，第二行空着补「…」），颜色用灰
+    static func excerpt(_ t: String) -> NSAttributedString {
+        let lines = t.components(separatedBy: "\n")
+        let first = lines.first ?? ""
+        let rest = lines.dropFirst()
+        let second = (rest.first?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) ? "…" : rest.joined(separator: "\n")
+        let ns = NSMutableAttributedString(attributedString: MD.keNS(first + "\n" + second, size: 14.5, weight: .regular, lineHeight: 1.55))
+        ns.addAttribute(.foregroundColor, value: Theme.uiMuted, range: NSRange(location: 0, length: ns.length))
+        return ns
+    }
     var onDelete: () -> Void
     var onOpen: () -> Void
     @State private var dx: CGFloat = 0
@@ -328,11 +338,11 @@ struct DraftCard: View {
                     Spacer()
                     Text(TimeFmt.hm(d.ts)).font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
                 }
-                Text(d.content.replacingOccurrences(of: "\n", with: " ")).font(Theme.serif(14.5)).foregroundColor(Theme.muted).lineLimit(1)
+                RichText(attr: DraftCard.excerpt(d.content), maxLines: 2)   // 正文同留言板卡：14.5/1.55、两行截断，灰
             }
             .padding(EdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 86)   // 同信封一样高（寻验 09-04）
+            // 寻 09-08：卡片大小、文字排版全照留言板主板——不再钉 86 高（钉高时内容居中，上下留白改了也看不出）
             .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])).foregroundColor(Theme.border))
             .contentShape(Rectangle())
@@ -767,12 +777,13 @@ struct LockPop: View {
                         }.buttonStyle(.plain)
                     }
                     .frame(maxWidth: 190).padding(.top, 12).padding(.bottom, 2)
-                    Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 6).frame(minHeight: 14 + 6)
+                    // 错误行只在有错时占位（寻 09-08：口令下方留白太多——原先空着也占 26pt）
+                    if !err.isEmpty { Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 6) }
                 }
             }
             .frame(maxWidth: .infinity)
-            // 比例照 08-27 那张来信卡（寻 09-05 指定：300 宽、22 圆角、矮胖）：翻盖 40、蜡 20，上 56 下 16
-            .padding(EdgeInsets(top: 56, leading: 24, bottom: 16, trailing: 24))
+            // 比例照 08-27 那张来信卡（寻 09-05 指定：300 宽、22 圆角、矮胖）：翻盖 40、蜡 20，上 56 下 18
+            .padding(EdgeInsets(top: 56, leading: 24, bottom: 18, trailing: 24))
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Wax.paper
