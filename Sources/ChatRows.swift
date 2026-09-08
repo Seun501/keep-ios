@@ -184,10 +184,12 @@ struct AIRowView: View {
                     .padding(.bottom, 4)
             }
             // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
-            ForEach(Array((msg.toolCalls ?? []).enumerated()), id: \.offset) { _, tc in
-                ToolChipView(name: tc.shortName, done: true, inRow: true).padding(.bottom, 4)
-            }
+            let tools = msg.toolCalls ?? []
             let hasBody = !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty
+            ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in
+                ToolChipView(name: tc.shortName, done: true, inRow: true)
+                    .padding(.bottom, (i == tools.count - 1 && !hasBody) ? 0 : 4)
+            }
             if hasBody {
                 VStack(alignment: .leading, spacing: 8) {
                     // 照网页 .bubble img.att：克递来的相册照片 200 上限、圆角 12、点开看大图
@@ -214,6 +216,9 @@ struct AIRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // 只有工具行、没正文的 AI 行：照网页 .toolchip 的负边距，往下吃 18（行距 22 + 下一条正文自带的 11，剩 15，同网页）
+        // 寻 09-08「工具调用下方留白还是太多」：原来 4+22+11＝37
+        .padding(.bottom, ((msg.toolCalls ?? []).isEmpty || !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty) ? 0 : -18)
     }
 }
 
