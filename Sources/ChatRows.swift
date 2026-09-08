@@ -49,15 +49,9 @@ extension TimelineItem {
             if !d.isEmpty, d != prevDay { out.append(.daySep(d)); prevDay = d }
             if m.role == "assistant" {
                 let hasText = !(m.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                if hasText || !m.cleanThinking.isEmpty {
+                // 工具行画在 AI 行里（thought 下面），有工具调用的消息即使没字没思考也要有一行
+                if hasText || !m.cleanThinking.isEmpty || !(m.toolCalls ?? []).isEmpty {
                     out.append(.ai(index: i, msg: m, showUsage: i == lastUsageIdx))
-                }
-                if let tcs = m.toolCalls {
-                    for tc in tcs {
-                        var first = true
-                        if case .toolChip = out.last { first = false }
-                        out.append(.toolChip(tc.name, first: first))
-                    }
                 }
             } else if m.role == "user" {
                 if m.isPing { out.append(.ping(m)) }
@@ -189,16 +183,23 @@ struct AIRowView: View {
                 ThinkView(text: th, label: msg.thinkSecs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thought")
                     .padding(.bottom, 4)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                // 照网页 .bubble img.att：克递来的相册照片 200 上限、圆角 12、点开看大图
-                ForEach(Array((msg.images ?? []).enumerated()), id: \.offset) { _, u in
-                    StreamImage(src: u, maxW: 200, maxH: 200, radius: 12)
-                }
-                if let c = msg.content, !c.isEmpty {
-                    RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
-                }
+            // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
+            ForEach(Array((msg.toolCalls ?? []).enumerated()), id: \.offset) { _, tc in
+                ToolChipView(name: tc.shortName, done: true, inRow: true).padding(.bottom, 4)
             }
-            .padding(.vertical, 11)
+            let hasBody = !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty
+            if hasBody {
+                VStack(alignment: .leading, spacing: 8) {
+                    // 照网页 .bubble img.att：克递来的相册照片 200 上限、圆角 12、点开看大图
+                    ForEach(Array((msg.images ?? []).enumerated()), id: \.offset) { _, u in
+                        StreamImage(src: u, maxW: 200, maxH: 200, radius: 12)
+                    }
+                    if let c = msg.content, !c.isEmpty {
+                        RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
+                    }
+                }
+                .padding(.vertical, 11)
+            }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(TimeFmt.stamp(msg.ts)).font(Theme.round(12)).foregroundColor(Theme.muted)
@@ -220,6 +221,7 @@ struct ToolChipView: View {
     let name: String
     let done: Bool
     var first = true
+    var inRow = false   // true＝画在 AI 行里（thought 下面），不吃负边距；false＝直播段里单独一项
     /// 工具名 → 中文动作（寻 09-08：胶囊跟 thought 是同一族，A 社式一行小字；不认识的名字原样显示）
     static let labels: [String: String] = [
         "note": "翻了留言板", "breath": "回忆了一下", "hold": "记了一笔", "feel": "记了一点感受", "trace": "修了一条记忆",
@@ -238,7 +240,7 @@ struct ToolChipView: View {
         .foregroundColor(Theme.muted)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 列表行距 22 对一行小字太空：上下各吃 12 → 离上下内容 10；连排只吃一次（同网页 .toolchip 的负边距思路）
-        .padding(.top, first ? -12 : 0).padding(.bottom, -12)
+        .padding(.top, inRow ? 0 : (first ? -12 : 0)).padding(.bottom, inRow ? 0 : -12)
     }
 }
 
