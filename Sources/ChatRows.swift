@@ -203,7 +203,7 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                .padding(.top, tools.isEmpty ? 11 : -8).padding(.bottom, 11)   // sim-123/125 实测：工具行→正文视觉 25，宋体行高+1.6 倍行距自带 ~13 顶空，负 8 才到 15（同 thought→工具行）
+                .padding(.top, tools.isEmpty ? 11 : -2).padding(.bottom, 11)   // 同条带正文（少见）：正文宋体行高+1.6 行距自带 ~13 顶空，4-2+13≈15
             }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -219,9 +219,10 @@ struct AIRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 只有工具行、没正文的 AI 行：照网页 .toolchip 的负边距，往下吃 18（行距 22 + 下一条正文自带的 11，剩 15，同网页）
-        // 寻 09-08「工具调用下方留白还是太多」：原来 4+22+11＝37
-        .padding(.bottom, ((msg.toolCalls ?? []).isEmpty || !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty) ? 0 : -18)
+        // 只有工具行、没正文的 AI 行（正史里工具调用和正文是两条，这是常态）：往下吃负边距。
+        // sim-123～127 实测：-18 时工具行→正文视觉 25（行距 22 + 正文顶 11 + 宋体行高/1.6 行距自带 ~13 顶空）；
+        // 寻 09-08 夜「离正文太远、离 thought 太近」：thought→工具行已是 15，这里 -31 让 22-31+11+13≈15 对齐
+        .padding(.bottom, ((msg.toolCalls ?? []).isEmpty || !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty) ? 0 : -31)
     }
 }
 
