@@ -569,7 +569,13 @@ struct ChatScreen: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbAnimating = false }
-            .onAppear { Task { await model.load() } }
+            .onAppear {
+                Task { await model.load() }
+                // 截图场景 chips：工具行在预览对话靠前的位置，滚到顶把它露出来
+                if Preview.on, Preview.screen == "chips" {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { if let f = model.items.first { proxy.scrollTo(f.id, anchor: .top) } }
+                }
+            }
     }
 
     private func jumpButton(_ proxy: ScrollViewProxy) -> some View {

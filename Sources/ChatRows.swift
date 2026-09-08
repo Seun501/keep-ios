@@ -220,15 +220,25 @@ struct ToolChipView: View {
     let name: String
     let done: Bool
     var first = true
+    /// 工具名 → 中文动作（寻 09-08：胶囊跟 thought 是同一族，A 社式一行小字；不认识的名字原样显示）
+    static let labels: [String: String] = [
+        "note": "翻了留言板", "breath": "回忆了一下", "hold": "记了一笔", "feel": "记了一点感受", "trace": "修了一条记忆",
+        "digest": "回看了最近的记忆", "narrative": "翻了叙事", "root": "翻了笔记本", "album": "翻了相册", "surf": "去冲浪了",
+        "web": "查了网页", "web_read": "读了网页", "web_search": "搜了一下", "weather": "看了天气", "knock": "敲了敲她",
+        "letter": "写了信", "shelf": "翻了书架", "darkroom_write": "进了暗室", "darkroom_read": "进了暗室",
+        "wake_me": "定了个闹钟", "health": "看了她的身体", "archive": "翻了档案馆", "diary": "写了日记",
+    ]
     var body: some View {
-        Text(name + (done ? " ✓" : ""))
-            .font(Theme.round(12.5)).foregroundColor(Theme.muted)
-            .padding(.horizontal, 13).padding(.vertical, 4)
-            .background(Theme.panel, in: Capsule())
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // 照网页 .toolchip { margin: -18px 0 }：列表行距 22，胶囊上下各吃掉 18 → 离上下内容 4；
-            // 连排胶囊上边不吃（.toolchip + .toolchip { margin-top: 0 }），不然两颗叠一起（寻 09-08：上下留空太大）
-            .padding(.top, first ? -18 : 0).padding(.bottom, -18)
+        // 同 ThinkView 的 .think-head：线图标 + 一行 13 宋体灰字，没有底色（寻 09-08：和 thought 同一族）
+        HStack(spacing: 7) {
+            Image("wrench").renderingMode(.template).resizable().frame(width: 12, height: 12)
+            Text((Self.labels[name] ?? name) + (done ? "" : "…"))
+                .font(Theme.serif(13))
+        }
+        .foregroundColor(Theme.muted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // 列表行距 22 对一行小字太空：上下各吃 12 → 离上下内容 10；连排只吃一次（同网页 .toolchip 的负边距思路）
+        .padding(.top, first ? -12 : 0).padding(.bottom, -12)
     }
 }
 

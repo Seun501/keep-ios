@@ -777,13 +777,13 @@ struct LockPop: View {
                         }.buttonStyle(.plain)
                     }
                     .frame(maxWidth: 190).padding(.top, 12).padding(.bottom, 2)
-                    // 错误行只在有错时占位（寻 09-08：口令下方留白太多——原先空着也占 26pt）
-                    if !err.isEmpty { Text(err).font(Theme.round(12)).foregroundColor(Theme.accent).padding(.top, 6) }
+                    // 错误行固定占 16pt（寻 09-08：留白别太多，但卡也不能因为报错忽高忽低）
+                    Text(err).font(Theme.round(11)).foregroundColor(Theme.accent).frame(height: 16).padding(.top, 2)
                 }
             }
             .frame(maxWidth: .infinity)
-            // 比例照 08-27 那张来信卡（寻 09-05 指定：300 宽、22 圆角、矮胖）：翻盖 40、蜡 20，上 56 下 18
-            .padding(EdgeInsets(top: 56, leading: 24, bottom: 18, trailing: 24))
+            // 比例照 08-27 那张来信卡（寻 09-05 指定：300 宽、22 圆角、矮胖）：翻盖 40、蜡 20，上 56 下 12
+            .padding(EdgeInsets(top: 56, leading: 24, bottom: 12, trailing: 24))
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     Wax.paper
