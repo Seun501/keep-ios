@@ -539,7 +539,9 @@ struct ChatScreen: View {
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
-            .onChange(of: model.live?.events ?? 0) { _ in if atBottom { DispatchQueue.main.async { pinBottom() } } }   // 流式：字长出来就跟着到底（寻验：看不见流式）
+            // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」
+            // 跟随就断、之后再也不接上（寻验 131「等回复时收键盘，信息流卡在原地」）——动的那段按键盘前的 wasAtBottom 算
+            .onChange(of: model.live?.events ?? 0) { _ in if atBottom || (kbAnimating && wasAtBottom) { DispatchQueue.main.async { pinBottom() } } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
             .onReceive(NotificationCenter.default.publisher(for: .keepThinkToggled)) { _ in
@@ -561,9 +563,11 @@ struct ChatScreen: View {
             // （寻验 09-05 构建 72：刚开 App 点输入框直接大白屏，就是起键盘后那记补钉干的；记忆里 sim-63 早写过起键盘别钉）
             // 寻验 85：收完键盘一秒后消息流往下挪一点＝这里 scrollTo 末行把末行贴到视口底、把底下 10pt 的留白挤出去，
             // 而底边锚定/钳子随后又按真实内容高（含留白）拨回——两个「底」差 10pt。列表已是非懒 VStack，直接按真实内容高钉一次即可
+            // 克正在回（sending）时收键盘一律回到底：她收键盘是为了看回复；下拉收键盘（interactively）那一下会把 wasAtBottom 拖成 false
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
-                guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn else { return }
+                guard wasAtBottom || model.sending, path.isEmpty, !showMeal, !drawerOn else { return }
                 if #available(iOS 18, *) { pinBottom() } else { scrollBottom(proxy) }
+                if model.sending { wasAtBottom = true; atBottom = true }
             }
             // 起完键盘还差一截就按真实内容高钉一次（列表是非懒 VStack、高度是真的；72 那回白屏是懒列表估算高的锅）
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
