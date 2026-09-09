@@ -75,6 +75,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         guard hour < 18 else { return }
         guard ud.string(forKey: "health.morningDay") != todayKey else { return }
         busyMorning = true; defer { busyMorning = false }
+        PushRegistrar.diag("health: morning start hour=\(hour)")   // 09-09 首验：整段一句诊断都没出，先摸到走到哪
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         let yday0 = cal.date(byAdding: .day, value: -1, to: today0)!
@@ -86,6 +87,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             return "\(Self.sleepName(c.value))|\(Self.iso(c.startDate))|\(Self.iso(c.endDate))"
         }
         if !lines.isEmpty { body["睡眠原始"] = lines.joined(separator: "\n") }
+        PushRegistrar.diag("health: morning sleep samples=\(sleep.count)")
         // 六项（键名同快捷指令；HRV 取昨天各样本平均，静息心率取两天内最新）
         if let v = await mean(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: yday0, to: today0) { body["HRV"] = (v * 10).rounded() / 10 }
         if let v = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: cal.date(byAdding: .day, value: -2, to: today0)!, to: Date()) { body["静息心率"] = Int(v.rounded()) }
@@ -93,7 +95,9 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: yday0, to: today0) { body["活动能量"] = (v * 10).rounded() / 10 }
         if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
         guard !body.isEmpty else { PushRegistrar.diag("health: morning empty (sleepSamples=\(sleep.count))"); return }
+        PushRegistrar.diag("health: morning keys=\(body.count), asking location")
         if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
+        PushRegistrar.diag("health: morning location done, posting")
         let code = await post(body, today: false)
         if code == 200 {
             ud.set(todayKey, forKey: "health.morningDay")

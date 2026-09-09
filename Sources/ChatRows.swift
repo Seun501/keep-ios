@@ -118,7 +118,9 @@ struct ThinkView: View {
         VStack(alignment: .leading, spacing: 4) {
             // 照网页 .think-head：小时钟＋一行字，没有箭头；整行都能点。不用 Button——按下会闪一下高亮（寻验 44：别花里胡哨）
             HStack(spacing: 7) {
-                Image(systemName: "clock").font(.system(size: 12))
+                // 同一族线图标、同一尺寸（寻 09-09：album 和 Thought 离图标的距离不一样——SF 符号 12pt 满框、Lucide 24 视框自带 2 边距，
+                // 12 框只画 10；两边都换成 14 框的 Lucide，网页 .think-head svg 也是 14）
+                Image("tool-clock").renderingMode(.template).resizable().frame(width: 14, height: 14)
                 Text(label).font(Theme.serif(13))
             }
             .foregroundColor(Theme.muted)
@@ -250,7 +252,7 @@ struct ToolChipView: View {
     var body: some View {
         // 同 ThinkView 的 .think-head：线图标 + 一行 13 宋体灰字，没有底色（寻 09-08：和 thought 同一族）
         HStack(spacing: 7) {
-            Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 12, height: 12)
+            Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 14, height: 14)   // 同 ThinkView 的 14
             Text(name + (done ? "" : "…"))   // 寻 09-08：不写中文，工具原名（labels 留着备用）
                 .font(Theme.serif(13))
         }
