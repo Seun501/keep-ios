@@ -178,6 +178,7 @@ struct AIRowView: View {
     var tagNo: String? = nil
     var flash = false
     var highlight = ""
+    var afterTools = false   // 上一行是「只有工具行」的 AI 行（列表给的行距已收到 4/8）：正文顶不再 11
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
@@ -205,7 +206,8 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                .padding(.top, tools.isEmpty ? 11 : -2).padding(.bottom, 11)   // 同条带正文（少见）：正文宋体行高+1.6 行距自带 ~13 顶空，4-2+13≈15
+                // 同条带工具行（少见）／上一行只有工具行：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15
+                .padding(.top, (tools.isEmpty && !afterTools) ? 11 : -2).padding(.bottom, 11)
             }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -221,10 +223,9 @@ struct AIRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 只有工具行、没正文的 AI 行（正史里工具调用和正文是两条，这是常态）：往下吃负边距。
-        // sim-123～127 实测：-18 时工具行→正文视觉 25（行距 22 + 正文顶 11 + 宋体行高/1.6 行距自带 ~13 顶空）；
-        // 寻 09-08 夜「离正文太远、离 thought 太近」：thought→工具行已是 15，这里 -31 让 22-31+11+13≈15 对齐
-        .padding(.bottom, ((msg.toolCalls ?? []).isEmpty || !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty) ? 0 : -31)
+        // 只有工具行、没正文的 AI 行（正史里工具调用和正文是两条，这是常态）：09-08 曾在这里吃 -31 负边距压掉列表行距 22——
+        // 寻验 09-09「工具+思考+工具+思考 第三四段叠在一起」：后一条以 thought 打头时 22-31+2＝-7，thought 头压到工具行上。
+        // 负边距废止：行距改由列表按「上一行是不是只有工具行」给（ChatScreen.gapBefore：thought 打头 8、正文打头 4）
     }
 }
 

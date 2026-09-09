@@ -504,14 +504,20 @@ struct ChatScreen: View {
     /// 非懒 VStack（09-05 定）：懒列表的内容高是估算的，视口一变（键盘起收）它会把行撤掉重估——偏移明明在底、视口却空白（sim-77 截到），
     /// 末行滚不出来、钉底靠猜、起键盘露出中间的行全是它。主页只画最近两天（更早的按天手动加载），全排出来高度就是真的。
     private var listContent: some View {
-        VStack(spacing: 22) {
+        // 行距（09-09 寻验「工具+思考+工具+思考」第三四段叠在一起、直播工具行半截在输入框底下）：不再 spacing 22 + 负边距，
+        // 改 spacing 0、每行自带上间距——负边距把版面缩成负数：内容高不含它、钉底钉不到、后一行叠上来
+        VStack(spacing: 0) {
             if model.renderFrom > 0 {
                 Button { model.loadOlderDay() } label: {
                     Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
                 }.buttonStyle(.plain).padding(.top, 4)
             }
-            ForEach(model.items) { r in row(r.item) }
-            if let live = model.live { VStack(alignment: .leading, spacing: 22) { liveView(live) }.id("live") }
+            ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
+                row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item)).padding(.top, gapBefore(i))
+            }
+            if let live = model.live {
+                VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
+            }
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)   // 网页 #messages padding-bottom 10
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
@@ -641,11 +647,42 @@ struct ChatScreen: View {
         .zIndex(30)
     }
 
-    @ViewBuilder private func row(_ item: TimelineItem) -> some View {
+    /// 「只有工具行」的 AI 行（正史里工具调用和正文是两条）：下一行的行距要收（thought 打头 8＝视觉 10，正文打头 4-2+13≈15）
+    private static func toolsOnly(_ item: TimelineItem) -> Bool {
+        if case .ai(_, let m, _) = item {
+            return !(m.toolCalls ?? []).isEmpty && (m.images ?? []).isEmpty && (m.content ?? "").isEmpty
+        }
+        return false
+    }
+    private func gapBefore(_ i: Int) -> CGFloat {
+        guard i > 0 else { return model.renderFrom > 0 ? 22 : 0 }
+        guard Self.toolsOnly(model.items[i - 1].item) else { return 22 }
+        if case .ai(_, let m, _) = model.items[i].item { return m.cleanThinking.isEmpty ? 4 : 8 }
+        return 22
+    }
+    private func liveTopGap(_ live: LiveTurn) -> CGFloat {
+        guard let last = model.items.last else { return 0 }
+        guard Self.toolsOnly(last.item) else { return 22 }
+        if case .seg(let s)? = live.items.first { return Self.hasThinking(s) ? 8 : 4 }
+        return 4
+    }
+    private static func hasThinking(_ s: LiveSeg) -> Bool { !s.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// 直播段之间的行距：连排工具行 4；工具行→thought 8（+2＝10）；工具行→正文 4（正文顶 0 + 13 顶空≈15）；
+    /// 正文→下一段 22（正文自带底 11）；thought→工具行 8（+2＝10）；空段 0
+    private static func liveGap(prev: LiveItem, thisIsChip: Bool, thinking: Bool) -> CGFloat {
+        switch prev {
+        case .chip: return (thisIsChip || !thinking) ? 4 : 8
+        case .seg(let p):
+            if p.error != nil || p.shown > 0 { return 22 }
+            return hasThinking(p) ? 8 : 0
+        }
+    }
+
+    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false) -> some View {
         switch item {
         case .daySep(let d): DaySepView(day: d)
         case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
-        case .ai(_, let m, let u): AIRowView(msg: m, showUsage: u)
+        case .ai(_, let m, let u): AIRowView(msg: m, showUsage: u, afterTools: afterTools)
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
         case .ping(let m): PingChipView(msg: m)
         case .wakeChip(let hm): WakeChipView(hm: hm)
@@ -653,29 +690,33 @@ struct ChatScreen: View {
         }
     }
 
+    /// 直播段（09-09 重排）：不再有任何负边距（136/138 两版负边距都留了病：工具行只露半截、段落叠在一起），
+    /// 行距全由 liveGap 按前后段给；第一段的上间距由 liveTopGap 按正史末行给
     @ViewBuilder private func liveView(_ live: LiveTurn) -> some View {
+        let afterHist = model.items.last.map { Self.toolsOnly($0.item) } ?? false
         ForEach(Array(live.items.enumerated()), id: \.offset) { idx, it in
-            let prevIsChip = idx > 0 && { if case .chip = live.items[idx - 1] { return true } else { return false } }()
+            let prev: LiveItem? = idx > 0 ? live.items[idx - 1] : nil
             switch it {
             case .chip(let n, let d):
-                // 直播段的工具行照正史那套间距：离上面的 thought 10、连排 4；**下边不吃负边距**——
-                // 寻验 136：还没新输出时工具行只露上半截（负边距把版面缩成负数，内容高不含它，钉底钉不到）
                 ToolChipView(name: n, done: d, inRow: true)
-                    .padding(.top, prevIsChip ? -18 : -12)
+                    .padding(.top, prev.map { Self.liveGap(prev: $0, thisIsChip: true, thinking: false) } ?? 0)
             case .seg(let s):
+                let thinking = Self.hasThinking(s)
+                let afterChip = prev.map { if case .chip = $0 { return true } else { return false } } ?? afterHist
                 VStack(alignment: .leading, spacing: 6) {
-                    if !s.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if thinking {
                         ThinkView(text: s.thinking.trimmingCharacters(in: .whitespacesAndNewlines),
                                   label: s.thinkSecs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thinking…")
                     }
                     if let e = s.error {
                         Text(e).font(Theme.serif(15)).foregroundColor(.red)
                     } else if s.shown > 0 {
-                        RichText(attr: MDWhole.make(s.shownText)).padding(.vertical, 11)
+                        // 紧跟工具行的正文：顶 0（行距 4 + 宋体 13 顶空≈15，同正史）；其余照网页 .bubble 上下 11
+                        RichText(attr: MDWhole.make(s.shownText)).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
                     }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, prevIsChip ? -14 : 0)   // 工具行→正文同正史（≈17 视觉）；空段 0 高、负边距不画东西
+                .padding(.top, prev.map { Self.liveGap(prev: $0, thisIsChip: false, thinking: thinking) } ?? 0)
             }
         }
     }
