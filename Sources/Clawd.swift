@@ -213,7 +213,7 @@ struct ScrollObserver: UIViewRepresentable {
             let fire = { [weak self, weak sv] in
                 guard let self, let sv else { return }
                 if sv.bounces != self.bounce || sv.alwaysBounceVertical != self.bounce { sv.bounces = self.bounce; sv.alwaysBounceVertical = self.bounce }   // SwiftUI 会改回去，每次都按住
-                self.tintIndicator(sv)
+                Self.tintIndicator(sv)
                 let inset = sv.adjustedContentInset
                 let vh = sv.bounds.height - inset.top - inset.bottom
                 var y = sv.contentOffset.y + inset.top
@@ -301,7 +301,7 @@ struct ScrollObserver: UIViewRepresentable {
             PushRegistrar.diag(String(format: "%@: frame=%.0f..%.0f inset=%.0f cs=%.0f off=%.0f kbTop=%.0f dist=%.0f safe=%.0f", tag, f.minY, f.maxY, sv.contentInset.bottom, sv.contentSize.height, sv.contentOffset.y, kf.minY, lastDist, sv.safeAreaInsets.bottom))
         }
         /// 把系统指示条染成赤陶 40%（指示条是私有子视图，每次滚动时补染——它会被重建）
-        private func tintIndicator(_ sv: UIScrollView) {
+        static func tintIndicator(_ sv: UIScrollView) {   // 输入框（UITextView）也用它染（寻验 136：输入框滚动条没改色）
             for v in sv.subviews where String(describing: type(of: v)).contains("ScrollIndicator") {
                 if v.subviews.isEmpty { v.backgroundColor = Theme.uiScrollTint.withAlphaComponent(0.4); v.layer.cornerRadius = v.bounds.width / 2 }
                 for pill in v.subviews where pill.backgroundColor != Theme.uiScrollTint.withAlphaComponent(0.4) {

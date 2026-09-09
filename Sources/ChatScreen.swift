@@ -654,9 +654,13 @@ struct ChatScreen: View {
 
     @ViewBuilder private func liveView(_ live: LiveTurn) -> some View {
         ForEach(Array(live.items.enumerated()), id: \.offset) { idx, it in
+            let prevIsChip = idx > 0 && { if case .chip = live.items[idx - 1] { return true } else { return false } }()
             switch it {
             case .chip(let n, let d):
-                ToolChipView(name: n, done: d, first: !(idx > 0 && { if case .chip = live.items[idx - 1] { return true } else { return false } }()))
+                // 直播段的工具行照正史那套间距：离上面的 thought 10、连排 4；**下边不吃负边距**——
+                // 寻验 136：还没新输出时工具行只露上半截（负边距把版面缩成负数，内容高不含它，钉底钉不到）
+                ToolChipView(name: n, done: d, inRow: true)
+                    .padding(.top, prevIsChip ? -18 : -12)
             case .seg(let s):
                 VStack(alignment: .leading, spacing: 6) {
                     if !s.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -670,6 +674,7 @@ struct ChatScreen: View {
                     }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, prevIsChip ? -14 : 0)   // 工具行→正文同正史（≈17 视觉）；空段 0 高、负边距不画东西
             }
         }
     }

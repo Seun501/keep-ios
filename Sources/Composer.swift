@@ -19,7 +19,10 @@ struct Composer: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let tv = UITextView(usingTextLayoutManager: false)
         tv.backgroundColor = .clear
-        tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
+        // 右边留 10 给滚动条（寻验 136：字长起来出滚动条时压在字上）；条本身贴右缘
+        tv.textContainerInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 10); tv.textContainer.lineFragmentPadding = 0
+        tv.verticalScrollIndicatorInsets = .zero
+        tv.showsHorizontalScrollIndicator = false
         tv.typingAttributes = Self.attrs
         tv.font = Theme.uiUser(Self.size); tv.textColor = Theme.uiText
         tv.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)  // 光标赤陶，比滚动条实（寻验 43：40% 太虚；09-04：65% 还虚，再实一点）
@@ -68,6 +71,8 @@ struct Composer: UIViewRepresentable {
         }
         func textViewDidBeginEditing(_ tv: UITextView) { if !parent.focused { parent.focused = true } }
         func textViewDidEndEditing(_ tv: UITextView) { if parent.focused { parent.focused = false } }
+        /// 滚动条染赤陶 40%（同消息流那根；指示条是私有子视图、滚一下重建一次，每次都补染）
+        func scrollViewDidScroll(_ sv: UIScrollView) { ScrollObserver.Coordinator.tintIndicator(sv) }
     }
 }
 
