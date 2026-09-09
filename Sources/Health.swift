@@ -22,8 +22,9 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     static var available: Bool { HKHealthStore.isHealthDataAvailable() }
     private func q(_ id: HKQuantityTypeIdentifier) -> HKQuantityType { HKQuantityType(id) }
     private var sleepType: HKCategoryType { HKCategoryType(.sleepAnalysis) }
+    private var mensType: HKCategoryType { HKCategoryType(.menstrualFlow) }   // 月经（09-09 寻：接！）——值照快捷指令的中文
     private var readTypes: Set<HKObjectType> {
-        [sleepType, q(.heartRateVariabilitySDNN), q(.restingHeartRate), q(.stepCount),
+        [sleepType, mensType, q(.heartRateVariabilitySDNN), q(.restingHeartRate), q(.stepCount),
          q(.activeEnergyBurned), q(.appleStandTime), q(.heartRate)]
     }
 
@@ -102,6 +103,8 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let v = await sum(.stepCount, unit: .count(), from: yday0, to: today0) { body["步数"] = Int(v.rounded()) }
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: yday0, to: today0) { body["活动能量"] = (v * 10).rounded() / 10 }
         if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
+        // 月经：昨天记的最后一条（健康 App 里她自己记的），键名/词同快捷指令（无/轻微/中等/大量）
+        if let m = (await samples(mensType, from: yday0, to: today0)).last as? HKCategorySample, let w = Self.mensWord(m.value) { body["月经"] = w }
         guard !body.isEmpty else { PushRegistrar.diag("health: morning empty (sleepSamples=\(sleep.count))"); return }
         PushRegistrar.diag("health: morning keys=\(body.count), asking location")
         if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
@@ -208,6 +211,16 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     private static let isoF: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; f.timeZone = .current; return f }()
     private static func iso(_ d: Date) -> String { isoF.string(from: d) }
+    private static func mensWord(_ v: Int) -> String? {
+        switch HKCategoryValueMenstrualFlow(rawValue: v) {
+        case .light: return "轻微"
+        case .medium: return "中等"
+        case .heavy: return "大量"
+        case .none: return "无"
+        case .unspecified: return "有"
+        default: return nil
+        }
+    }
     /// 阶段名同她手机快捷指令吐的英文（服务器 _parse_sleep_raw 认 awake/inbed/deep/rem）
     private static func sleepName(_ v: Int) -> String {
         switch HKCategoryValueSleepAnalysis(rawValue: v) {
