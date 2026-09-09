@@ -485,6 +485,7 @@ struct ChatScreen: View {
         .task {
             await alerts.poll(); await alerts.uvOnce()
             // 健康原生化（09-08）：首开问一次授权，然后早上档 + 当下快照；推完了「今天还没传健康数据」自然不弹
+            PushRegistrar.diag("chat: task reached health")
             if await HealthSync.shared.requestAuth() { await HealthSync.shared.syncOnActive() }
             await alerts.healthOnce()
         }

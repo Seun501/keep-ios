@@ -22,7 +22,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         if Preview.on { return }   // 截图别弹系统通知框
         let c = UNUserNotificationCenter.current()
         c.getNotificationSettings { s in
-            Self.diag("auth=\(s.authorizationStatus.rawValue) keychain=\(Keychain.token == nil ? "empty" : "ok")")
+            Self.diag("auth=\(s.authorizationStatus.rawValue) keychain=\(Keychain.token == nil ? "empty" : "ok") build=\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")")   // 带构建号：日志里才分得清她开的是哪一包（09-09）
             switch s.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
                 DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }

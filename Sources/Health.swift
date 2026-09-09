@@ -32,9 +32,14 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     /// 第一次弹系统面板；之后静默。返回是否可用
     func requestAuth() async -> Bool {
         guard !Preview.on, Self.available else { return false }
-        return await withCheckedContinuation { c in
-            store.requestAuthorization(toShare: [], read: readTypes) { ok, _ in c.resume(returning: ok) }
+        PushRegistrar.diag("health: requestAuth asking")
+        let ok: Bool = await withCheckedContinuation { c in
+            store.requestAuthorization(toShare: [], read: readTypes) { ok, err in
+                PushRegistrar.diag("health: requestAuth ok=\(ok) err=\(err?.localizedDescription ?? "")")
+                c.resume(returning: ok)
+            }
         }
+        return ok
     }
 
     /// 启动时装观察器 + 后台投递（每次启动都要装，系统才会在后台叫醒）
@@ -59,6 +64,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     /// 回前台 / 首开：早上一次昨天档 + 当下快照
     func syncOnActive() async {
+        PushRegistrar.diag("health: syncOnActive available=\(Self.available) token=\(Keychain.token != nil)")
         guard !Preview.on, Self.available, Keychain.token != nil else { return }
         await pushMorning()
         await pushNow(minGap: 60)
@@ -69,8 +75,10 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     private var todayKey: String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }
 
     func pushMorning() async {
-        guard Keychain.token != nil, !busyMorning else { return }
         let hour = Calendar.current.component(.hour, from: Date())
+        // 09-09 三包都没见「start」：把门口的每个条件先报出来
+        PushRegistrar.diag("health: morning enter hour=\(hour) busy=\(busyMorning) done=\(ud.string(forKey: "health.morningDay") ?? "-") today=\(todayKey) token=\(Keychain.token != nil)")
+        guard Keychain.token != nil, !busyMorning else { return }
         // 服务器随时收昨天档（按昨天入档）；这里只限 18 点前——再晚就等明早，免得半夜把昨天档盖一遍
         guard hour < 18 else { return }
         guard ud.string(forKey: "health.morningDay") != todayKey else { return }
