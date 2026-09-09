@@ -99,7 +99,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         PushRegistrar.diag("health: morning sleep samples=\(sleep.count)")
         // 六项（键名同快捷指令；HRV 取昨天各样本平均，静息心率取两天内最新）
         if let v = await mean(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: yday0, to: today0) { body["HRV"] = (v * 10).rounded() / 10 }
-        if let v = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: cal.date(byAdding: .day, value: -2, to: today0)!, to: Date()) { body["静息心率"] = Int(v.rounded()) }
+        if let r = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: cal.date(byAdding: .day, value: -2, to: today0)!, to: Date()) { body["静息心率"] = Int(r.0.rounded()) }
         if let v = await sum(.stepCount, unit: .count(), from: yday0, to: today0) { body["步数"] = Int(v.rounded()) }
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: yday0, to: today0) { body["活动能量"] = (v * 10).rounded() / 10 }
         if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
@@ -120,21 +120,30 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     // MARK: 当下快照
 
-    func pushNow(minGap: TimeInterval) async {
-        guard Keychain.token != nil, !busyNow, Date().timeIntervalSince(lastNow) >= minGap else { return }
+    /// live=克在等（静默推送来的，09-09）：不看间隔、心率带样本钟点（`_心率测于`，服务器只记状态不入档）
+    @discardableResult
+    func pushNow(minGap: TimeInterval, live: Bool = false) async -> Bool {
+        guard Keychain.token != nil, !busyNow, Date().timeIntervalSince(lastNow) >= minGap else { return false }
         busyNow = true; defer { busyNow = false }
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         var body: [String: Any] = [:]
         if let v = await sum(.stepCount, unit: .count(), from: today0, to: Date()) { body["今日步数"] = Int(v.rounded()) }
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: today0, to: Date()) { body["今日活动能量"] = (v * 10).rounded() / 10 }
-        if let v = await latest(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: Date().addingTimeInterval(-30 * 60), to: Date()) { body["当前心率"] = Int(v.rounded()) }
-        if let v = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: today0, to: Date()) { body["当前HRV"] = (v * 10).rounded() / 10 }
-        guard !body.isEmpty else { return }
-        if await post(body, today: true) == 200 {
-            lastNow = Date()
-            PushRegistrar.diag("health: now pushed keys=\(body.count)")
+        // 心率取两小时内最新一条并带钟点——「当前」到底是几分钟前的，克看得见
+        if let hr = await latest(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: Date().addingTimeInterval(-2 * 3600), to: Date()) {
+            body["当前心率"] = Int(hr.0.rounded()); body["_心率测于"] = Self.hm(hr.1)
         }
+        if let hrv = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: today0, to: Date()) { body["当前HRV"] = (hrv.0 * 10).rounded() / 10 }
+        guard !body.isEmpty else { PushRegistrar.diag("health: now empty live=\(live)"); return false }
+        let code = await post(body, today: true)
+        if code == 200 {
+            lastNow = Date()
+            PushRegistrar.diag("health: now pushed keys=\(body.count) live=\(live)")
+            return true
+        }
+        PushRegistrar.diag("health: now post failed code=\(code) live=\(live)")
+        return false
     }
 
     // MARK: 网关
@@ -178,12 +187,14 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             })
         }
     }
-    private func latest(_ id: HKQuantityTypeIdentifier, unit: HKUnit, from: Date, to: Date) async -> Double? {
+    /// 窗口内最新一条：值 + 样本结束时刻
+    private func latest(_ id: HKQuantityTypeIdentifier, unit: HKUnit, from: Date, to: Date) async -> (Double, Date)? {
         await withCheckedContinuation { c in
             let p = HKQuery.predicateForSamples(withStart: from, end: to, options: [])
             let s = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             store.execute(HKSampleQuery(sampleType: q(id), predicate: p, limit: 1, sortDescriptors: [s]) { _, r, _ in
-                c.resume(returning: (r?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit))
+                guard let x = r?.first as? HKQuantitySample else { c.resume(returning: nil); return }
+                c.resume(returning: (x.quantity.doubleValue(for: unit), x.endDate))
             })
         }
     }
@@ -211,6 +222,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     private static let isoF: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; f.timeZone = .current; return f }()
     private static func iso(_ d: Date) -> String { isoF.string(from: d) }
+    private static func hm(_ d: Date) -> String { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f.string(from: d) }
     private static func mensWord(_ v: Int) -> String? {
         switch HKCategoryValueMenstrualFlow(rawValue: v) {
         case .light: return "轻微"

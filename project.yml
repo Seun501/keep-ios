@@ -41,6 +41,9 @@ targets:
         NSHealthShareUsageDescription: Keep 读取你的睡眠、心率、步数等，只推给你自己的网关，不经第三方。
         NSHealthUpdateUsageDescription: Keep 不写入健康数据。
         NSLocationWhenInUseUsageDescription: 只在同步健康数据时取一次位置，给克那边的天气用。
+        # 09-09 寻定「克能实时查健康」：网关发静默推送把 Keep 叫醒读一份快照——没有这键静默推送不送到
+        UIBackgroundModes:
+          - remote-notification
         UIAppFonts:
           - NotoSerifSC-Regular.otf
           - NotoSerifSC-Medium.otf

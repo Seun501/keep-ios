@@ -58,6 +58,21 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         Self.diag("register failed: \(error.localizedDescription)")
     }
 
+    /// 静默推送（09-09 寻定「克能实时查健康」）：网关 {"keep":{"health":"now"}} → 当场读一份快照推回去。
+    /// 前台/后台都走这里；锁屏时健康库读不到＝空手，网关那头等 9 秒报最近一份。
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard let keep = userInfo["keep"] as? [String: Any], (keep["health"] as? String) == "now" else {
+            completionHandler(.noData); return
+        }
+        Self.diag("silent: health now (state=\(application.applicationState.rawValue))")
+        Task { @MainActor in
+            let ok = await HealthSync.shared.pushNow(minGap: 0, live: true)
+            completionHandler(ok ? .newData : .failed)
+        }
+    }
+
     private static func report(token hex: String) {
         guard let auth = Self.token else { return }
         var req = URLRequest(url: Gateway.home.appendingPathComponent("api/push/apns"))
