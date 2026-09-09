@@ -14,6 +14,8 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     private var observers: [HKObserverQuery] = []
     private let ud = UserDefaults.standard
     private var lastNow: Date = .distantPast
+    private var busyNow = false       // 09-09 首验：观察器装上那一刻各自回调一次 + 回前台，同一秒推了六份；在飞时别再起
+    private var busyMorning = false
     private var locMgr: CLLocationManager?
     private var locCont: CheckedContinuation<CLLocation?, Never>?
 
@@ -67,9 +69,12 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     private var todayKey: String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }
 
     func pushMorning() async {
-        guard Keychain.token != nil else { return }
+        guard Keychain.token != nil, !busyMorning else { return }
         let hour = Calendar.current.component(.hour, from: Date())
-        guard hour < 12, ud.string(forKey: "health.morningDay") != todayKey else { return }   // 服务器 12 点后不收昨天档
+        // 服务器随时收昨天档（按昨天入档）；这里只限 18 点前——再晚就等明早，免得半夜把昨天档盖一遍
+        guard hour < 18 else { return }
+        guard ud.string(forKey: "health.morningDay") != todayKey else { return }
+        busyMorning = true; defer { busyMorning = false }
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         let yday0 = cal.date(byAdding: .day, value: -1, to: today0)!
@@ -87,18 +92,22 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let v = await sum(.stepCount, unit: .count(), from: yday0, to: today0) { body["步数"] = Int(v.rounded()) }
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: yday0, to: today0) { body["活动能量"] = (v * 10).rounded() / 10 }
         if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
-        guard !body.isEmpty else { return }
+        guard !body.isEmpty else { PushRegistrar.diag("health: morning empty (sleepSamples=\(sleep.count))"); return }
         if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
-        if await post(body, today: false) {
+        let code = await post(body, today: false)
+        if code == 200 {
             ud.set(todayKey, forKey: "health.morningDay")
             PushRegistrar.diag("health: morning pushed keys=\(body.count) sleepLines=\(lines.count)")
+        } else {
+            PushRegistrar.diag("health: morning post failed code=\(code) keys=\(body.count) sleepLines=\(lines.count)")
         }
     }
 
     // MARK: 当下快照
 
     func pushNow(minGap: TimeInterval) async {
-        guard Keychain.token != nil, Date().timeIntervalSince(lastNow) >= minGap else { return }
+        guard Keychain.token != nil, !busyNow, Date().timeIntervalSince(lastNow) >= minGap else { return }
+        busyNow = true; defer { busyNow = false }
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         var body: [String: Any] = [:]
@@ -107,7 +116,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let v = await latest(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: Date().addingTimeInterval(-30 * 60), to: Date()) { body["当前心率"] = Int(v.rounded()) }
         if let v = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: today0, to: Date()) { body["当前HRV"] = (v * 10).rounded() / 10 }
         guard !body.isEmpty else { return }
-        if await post(body, today: true) {
+        if await post(body, today: true) == 200 {
             lastNow = Date()
             PushRegistrar.diag("health: now pushed keys=\(body.count)")
         }
@@ -115,16 +124,18 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     // MARK: 网关
 
-    private func post(_ body: [String: Any], today: Bool) async -> Bool {
-        guard let token = Keychain.token else { return false }
+    /// 返回 HTTP 状态码；没发出去（序列化失败/超时/断网）= -1
+    private func post(_ body: [String: Any], today: Bool) async -> Int {
+        guard let token = Keychain.token else { return -1 }
         var url = Gateway.home.appendingPathComponent("api/health/push")
         if today { url = URL(string: url.absoluteString + "?today=1") ?? url }
         var r = URLRequest(url: url); r.httpMethod = "POST"; r.timeoutInterval = 20
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (_, resp) = try? await URLSession.shared.data(for: r) else { return false }
-        return (resp as? HTTPURLResponse)?.statusCode == 200
+        guard JSONSerialization.isValidJSONObject(body), let data = try? JSONSerialization.data(withJSONObject: body) else { return -2 }
+        r.httpBody = data
+        guard let (_, resp) = try? await URLSession.shared.data(for: r) else { return -1 }
+        return (resp as? HTTPURLResponse)?.statusCode ?? -1
     }
 
     // MARK: 查询（async 壳）
