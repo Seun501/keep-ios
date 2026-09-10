@@ -57,9 +57,11 @@ final class WatchHealth: ObservableObject {
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         let yday0 = cal.date(byAdding: .day, value: -1, to: today0)!
-        // 昨晚的觉结束了没：最后一段睡眠的结束时刻离现在 ≥30 分钟才算；没段落＝还没写进库，也不带
+        // 睡眠段落：表在觉结束那刻才把整晚的阶段写进库（睡着时库里只有空/在床），
+        // 所以有睡着的段落＝这一觉已经睡完，当场就推（寻 09-10：不要「结束 30 分钟」那道门）；
+        // 只有在床没睡着的段落＝还在睡，白天数字先推、睡眠等下一班
         let sleep = await samples(sleepType, from: yday0.addingTimeInterval(12 * 3600), to: Date())
-        let sleepOver = (sleep.last?.endDate).map { Date().timeIntervalSince($0) >= 30 * 60 } ?? false
+        let sleepOver = sleep.contains { ($0 as? HKCategorySample).map { $0.value != HKCategoryValueSleepAnalysis.inBed.rawValue && $0.value != HKCategoryValueSleepAnalysis.awake.rawValue } ?? false }
         var body = await dayBody(yday0, withSleep: sleepOver, sleep: sleep)
         guard !body.isEmpty else { WatchDiag.send("health: morning empty (\(reason))"); return }
         body["_来自"] = "watch"
