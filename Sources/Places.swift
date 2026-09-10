@@ -281,8 +281,11 @@ struct PlaceMap: UIViewRepresentable {
     var places: [Place]
     var draft: PlaceDraft?
     var centerTick: Int                          // 每加一次＝把地图挪到蓝点
+    var searchQuery: String                      // 搜地名跳过去（苹果地图自带搜索）：searchTick 每加一次搜一回
+    var searchTick: Int
     var onLongPress: (CLLocationCoordinate2D) -> Void   // GPS 坐标
     var onSelect: (Place) -> Void
+    var onSearchNote: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coord { Coord(self) }
 
@@ -330,6 +333,10 @@ struct PlaceMap: UIViewRepresentable {
                 mv.setRegion(MKCoordinateRegion(center: l.coordinate, latitudinalMeters: 900, longitudinalMeters: 900), animated: true)
             } else { co.wantUserOnce = true }
         }
+        if searchTick != co.searchTick {
+            co.searchTick = searchTick
+            co.search(searchQuery, in: mv)
+        }
     }
 
     static func fitRegion(_ ps: [Place]) -> MKCoordinateRegion? {
@@ -350,8 +357,24 @@ struct PlaceMap: UIViewRepresentable {
         weak var map: MKMapView?
         var sig = ""
         var centerTick = 0
+        var searchTick = 0
         var wantUserOnce = false
         init(_ p: PlaceMap) { parent = p }
+
+        /// 搜地名：先在当前视野附近找，找到第一个就把地图挪过去（结果坐标已是地图坐标，直接用）
+        func search(_ q: String, in mv: MKMapView) {
+            let s = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return }
+            let req = MKLocalSearch.Request()
+            req.naturalLanguageQuery = s
+            req.region = mv.region
+            MKLocalSearch(request: req).start { [weak self] resp, _ in
+                guard let self else { return }
+                guard let item = resp?.mapItems.first else { self.parent.onSearchNote("没找到「\(s)」——换个写法试试"); return }
+                mv.setRegion(MKCoordinateRegion(center: item.placemark.coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200), animated: true)
+                self.parent.onSearchNote("跳到了「\(item.name ?? s)」，长按落钉")
+            }
+        }
 
         @objc func longPress(_ g: UILongPressGestureRecognizer) {
             guard g.state == .began, let mv = map else { return }
@@ -400,6 +423,10 @@ struct PlacesScreen: View {
     @State private var nameF = false
     @State private var saving = false
     @State private var centerTick = 0
+    @State private var q = ""
+    @State private var qF = false
+    @State private var searchTick = 0
+    @State private var searchNote = ""
     private static let fieldFont: UIFont = {
         let d = UIFont.systemFont(ofSize: 14).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 14).fontDescriptor
         return UIFont(descriptor: d, size: 14)
@@ -416,12 +443,27 @@ struct PlacesScreen: View {
                     if !m.now.isEmpty { Text("此刻在：" + m.now).font(Theme.round(12)).foregroundColor(Theme.accent) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
+                // 搜索框照抽屉那只：远的地方打名字跳过去，不用自己拖（寻 09-10）
+                HStack(spacing: 0) {
+                    PlainField(text: $q, focused: $qF, placeholder: "搜个地名跳过去…", font: Self.fieldFont, returnKey: .search, onSubmit: search)
+                        .frame(height: 20).padding(.vertical, 7).padding(.horizontal, 12)
+                    Button(action: search) {
+                        Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)
+                            .padding(.horizontal, 13).frame(height: 28)
+                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }.buttonStyle(.plain).padding(3)
+                }
+                .frame(height: 34)
+                .background(Theme.bg, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border, lineWidth: 0.7))
+                .padding(.horizontal, 16).padding(.bottom, 8)
                 Text(hint).font(Theme.round(11)).tracking(0.44).lineSpacing(3).foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18).padding(.bottom, 8)
                 ZStack(alignment: .bottomTrailing) {
-                    PlaceMap(places: m.places, draft: draft, centerTick: centerTick,
+                    PlaceMap(places: m.places, draft: draft, centerTick: centerTick, searchQuery: q, searchTick: searchTick,
                              onLongPress: { c in startDraft(id: nil, lat: c.latitude, lon: c.longitude, radius: 100, name: "") },
-                             onSelect: { p in startDraft(id: p.id, lat: p.lat, lon: p.lon, radius: p.radius, name: p.name) })
+                             onSelect: { p in startDraft(id: p.id, lat: p.lat, lon: p.lon, radius: p.radius, name: p.name) },
+                             onSearchNote: { searchNote = $0 })
                         .ignoresSafeArea(edges: .bottom)
                     if draft == nil {
                         Button { centerTick += 1 } label: {
@@ -438,8 +480,13 @@ struct PlacesScreen: View {
         .task { Fences.shared.requestAlways(); await m.load() }
     }
 
+    private func search() {
+        guard !q.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        qF = false; searchTick += 1
+    }
+
     private var hint: String {
-        var s = m.status.isEmpty ? "长按地图落一个钉；点钉改名、改半径。圆就是围栏的边，蓝点该落在你站的地方。" : m.status
+        var s = !m.status.isEmpty ? m.status : (!searchNote.isEmpty ? searchNote : "长按地图落一个钉；点钉改名、改半径。圆就是围栏的边，蓝点该落在你站的地方。")
         if Fences.shared.authorization != .authorizedAlways { s += " 定位权限现在是「\(Fences.shared.authLabel)」，要离开手机也能报到，得在 设置→Keep→位置 里选「始终」。" }
         return s
     }
