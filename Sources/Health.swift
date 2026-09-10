@@ -25,7 +25,9 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
     private var mensType: HKCategoryType { HKCategoryType(.menstrualFlow) }   // 月经（09-09 寻：接！）——值照快捷指令的中文
     private var readTypes: Set<HKObjectType> {
         [sleepType, mensType, q(.heartRateVariabilitySDNN), q(.restingHeartRate), q(.stepCount),
-         q(.activeEnergyBurned), q(.appleStandTime), q(.heartRate)]
+         q(.activeEnergyBurned), q(.appleStandTime), q(.heartRate),
+         // 09-10 克要在每日块看到的三样：运动记录、腕温（表睡里测）、呼吸（表睡里测）
+         q(.appleSleepingWristTemperature), q(.respiratoryRate), HKObjectType.workoutType()]
     }
 
     // MARK: 授权 / 后台
@@ -105,6 +107,12 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
         // 月经：昨天记的最后一条（健康 App 里她自己记的），键名/词同快捷指令（无/轻微/中等/大量）
         if let m = (await samples(mensType, from: yday0, to: today0)).last as? HKCategorySample, let w = Self.mensWord(m.value) { body["月经"] = w }
+        // 09-10 克要的三样。腕温：表一晚一个值，取 36 小时内最新（归昨天档，同夜觉）；
+        // 呼吸：表只在睡里记，昨天中午起到现在的均值≈昨晚；运动：昨天的体能训练，文字明细＋总分钟
+        if let t = await latest(.appleSleepingWristTemperature, unit: .degreeCelsius(), from: Date().addingTimeInterval(-36 * 3600), to: Date()) { body["腕温"] = (t.0 * 100).rounded() / 100 }
+        if let v = await mean(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), from: yday0.addingTimeInterval(12 * 3600), to: Date()) { body["呼吸"] = (v * 10).rounded() / 10 }
+        let w = await workouts(from: yday0, to: today0)
+        if !w.isEmpty { body["运动"] = Self.workoutText(w); body["运动分钟"] = Int((w.reduce(0) { $0 + $1.duration } / 60).rounded()) }
         guard !body.isEmpty else { PushRegistrar.diag("health: morning empty (sleepSamples=\(sleep.count))"); return }
         PushRegistrar.diag("health: morning keys=\(body.count), asking location")
         if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
@@ -135,6 +143,8 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             body["当前心率"] = Int(hr.0.rounded()); body["_心率测于"] = Self.hm(hr.1)
         }
         if let hrv = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: today0, to: Date()) { body["当前HRV"] = (hrv.0 * 10).rounded() / 10 }
+        let w = await workouts(from: today0, to: Date())
+        if !w.isEmpty { body["今日运动"] = Self.workoutText(w) }
         guard !body.isEmpty else { PushRegistrar.diag("health: now empty live=\(live)"); return false }
         let code = await post(body, today: true)
         if code == 200 {
@@ -196,6 +206,70 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
                 guard let x = r?.first as? HKQuantitySample else { c.resume(returning: nil); return }
                 c.resume(returning: (x.quantity.doubleValue(for: unit), x.endDate))
             })
+        }
+    }
+
+    /// 体能训练记录（按开始时刻落窗）
+    private func workouts(from: Date, to: Date) async -> [HKWorkout] {
+        await withCheckedContinuation { c in
+            let p = HKQuery.predicateForSamples(withStart: from, end: to, options: .strictStartDate)
+            let s = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            store.execute(HKSampleQuery(sampleType: .workoutType(), predicate: p, limit: HKObjectQueryNoLimit, sortDescriptors: [s]) { _, r, _ in
+                c.resume(returning: (r ?? []).compactMap { $0 as? HKWorkout })
+            })
+        }
+    }
+
+    /// 「16:20 跑步 32分（210千卡、均心率142）；18:05 步行 25分（80千卡）」——单行，服务器按文字原样存（≤200 字）
+    private static func workoutText(_ ws: [HKWorkout]) -> String {
+        ws.map { w -> String in
+            var extras: [String] = []
+            if let kcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()), kcal >= 1 {
+                extras.append("\(Int(kcal.rounded()))千卡")
+            }
+            if let hr = w.statistics(for: HKQuantityType(.heartRate))?.averageQuantity()?.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) {
+                extras.append("均心率\(Int(hr.rounded()))")
+            }
+            let mins = Int((w.duration / 60).rounded())
+            return "\(hm(w.startDate)) \(activityName(w.workoutActivityType)) \(mins)分" + (extras.isEmpty ? "" : "（\(extras.joined(separator: "、"))）")
+        }.joined(separator: "；")
+    }
+
+    private static func activityName(_ t: HKWorkoutActivityType) -> String {
+        switch t {
+        case .running: return "跑步"
+        case .walking: return "步行"
+        case .cycling: return "骑行"
+        case .hiking: return "徒步"
+        case .yoga: return "瑜伽"
+        case .swimming: return "游泳"
+        case .functionalStrengthTraining, .traditionalStrengthTraining: return "力量训练"
+        case .coreTraining: return "核心训练"
+        case .elliptical: return "椭圆机"
+        case .stairClimbing, .stairs: return "爬楼梯"
+        case .dance, .socialDance, .cardioDance: return "舞蹈"
+        case .pilates: return "普拉提"
+        case .highIntensityIntervalTraining: return "高强度间歇"
+        case .cooldown: return "放松"
+        case .mindAndBody: return "身心"
+        case .flexibility: return "拉伸"
+        case .jumpRope: return "跳绳"
+        case .tableTennis: return "乒乓球"
+        case .badminton: return "羽毛球"
+        case .basketball: return "篮球"
+        case .soccer: return "足球"
+        case .tennis: return "网球"
+        case .volleyball: return "排球"
+        case .rowing: return "划船"
+        case .kickboxing: return "搏击"
+        case .boxing: return "拳击"
+        case .martialArts: return "武术"
+        case .taiChi: return "太极"
+        case .climbing: return "攀岩"
+        case .skatingSports: return "滑冰"
+        case .crossTraining, .mixedCardio: return "混合训练"
+        case .fitnessGaming: return "健身游戏"
+        default: return "运动"
         }
     }
 
