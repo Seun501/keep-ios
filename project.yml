@@ -5,6 +5,7 @@ options:
   bundleIdPrefix: cn.seunk
   deploymentTarget:
     iOS: "16.4"
+    watchOS: "10.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 settings:
@@ -60,9 +61,50 @@ targets:
     dependencies:
       - sdk: HealthKit.framework
       - sdk: CoreLocation.framework
+      - sdk: WatchConnectivity.framework
+      - target: KeepWatch                  # 手表端随手机包一起装（Embed Watch Content）
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
         TARGETED_DEVICE_FAMILY: "1"          # 只做 iPhone（项目级写法被目标级默认盖掉，09-02 查包发现）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        # 描述文件按目标各一份（09-10 加手表端后不能再在命令行统一指定）
+        PROVISIONING_PROFILE_SPECIFIER: "Keep AppStore"
+
+  # 手表端（09-10 寻定）：Xcode 14+ 单目标手表 App（没有 WatchKit 扩展那层）。
+  # App ID cn.seunk.keep.watchkitapp 与描述文件由 密钥与登录\ios-signing\加手表.py 经 ASC 接口登记。
+  KeepWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: Watch/Sources
+      - path: Watch/Resources
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: Keep
+        CFBundleDevelopmentRegion: zh-Hans
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: cn.seunk.keep
+        WKRunsIndependentlyOfCompanionApp: false
+        NSHealthShareUsageDescription: Keep 在表上读取你的睡眠、心率、步数等，只推给你自己的网关，不经第三方。
+        NSHealthUpdateUsageDescription: Keep 不写入健康数据。
+    entitlements:
+      path: Watch/KeepWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    dependencies:
+      - sdk: HealthKit.framework
+      - sdk: WatchConnectivity.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep.watchkitapp
+        SDKROOT: watchos
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SKIP_INSTALL: YES
+        PROVISIONING_PROFILE_SPECIFIER: "Keep Watch AppStore"

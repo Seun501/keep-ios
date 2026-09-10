@@ -16,6 +16,8 @@
 	<dict>
 		<key>cn.seunk.keep</key>
 		<string>Keep AppStore</string>
+		<key>cn.seunk.keep.watchkitapp</key>
+		<string>Keep Watch AppStore</string>
 	</dict>
 	<key>uploadSymbols</key>
 	<true/>

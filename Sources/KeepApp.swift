@@ -21,6 +21,7 @@ struct KeepApp: App {
                     Keychain.token = nil
                     DiskCache.clear()
                     self.token = nil
+                    PhoneLink.shared.sendToken()   // 手表那头也退出
                 }))
                 .ignoresSafeArea()
             } else {
@@ -28,6 +29,7 @@ struct KeepApp: App {
                     Keychain.token = t
                     self.token = t
                     PushRegistrar.registerIfAuthorized()
+                    PhoneLink.shared.sendToken()   // 票传给手表
                 }
             }
         }
