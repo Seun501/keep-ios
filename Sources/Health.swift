@@ -182,7 +182,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         busyNow = true; defer { busyNow = false }
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
-        async let whereT = Fences.shared.whereText()   // 此刻大概在哪（本机反查的地名，09-10）——和健康库并行取，别拖慢克那边的等待
+        async let whereT = Fences.shared.whereNow()   // 此刻在哪（坐标给服务器算离学校多远 + 本机反查的地名，09-10）——和健康库并行取，别拖慢克那边的等待
         var body: [String: Any] = [:]
         if let v = await sum(.stepCount, unit: .count(), from: today0, to: Date()) { body["今日步数"] = Int(v.rounded()) }
         if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: today0, to: Date()) { body["今日活动能量"] = (v * 10).rounded() / 10 }
@@ -193,7 +193,12 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let hrv = await latest(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: today0, to: Date()) { body["当前HRV"] = (hrv.0 * 10).rounded() / 10 }
         let w = await workouts(from: today0, to: Date())
         if !w.isEmpty { body["今日运动"] = Self.workoutText(w) }
-        if let s = await whereT { body["_位置"] = s }
+        let (whereText, whereLoc) = await whereT
+        if let s = whereText { body["_位置"] = s }
+        if let l = whereLoc {   // 「_」键＝随身元信息，只进状态不入档；克看到的是服务器算出的距离，不是这两个数
+            body["_纬度"] = String(format: "%.5f", l.coordinate.latitude)
+            body["_经度"] = String(format: "%.5f", l.coordinate.longitude)
+        }
         guard !body.isEmpty else { PushRegistrar.diag("health: now empty live=\(live)"); return false }
         let code = await post(body, today: true)
         if code == 200 {

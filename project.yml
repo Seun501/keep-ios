@@ -63,6 +63,7 @@ targets:
     dependencies:
       - sdk: HealthKit.framework
       - sdk: CoreLocation.framework
+      - sdk: MapKit.framework
       - sdk: WatchConnectivity.framework
       - target: KeepWatch                  # 手表端随手机包一起装（Embed Watch Content）
     settings:

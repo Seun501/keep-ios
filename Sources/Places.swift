@@ -1,14 +1,14 @@
 import SwiftUI
+import MapKit
 import CoreLocation
 import UIKit
 
-/// 常去的地方（09-10 寻定）：她在现场「把这里记成…」，坐标存网关状态＋本机；iOS 地理围栏（最多 20 个、
-/// 「始终」定位）到/离时系统把 Keep 拉起来，向网关报一声 → 克那边一张纸条「14:02-寻到了学校」。
-/// 克看到的永远是名字和她写的描述，不是经纬度。
+/// 常去的地方（09-10 寻定）：在地图上长按落钉、起名、选半径；坐标存网关状态＋本机。iOS 地理围栏
+/// （最多 20 个、「始终」定位）到/离时系统把 Keep 拉起来，向网关报一声 → 克那边一张纸条「14:02-寻到了学校」。
+/// 克看到的是名字和距离，不是经纬度。圆可以套（学校里再钉宿舍/教学楼），服务器报最里面那个。
 struct Place: Codable, Identifiable, Equatable {
     var id: String
     var name: String
-    var desc: String
     var lat: Double
     var lon: Double
     var radius: Int
@@ -22,17 +22,57 @@ struct Place: Codable, Identifiable, Equatable {
     }
     /// 截图用的假地方（我自己的样张，不是寻的）
     static let fixtures: [Place] = [
-        Place(id: "f1", name: "书店", desc: "巷子口那家旧书店，二楼靠窗的位子", lat: 30.0, lon: 104.0, radius: 100),
-        Place(id: "f2", name: "公园", desc: "早上跑步绕湖一圈", lat: 30.0, lon: 104.0, radius: 200),
+        Place(id: "f1", name: "学校", lat: 30.6600, lon: 104.0900, radius: 300),
+        Place(id: "f2", name: "教学楼", lat: 30.6612, lon: 104.0905, radius: 100),
+        Place(id: "f3", name: "书店", lat: 30.6720, lon: 104.0760, radius: 100),
     ]
+}
+
+/// 国内底图是火星坐标（GCJ-02），手机 GPS 和围栏都是 WGS-84，差几百米：地图上钉的点要换算回 GPS 存，
+/// 存着的点画到地图上要换算过去。公开算法，误差几米。境外不换。
+enum GeoShift {
+    private static let a = 6378245.0, ee = 0.00669342162296594323
+    static func outOfChina(_ lat: Double, _ lon: Double) -> Bool { !(lon > 72.004 && lon < 137.8347 && lat > 0.8293 && lat < 55.8271) }
+    private static func tLat(_ x: Double, _ y: Double) -> Double {
+        var r = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * sqrt(abs(x))
+        r += (20 * sin(6 * x * .pi) + 20 * sin(2 * x * .pi)) * 2 / 3
+        r += (20 * sin(y * .pi) + 40 * sin(y / 3 * .pi)) * 2 / 3
+        r += (160 * sin(y / 12 * .pi) + 320 * sin(y * .pi / 30)) * 2 / 3
+        return r
+    }
+    private static func tLon(_ x: Double, _ y: Double) -> Double {
+        var r = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * sqrt(abs(x))
+        r += (20 * sin(6 * x * .pi) + 20 * sin(2 * x * .pi)) * 2 / 3
+        r += (20 * sin(x * .pi) + 40 * sin(x / 3 * .pi)) * 2 / 3
+        r += (150 * sin(x / 12 * .pi) + 300 * sin(x / 30 * .pi)) * 2 / 3
+        return r
+    }
+    static func wgsToGcj(_ c: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+        if outOfChina(c.latitude, c.longitude) { return c }
+        var dLat = tLat(c.longitude - 105, c.latitude - 35), dLon = tLon(c.longitude - 105, c.latitude - 35)
+        let radLat = c.latitude / 180 * .pi
+        var magic = sin(radLat); magic = 1 - ee * magic * magic
+        let sqrtMagic = sqrt(magic)
+        dLat = (dLat * 180) / ((a * (1 - ee)) / (magic * sqrtMagic) * .pi)
+        dLon = (dLon * 180) / (a / sqrtMagic * cos(radLat) * .pi)
+        return CLLocationCoordinate2D(latitude: c.latitude + dLat, longitude: c.longitude + dLon)
+    }
+    static func gcjToWgs(_ c: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+        if outOfChina(c.latitude, c.longitude) { return c }
+        var w = c
+        for _ in 0..<5 {   // 迭代逼近：把 w 正向换算，与目标的差补回去
+            let g = wgsToGcj(w)
+            w = CLLocationCoordinate2D(latitude: w.latitude - (g.latitude - c.latitude), longitude: w.longitude - (g.longitude - c.longitude))
+        }
+        return w
+    }
 }
 
 @MainActor
 final class PlacesModel: ObservableObject {
     @Published var places: [Place] = Preview.on ? Place.fixtures : Place.cached()
-    @Published var now = Preview.on ? "书店" : ""
+    @Published var now = Preview.on ? "教学楼" : ""
     @Published var status = ""
-    @Published var failed = false
 
     private func req(_ path: String, method: String = "GET", json: [String: Any]? = nil) -> URLRequest? {
         guard let token = Keychain.token else { return nil }
@@ -45,42 +85,42 @@ final class PlacesModel: ObservableObject {
         }
         return r
     }
+    private static let notOpen = "网关这扇门明早 05:30 重启后才开——今天先记不了"
 
     func load() async {
         if Preview.on { return }
         guard let r = req("api/places") else { return }
-        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { failed = true; return }
-        if (resp as? HTTPURLResponse)?.statusCode == 404 { status = "网关这扇门明早 05:30 重启后才开——今天先记不了"; return }
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { status = "没连上网关，先用上次的"; return }
+        if (resp as? HTTPURLResponse)?.statusCode == 404 { status = Self.notOpen; return }
         struct P: Decodable { var places: [Place]; var now: String? }
-        guard let p = try? JSONDecoder().decode(P.self, from: d) else { failed = true; return }
+        guard let p = try? JSONDecoder().decode(P.self, from: d) else { status = "网关回的看不懂"; return }
         places = p.places; now = p.now ?? ""
         Place.cache(places)
         Fences.shared.apply(places)
     }
 
-    /// 记下「这里」：拿一次精确定位 → 存网关 → 装围栏
-    func add(name: String, desc: String, radius: Int) async {
+    /// 记下/改一个钉（coord 是 GPS 坐标）。成功返回 true
+    func save(id: String?, name: String, coord: CLLocationCoordinate2D, radius: Int) async -> Bool {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !n.isEmpty else { return }
-        if Preview.on { places.append(Place(id: UUID().uuidString, name: n, desc: desc, lat: 0, lon: 0, radius: radius)); return }
-        status = "定位中…"
-        Fences.shared.requestAlways()
-        guard let loc = await Fences.shared.locate(accuracy: kCLLocationAccuracyBest, timeout: 12) else {
-            status = "没拿到定位——看看 设置→Keep→位置 是不是关着"; return
+        guard !n.isEmpty else { return false }
+        if Preview.on {
+            let p = Place(id: id ?? UUID().uuidString, name: n, lat: coord.latitude, lon: coord.longitude, radius: radius)
+            places.removeAll { $0.id == p.id }; places.append(p); return true
         }
-        let body: [String: Any] = ["name": n, "desc": desc.trimmingCharacters(in: .whitespacesAndNewlines),
-                                   "lat": loc.coordinate.latitude, "lon": loc.coordinate.longitude, "radius": radius]
+        var body: [String: Any] = ["name": n, "lat": coord.latitude, "lon": coord.longitude, "radius": radius]
+        if let id { body["id"] = id }
         guard let r = req("api/places", method: "POST", json: body),
-              let (d, resp) = try? await URLSession.shared.data(for: r) else { status = "没送到网关"; return }
+              let (d, resp) = try? await URLSession.shared.data(for: r) else { status = "没送到网关"; return false }
         let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-        if code == 404 { status = "网关这扇门明早 05:30 重启后才开——今天先记不了"; return }
+        if code == 404 { status = Self.notOpen; return false }
         guard code == 200, let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let pd = try? JSONSerialization.data(withJSONObject: j["place"] ?? [:]),
-              let p = try? JSONDecoder().decode(Place.self, from: pd) else { status = "网关没收（\(code)）"; return }
+              let p = try? JSONDecoder().decode(Place.self, from: pd) else { status = "网关没收（\(code)）"; return false }
         places.removeAll { $0.id == p.id }; places.append(p)
         Place.cache(places); Fences.shared.apply(places)
-        status = "记下了：\(p.name)（定位误差约 \(Int(loc.horizontalAccuracy)) 米）"
-        PushRegistrar.diag("place: added radius=\(radius) acc=\(Int(loc.horizontalAccuracy))")
+        status = ""
+        PushRegistrar.diag("place: saved radius=\(radius) n=\(places.count)")
+        return true
     }
 
     func remove(_ p: Place) async {
@@ -100,7 +140,7 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     static let shared = Fences()
     private var mgr: CLLocationManager?
     private var cont: CheckedContinuation<CLLocation?, Never>?
-    private var lastWhere: (String, Date)?
+    private var lastWhere: (String, CLLocation, Date)?
 
     private var manager: CLLocationManager {
         if let m = mgr { return m }
@@ -131,6 +171,8 @@ final class Fences: NSObject, CLLocationManagerDelegate {
         manager.requestAlwaysAuthorization()   // 已是「使用期间」→ 系统当场弹「改成始终」；没问过→ 先弹使用期间、日后自己再弹一次
     }
 
+    /// 装围栏，并让系统判一次「此刻在不在里面」（didDetermineState）——刚钉的圆站在里面时不会有 didEnter，
+    /// 这一问补上；服务器只在状态真变时出纸条，重报无害
     func apply(_ places: [Place]) {
         guard !Preview.on, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
         let want = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
@@ -140,10 +182,11 @@ final class Fences: NSObject, CLLocationManagerDelegate {
                                           radius: CLLocationDistance(p.radius), identifier: p.id)
             region.notifyOnEntry = true; region.notifyOnExit = true
             manager.startMonitoring(for: region)   // 同名重装＝换掉旧圆
+            manager.requestState(for: region)
         }
     }
 
-    /// 一次定位（页面记地方用 best；快照带地名用 hundredMeters）
+    /// 一次定位（快照带地名用 hundredMeters）
     func locate(accuracy: CLLocationAccuracy, timeout: TimeInterval) async -> CLLocation? {
         guard !Preview.on else { return nil }
         let m = manager
@@ -157,19 +200,20 @@ final class Fences: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// 此刻大概在哪（本机反查成地名，十分钟内复用）：「青羊区·人民中路一带」。不在记过的地方时给克看的就是它。
-    func whereText() async -> String? {
-        guard !Preview.on else { return nil }
-        if let (s, at) = lastWhere, Date().timeIntervalSince(at) < 600 { return s }
-        guard let loc = await locate(accuracy: kCLLocationAccuracyHundredMeters, timeout: 5) else { return nil }
-        guard let pm = try? await CLGeocoder().reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "zh-CN")).first else { return nil }
-        let area = pm.subLocality ?? pm.locality ?? pm.administrativeArea ?? ""
-        let road = pm.thoroughfare ?? pm.name ?? ""
-        let s = [area, road].filter { !$0.isEmpty }.joined(separator: "·")
-        guard !s.isEmpty else { return nil }
-        let text = s + "一带"
-        lastWhere = (text, Date())
-        return text
+    /// 此刻在哪（十分钟内复用）：GPS 坐标给服务器算「离学校多远」，地名是本机反查的「青羊区·人民中路一带」。
+    func whereNow() async -> (String?, CLLocation?) {
+        guard !Preview.on else { return (nil, nil) }
+        if let (s, l, at) = lastWhere, Date().timeIntervalSince(at) < 600 { return (s, l) }
+        guard let loc = await locate(accuracy: kCLLocationAccuracyHundredMeters, timeout: 5) else { return (nil, nil) }
+        var text: String? = nil
+        if let pm = try? await CLGeocoder().reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "zh-CN")).first {
+            let area = pm.subLocality ?? pm.locality ?? pm.administrativeArea ?? ""
+            let road = pm.thoroughfare ?? pm.name ?? ""
+            let s = [area, road].filter { !$0.isEmpty }.joined(separator: "·")
+            if !s.isEmpty { text = s + "一带" }
+        }
+        if let text { lastWhere = (text, loc, Date()) }
+        return (text, loc)
     }
 
     // MARK: 事件 → 网关
@@ -182,10 +226,11 @@ final class Fences: NSObject, CLLocationManagerDelegate {
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.httpBody = try? JSONSerialization.data(withJSONObject: ["id": id, "kind": kind])
-        URLSession.shared.dataTask(with: r) { _, resp, _ in
+        URLSession.shared.dataTask(with: r) { d, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            let note = (try? JSONSerialization.jsonObject(with: d ?? Data()) as? [String: Any])?["note"] as? String ?? ""
             Task { @MainActor in
-                PushRegistrar.diag("place: \(kind) code=\(code)")
+                PushRegistrar.diag("place: \(kind) code=\(code)\(note.isEmpty ? "" : " note")")
                 UIApplication.shared.endBackgroundTask(bg)
             }
         }.resume()
@@ -196,6 +241,11 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         Task { @MainActor in self.report(region.identifier, "exit") }
+    }
+    nonisolated func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
+        guard state != .unknown else { return }
+        let kind = state == .inside ? "enter" : "exit"
+        Task { @MainActor in self.report(region.identifier, kind) }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         Task { @MainActor in self.cont?.resume(returning: locations.last); self.cont = nil }
@@ -213,16 +263,143 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     }
 }
 
-/// 页面：顶上「把这里记成…」的小表单，下面记过的地方；长按一张卡＝删除。
+// MARK: - 地图
+
+/// 正在编辑的钉（坐标是 GPS 坐标；id 空＝新钉）
+struct PlaceDraft: Equatable {
+    var id: String?
+    var lat: Double
+    var lon: Double
+    var radius: Int
+}
+
+private final class PlacePin: MKPointAnnotation { var pid: String? }
+private final class DraftCircle: MKCircle {}
+
+/// MKMapView 包一层：长按落钉、点钉选中、圆按半径画。地图坐标 ↔ GPS 坐标在这层换算。
+struct PlaceMap: UIViewRepresentable {
+    var places: [Place]
+    var draft: PlaceDraft?
+    var centerTick: Int                          // 每加一次＝把地图挪到蓝点
+    var onLongPress: (CLLocationCoordinate2D) -> Void   // GPS 坐标
+    var onSelect: (Place) -> Void
+
+    func makeCoordinator() -> Coord { Coord(self) }
+
+    func makeUIView(context: Context) -> MKMapView {
+        let mv = MKMapView()
+        mv.delegate = context.coordinator
+        mv.showsUserLocation = !Preview.on
+        mv.pointOfInterestFilter = .excludingAll   // 干净底图（寻的口味）
+        mv.showsCompass = false
+        let lp = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coord.longPress(_:)))
+        lp.minimumPressDuration = 0.5
+        mv.addGestureRecognizer(lp)
+        context.coordinator.map = mv
+        // 起始视野：有钉就框住全部；没钉等蓝点来（didUpdate userLocation）；截图/没定位就成都
+        if let r = Self.fitRegion(places) { mv.setRegion(r, animated: false) }
+        else if Preview.on { mv.setRegion(MKCoordinateRegion(center: GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: 30.66, longitude: 104.09)), latitudinalMeters: 2500, longitudinalMeters: 2500), animated: false) }
+        else { mv.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 30.66, longitude: 104.07), latitudinalMeters: 12000, longitudinalMeters: 12000), animated: false); context.coordinator.wantUserOnce = true }
+        return mv
+    }
+
+    func updateUIView(_ mv: MKMapView, context: Context) {
+        let co = context.coordinator
+        co.parent = self
+        let sig = places.map { "\($0.id)|\($0.name)|\($0.lat)|\($0.lon)|\($0.radius)" }.joined(separator: ";") + "#" + (draft.map { "\($0.id ?? "")|\($0.lat)|\($0.lon)|\($0.radius)" } ?? "")
+        if sig != co.sig {
+            co.sig = sig
+            mv.removeAnnotations(mv.annotations.filter { !($0 is MKUserLocation) })
+            mv.removeOverlays(mv.overlays)
+            for p in places where p.id != draft?.id {
+                let c = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon))
+                let pin = PlacePin(); pin.coordinate = c; pin.title = p.name; pin.pid = p.id
+                mv.addAnnotation(pin)
+                mv.addOverlay(MKCircle(center: c, radius: CLLocationDistance(p.radius)))
+            }
+            if let d = draft {
+                let c = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: d.lat, longitude: d.lon))
+                let pin = PlacePin(); pin.coordinate = c; pin.title = d.id.flatMap { id in places.first { $0.id == id }?.name } ?? "这里"
+                mv.addAnnotation(pin)
+                mv.addOverlay(DraftCircle(center: c, radius: CLLocationDistance(d.radius)))
+            }
+        }
+        if centerTick != co.centerTick {
+            co.centerTick = centerTick
+            if let l = mv.userLocation.location {
+                mv.setRegion(MKCoordinateRegion(center: l.coordinate, latitudinalMeters: 900, longitudinalMeters: 900), animated: true)
+            } else { co.wantUserOnce = true }
+        }
+    }
+
+    static func fitRegion(_ ps: [Place]) -> MKCoordinateRegion? {
+        guard !ps.isEmpty else { return nil }
+        var rect = MKMapRect.null
+        for p in ps {
+            let c = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon))
+            let r = MKCircle(center: c, radius: CLLocationDistance(p.radius) * 1.6).boundingMapRect
+            rect = rect.union(r)
+        }
+        var region = MKCoordinateRegion(rect)
+        region.span.latitudeDelta = max(region.span.latitudeDelta, 0.006); region.span.longitudeDelta = max(region.span.longitudeDelta, 0.006)
+        return region
+    }
+
+    final class Coord: NSObject, MKMapViewDelegate {
+        var parent: PlaceMap
+        weak var map: MKMapView?
+        var sig = ""
+        var centerTick = 0
+        var wantUserOnce = false
+        init(_ p: PlaceMap) { parent = p }
+
+        @objc func longPress(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began, let mv = map else { return }
+            let c = mv.convert(g.location(in: mv), toCoordinateFrom: mv)   // 地图坐标（国内＝火星）
+            parent.onLongPress(GeoShift.gcjToWgs(c))
+        }
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            guard wantUserOnce, let l = userLocation.location else { return }
+            wantUserOnce = false
+            mapView.setRegion(MKCoordinateRegion(center: l.coordinate, latitudinalMeters: 900, longitudinalMeters: 900), animated: false)
+        }
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            guard let c = overlay as? MKCircle else { return MKOverlayRenderer(overlay: overlay) }
+            let r = MKCircleRenderer(circle: c)
+            let accent = UIColor(Theme.accent)
+            if overlay is DraftCircle { r.fillColor = accent.withAlphaComponent(0.22); r.strokeColor = accent; r.lineWidth = 1.5 }
+            else { r.fillColor = accent.withAlphaComponent(0.10); r.strokeColor = accent.withAlphaComponent(0.7); r.lineWidth = 1 }
+            return r
+        }
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard let pin = annotation as? PlacePin else { return nil }
+            let id = "pin"
+            let v = (mapView.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView) ?? MKMarkerAnnotationView(annotation: pin, reuseIdentifier: id)
+            v.annotation = pin
+            v.markerTintColor = pin.pid == nil ? Theme.uiText : UIColor(Theme.accent)
+            v.glyphImage = UIImage(named: "pin")
+            v.titleVisibility = .visible
+            v.displayPriority = .required
+            v.canShowCallout = false
+            return v
+        }
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            defer { mapView.deselectAnnotation(view.annotation, animated: false) }
+            guard let pin = view.annotation as? PlacePin, let pid = pin.pid, let p = parent.places.first(where: { $0.id == pid }) else { return }
+            parent.onSelect(p)
+        }
+    }
+}
+
+/// 页面：整屏地图；长按落钉 → 底部小卡填名字/选半径（圆当场画）；点钉改名改半径/删；右下「到我这」。
 struct PlacesScreen: View {
     var onBack: () -> Void
     @StateObject private var m = PlacesModel()
+    @State private var draft: PlaceDraft? = Preview.on ? PlaceDraft(id: nil, lat: 30.6560, lon: 104.0850, radius: 150) : nil
     @State private var name = ""
-    @State private var desc = ""
     @State private var nameF = false
-    @State private var descF = false
-    @State private var radius = 100
     @State private var saving = false
+    @State private var centerTick = 0
     private static let fieldFont: UIFont = {
         let d = UIFont.systemFont(ofSize: 14).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 14).fontDescriptor
         return UIFont(descriptor: d, size: 14)
@@ -234,94 +411,87 @@ struct PlacesScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { onBack() } label: { Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
-                    Text("常去的地方").font(Theme.round(14)).foregroundColor(Theme.muted)
+                    Text("常去的地方 · \(m.places.count)").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
                     if !m.now.isEmpty { Text("此刻在：" + m.now).font(Theme.round(12)).foregroundColor(Theme.accent) }
                 }
-                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-                OrangeScroll(name: "places") {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        SecTitle("把这里记成…")
-                        form
-                        if !m.status.isEmpty {
-                            Text(m.status).font(Theme.round(11)).tracking(0.44).lineSpacing(4).foregroundColor(Theme.muted).padding(.horizontal, 2).padding(.top, -2)
-                        }
-                        SecTitle("记过的地方 · \(m.places.count)")
-                        if m.failed { Text("没拿到数据，退出来再进一次试试").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, 24) }
-                        ForEach(m.places) { p in card(p) }
-                        if m.places.isEmpty, !m.failed {
-                            Text("还一个都没记。到了常去的地方，回来这页按一下就好。").font(Theme.round(12)).lineSpacing(4).foregroundColor(Theme.muted).padding(.horizontal, 2)
-                        }
-                        if Fences.shared.authorization != .authorizedAlways {
-                            Text("定位权限现在是「\(Fences.shared.authLabel)」——要离开手机也能报到，得在 设置→Keep→位置 里选「始终」。")
-                                .font(Theme.round(11)).tracking(0.44).lineSpacing(4).foregroundColor(Theme.muted).padding(.horizontal, 2).padding(.top, 6)
-                        }
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
+                Text(hint).font(Theme.round(11)).tracking(0.44).lineSpacing(3).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18).padding(.bottom, 8)
+                ZStack(alignment: .bottomTrailing) {
+                    PlaceMap(places: m.places, draft: draft, centerTick: centerTick,
+                             onLongPress: { c in startDraft(id: nil, lat: c.latitude, lon: c.longitude, radius: 100, name: "") },
+                             onSelect: { p in startDraft(id: p.id, lat: p.lat, lon: p.lon, radius: p.radius, name: p.name) })
+                        .ignoresSafeArea(edges: .bottom)
+                    if draft == nil {
+                        Button { centerTick += 1 } label: {
+                            Image("locate").renderingMode(.template).resizable().frame(width: 18, height: 18).foregroundColor(.white)
+                                .frame(width: 42, height: 42).background(Theme.accent, in: Circle())
+                        }.buttonStyle(.plain).padding(.trailing, 16).padding(.bottom, 28)
                     }
-                    .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 24)
                 }
+                .overlay(alignment: .bottom) { if draft != nil { editCard.padding(.horizontal, 14).padding(.bottom, 14) } }
+                .transaction { $0.animation = nil }   // 小卡瞬间出现/消失（寻定：不滑不淡）
             }
         }
         .background(EdgeSwipe(onBack: onBack))
-        .task { await m.load() }
+        .task { Fences.shared.requestAlways(); await m.load() }
+    }
+
+    private var hint: String {
+        var s = m.status.isEmpty ? "长按地图落一个钉；点钉改名、改半径。圆就是围栏的边，蓝点该落在你站的地方。" : m.status
+        if Fences.shared.authorization != .authorizedAlways { s += " 定位权限现在是「\(Fences.shared.authLabel)」，要离开手机也能报到，得在 设置→Keep→位置 里选「始终」。" }
+        return s
+    }
+
+    private func startDraft(id: String?, lat: Double, lon: Double, radius: Int, name n: String) {
+        draft = PlaceDraft(id: id, lat: lat, lon: lon, radius: radius); name = n; nameF = id == nil
     }
 
     private var hair: some View { Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1) }
 
-    private var form: some View {
+    private var editCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PlainField(text: $name, focused: $nameF, placeholder: "叫什么（家 / 学校 / 青羊宫…）", font: Self.fieldFont, returnKey: .next, onSubmit: { descF = true })
+            PlainField(text: $name, focused: $nameF, placeholder: "叫什么（家 / 学校 / 青羊宫…）", font: Self.fieldFont, returnKey: .done, onSubmit: { nameF = false })
                 .frame(height: 20).padding(.vertical, 11).padding(.horizontal, 15)
             hair
-            PlainField(text: $desc, focused: $descF, placeholder: "给克的一句描述（那是个什么样的地方）", font: Self.fieldFont, returnKey: .done, onSubmit: { descF = false })
-                .frame(height: 20).padding(.vertical, 11).padding(.horizontal, 15)
-            hair
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text("半径").font(Theme.round(12)).foregroundColor(Theme.muted)
-                ForEach([100, 150, 200, 300], id: \.self) { r in
-                    Button { radius = r } label: {
-                        Text("\(r) 米").font(Theme.round(12, weight: radius == r ? .medium : .regular))
-                            .foregroundColor(radius == r ? .white : Theme.muted)
-                            .padding(.horizontal, 10).frame(height: 24)
-                            .background(radius == r ? Theme.accent : Theme.bg, in: Capsule())
+                ForEach([100, 150, 200, 300, 500], id: \.self) { r in
+                    let on = draft?.radius == r
+                    Button { draft?.radius = r } label: {
+                        Text("\(r)").font(Theme.round(12, weight: on ? .medium : .regular))
+                            .foregroundColor(on ? .white : Theme.muted)
+                            .padding(.horizontal, 9).frame(height: 24)
+                            .background(on ? Theme.accent : Theme.bg, in: Capsule())
                     }.buttonStyle(.plain)
                 }
+                Text("米").font(Theme.round(12)).foregroundColor(Theme.muted)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 15).padding(.vertical, 10)
-            HStack {
+            HStack(spacing: 14) {
+                Button { draft = nil; nameF = false } label: { Text("取消").font(Theme.round(13)).foregroundColor(Theme.muted) }.buttonStyle(.plain)
+                if let id = draft?.id, let p = m.places.first(where: { $0.id == id }) {
+                    Button { Task { await m.remove(p); draft = nil } } label: { Text("删掉").font(Theme.round(13)).foregroundColor(Theme.muted) }.buttonStyle(.plain)
+                }
                 Spacer()
                 Button {
-                    guard !saving else { return }
-                    saving = true; nameF = false; descF = false
-                    Task { await m.add(name: name, desc: desc, radius: radius); if m.status.hasPrefix("记下了") { name = ""; desc = "" }; saving = false }
+                    guard let d = draft, !saving else { return }
+                    saving = true; nameF = false
+                    Task {
+                        if await m.save(id: d.id, name: name, coord: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lon), radius: d.radius) { draft = nil }
+                        saving = false
+                    }
                 } label: {
-                    Text(saving ? "定位中…" : "记下这里").font(Theme.round(14, weight: .medium)).foregroundColor(.white)
-                        .padding(.horizontal, 18).frame(height: 34)
+                    Text(saving ? "记着…" : (draft?.id == nil ? "记下" : "改好")).font(Theme.round(14, weight: .medium)).foregroundColor(.white)
+                        .padding(.horizontal, 18).frame(height: 32)
                         .background(Theme.accent.opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.45 : 1), in: Capsule())
                 }.buttonStyle(.plain).disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .padding(.horizontal, 12).padding(.bottom, 12)
+            .padding(.horizontal, 15).padding(.bottom, 12)
         }
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
-    }
-
-    private func card(_ p: Place) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(p.name).font(Theme.georgiaCJK(16)).foregroundColor(Theme.text)
-                Spacer()
-                Text("\(p.radius) 米").font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
-            }
-            if !p.desc.isEmpty {
-                Text(p.desc).font(Theme.cjk(13.5)).lineSpacing(4).foregroundColor(Theme.muted).padding(.top, 6)
-            }
-        }
-        .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
-        .contentShape(Rectangle())
-        .contextMenu { Button(role: .destructive) { Task { await m.remove(p) } } label: { Label("删除「\(p.name)」", systemImage: "trash") } }
     }
 }
