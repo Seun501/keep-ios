@@ -71,6 +71,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         guard !Preview.on, Self.available, Keychain.token != nil else { return }
         await pushMorning()
         await pushNow(minGap: 60)
+        Task { await self.backfill() }   // 历史回填：一次性，慢慢推，不挡上面两份
     }
 
     // MARK: 昨天档（一天一次）
@@ -90,40 +91,86 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         let cal = Calendar.current
         let today0 = cal.startOfDay(for: Date())
         let yday0 = cal.date(byAdding: .day, value: -1, to: today0)!
-        var body: [String: Any] = [:]
-        // 睡眠原始：最近 36 小时的段落，每行「值|开始|结束」（切觉/归日/午睡全交服务器）
-        let sleep = await samples(sleepType, from: Date().addingTimeInterval(-36 * 3600), to: Date())
-        let lines = sleep.compactMap { s -> String? in
-            guard let c = s as? HKCategorySample else { return nil }
-            return "\(Self.sleepName(c.value))|\(Self.iso(c.startDate))|\(Self.iso(c.endDate))"
-        }
-        if !lines.isEmpty { body["睡眠原始"] = lines.joined(separator: "\n") }
-        PushRegistrar.diag("health: morning sleep samples=\(sleep.count)")
-        // 六项（键名同快捷指令；HRV 取昨天各样本平均，静息心率取两天内最新）
-        if let v = await mean(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: yday0, to: today0) { body["HRV"] = (v * 10).rounded() / 10 }
-        if let r = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: cal.date(byAdding: .day, value: -2, to: today0)!, to: Date()) { body["静息心率"] = Int(r.0.rounded()) }
-        if let v = await sum(.stepCount, unit: .count(), from: yday0, to: today0) { body["步数"] = Int(v.rounded()) }
-        if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: yday0, to: today0) { body["活动能量"] = (v * 10).rounded() / 10 }
-        if let v = await sum(.appleStandTime, unit: .minute(), from: yday0, to: today0) { body["站立分钟数"] = Int(v.rounded()) }
-        // 月经：昨天记的最后一条（健康 App 里她自己记的），键名/词同快捷指令（无/轻微/中等/大量）
-        if let m = (await samples(mensType, from: yday0, to: today0)).last as? HKCategorySample, let w = Self.mensWord(m.value) { body["月经"] = w }
-        // 09-10 克要的三样。腕温：表一晚一个值，取 36 小时内最新（归昨天档，同夜觉）；
-        // 呼吸：表只在睡里记，昨天中午起到现在的均值≈昨晚；运动：昨天的体能训练，文字明细＋总分钟
-        if let t = await latest(.appleSleepingWristTemperature, unit: .degreeCelsius(), from: Date().addingTimeInterval(-36 * 3600), to: Date()) { body["腕温"] = (t.0 * 100).rounded() / 100 }
-        if let v = await mean(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), from: yday0.addingTimeInterval(12 * 3600), to: Date()) { body["呼吸"] = (v * 10).rounded() / 10 }
-        let w = await workouts(from: yday0, to: today0)
-        if !w.isEmpty { body["运动"] = Self.workoutText(w); body["运动分钟"] = Int((w.reduce(0) { $0 + $1.duration } / 60).rounded()) }
-        guard !body.isEmpty else { PushRegistrar.diag("health: morning empty (sleepSamples=\(sleep.count))"); return }
+        var body = await dayBody(yday0)
+        guard !body.isEmpty else { PushRegistrar.diag("health: morning empty"); return }
         PushRegistrar.diag("health: morning keys=\(body.count), asking location")
         if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
         PushRegistrar.diag("health: morning location done, posting")
         let code = await post(body, today: false)
         if code == 200 {
             ud.set(todayKey, forKey: "health.morningDay")
-            PushRegistrar.diag("health: morning pushed keys=\(body.count) sleepLines=\(lines.count)")
+            PushRegistrar.diag("health: morning pushed keys=\(body.count)")
         } else {
-            PushRegistrar.diag("health: morning post failed code=\(code) keys=\(body.count) sleepLines=\(lines.count)")
+            PushRegistrar.diag("health: morning post failed code=\(code) keys=\(body.count)")
         }
+    }
+
+    /// 某一天的档（day0＝那天 0 点）。夜觉窗＝那天中午到次日中午（入睡−12小时归日的口径），
+    /// 到不了次日中午就截到现在。昨天档和历史回填共用这一份，算法只写一遍。
+    private func dayBody(_ day0: Date) async -> [String: Any] {
+        let cal = Calendar.current
+        let next0 = cal.date(byAdding: .day, value: 1, to: day0)!
+        let noon = day0.addingTimeInterval(12 * 3600)
+        let nightEnd = min(next0.addingTimeInterval(12 * 3600), Date())
+        var body: [String: Any] = [:]
+        // 睡眠原始：段落每行「值|开始|结束」（切觉/归日/午睡全交服务器）
+        let sleep = await samples(sleepType, from: noon, to: nightEnd)
+        let lines = sleep.compactMap { s -> String? in
+            guard let c = s as? HKCategorySample else { return nil }
+            return "\(Self.sleepName(c.value))|\(Self.iso(c.startDate))|\(Self.iso(c.endDate))"
+        }
+        if !lines.isEmpty { body["睡眠原始"] = lines.joined(separator: "\n") }
+        // 六项（键名同快捷指令；HRV 取那天各样本平均，静息心率取那天的）
+        if let v = await mean(.heartRateVariabilitySDNN, unit: .secondUnit(with: .milli), from: day0, to: next0) { body["HRV"] = (v * 10).rounded() / 10 }
+        if let r = await latest(.restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), from: day0, to: next0) { body["静息心率"] = Int(r.0.rounded()) }
+        if let v = await sum(.stepCount, unit: .count(), from: day0, to: next0), v > 0 { body["步数"] = Int(v.rounded()) }
+        if let v = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: day0, to: next0), v > 0 { body["活动能量"] = (v * 10).rounded() / 10 }
+        if let v = await sum(.appleStandTime, unit: .minute(), from: day0, to: next0), v > 0 { body["站立分钟数"] = Int(v.rounded()) }
+        // 月经：那天记的最后一条（健康 App 里她自己记的），键名/词同快捷指令（无/轻微/中等/大量）
+        if let m = (await samples(mensType, from: day0, to: next0)).last as? HKCategorySample, let w = Self.mensWord(m.value) { body["月经"] = w }
+        // 09-10 克要的三样。腕温：表一晚一个值，取那晚的；呼吸：表只在睡里记，那晚的均值；
+        // 运动：那天的体能训练，文字明细＋总分钟
+        if let t = await latest(.appleSleepingWristTemperature, unit: .degreeCelsius(), from: noon, to: nightEnd) { body["腕温"] = (t.0 * 100).rounded() / 100 }
+        if let v = await mean(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), from: noon, to: nightEnd) { body["呼吸"] = (v * 10).rounded() / 10 }
+        let w = await workouts(from: day0, to: next0)
+        if !w.isEmpty { body["运动"] = Self.workoutText(w); body["运动分钟"] = Int((w.reduce(0) { $0 + $1.duration } / 60).rounded()) }
+        return body
+    }
+
+    // MARK: 历史回填（09-10 寻：「我以为可以拿到以前的健康数据」）
+
+    /// 装上后一次：从前天起往回最多一年，一天一份按 date 推（?backfill=1 只入档不排纸条）。
+    /// 进度落 UserDefaults，中途退到后台被挂起就下次接着推；连续 45 天空档＝表还没戴上，停。
+    private static let backfillTag = "v1"
+    private var busyBackfill = false
+    private func backfill() async {
+        guard Keychain.token != nil, !busyBackfill, ud.string(forKey: "health.backfillDone") != Self.backfillTag else { return }
+        busyBackfill = true; defer { busyBackfill = false }
+        // 服务器认得 ?backfill=1 了才开工（旧服务器会把一年前某晚当「昨晚」排睡眠纸条）
+        guard await serverBackfillOK() else { PushRegistrar.diag("health: backfill waits for server"); return }
+        let cal = Calendar.current
+        let today0 = cal.startOfDay(for: Date())
+        var i = max(2, ud.integer(forKey: "health.backfillNext"))
+        var empties = 0, pushed = 0
+        PushRegistrar.diag("health: backfill start from day-\(i)")
+        while i <= 365 && empties < 45 {
+            let day0 = cal.date(byAdding: .day, value: -i, to: today0)!
+            var body = await dayBody(day0)
+            if body.isEmpty {
+                empties += 1
+            } else {
+                empties = 0
+                let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+                body["date"] = f.string(from: day0)
+                let code = await post(body, today: false, backfill: true)
+                guard code == 200 else { PushRegistrar.diag("health: backfill stop code=\(code) at day-\(i) pushed=\(pushed)"); return }
+                pushed += 1
+            }
+            i += 1
+            ud.set(i, forKey: "health.backfillNext")
+        }
+        ud.set(Self.backfillTag, forKey: "health.backfillDone")
+        PushRegistrar.diag("health: backfill done pushed=\(pushed) lastDay=-\(i - 1)")
     }
 
     // MARK: 当下快照
@@ -158,11 +205,21 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     // MARK: 网关
 
+    private func serverBackfillOK() async -> Bool {
+        guard let token = Keychain.token else { return false }
+        var r = URLRequest(url: Gateway.home.appendingPathComponent("api/health/pushed_today")); r.timeoutInterval = 15
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, _) = try? await URLSession.shared.data(for: r),
+              let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return (j["backfill_ok"] as? Bool) == true
+    }
+
     /// 返回 HTTP 状态码；没发出去（序列化失败/超时/断网）= -1
-    private func post(_ body: [String: Any], today: Bool) async -> Int {
+    private func post(_ body: [String: Any], today: Bool, backfill: Bool = false) async -> Int {
         guard let token = Keychain.token else { return -1 }
         var url = Gateway.home.appendingPathComponent("api/health/push")
         if today { url = URL(string: url.absoluteString + "?today=1") ?? url }
+        else if backfill { url = URL(string: url.absoluteString + "?backfill=1") ?? url }
         var r = URLRequest(url: url); r.httpMethod = "POST"; r.timeoutInterval = 20
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
