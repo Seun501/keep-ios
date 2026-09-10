@@ -360,6 +360,7 @@ struct ChatScreen: View {
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
         case "mem": return [.mem]
+        case "places": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archno": return [.arch(day: "2026-09-02", q: nil, no: 1203)]   // #N 直跳的闪
         case "archhits": return [.arch(day: nil, q: "安静", no: nil)]
@@ -382,6 +383,7 @@ struct ChatScreen: View {
                     case .books: BooksScreen(onBack: pop)
                     case .album: AlbumScreen(onBack: pop, onArchive: { d, n in path.append(.arch(day: d, q: nil, no: n)) })
                     case .mem: MemScreen(onBack: pop)
+                    case .places: PlacesScreen(onBack: pop)
                     case .arch(let day, let q, let no): ArchiveScreen(onBack: pop, day: day, query: q, focusNo: no)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
                     }

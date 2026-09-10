@@ -276,11 +276,15 @@ struct PingChipView: View {
     }()
 
     private var isMeal: Bool { msg.meal == true || forceMeal }
-    private var icon: String { msg.rainNote == true ? "cloud" : (isMeal ? "bowl" : "moon") }
+    private var icon: String { msg.rainNote == true ? "cloud" : (msg.placeNote == true ? "pin" : (isMeal ? "bowl" : "moon")) }
 
-    /// 文案：吃吃「12:40-寻吃了午餐：一碗豆花饭」→「12:40 午餐 · 一碗豆花饭」；雨情去掉自带的 🌧/🌤 头
+    /// 文案：吃吃「12:40-寻吃了午餐：一碗豆花饭」→「12:40 午餐 · 一碗豆花饭」；雨情去掉自带的 🌧/🌤 头；
+    /// 到离「14:02-寻到了学校」→「14:02 到了学校」
     private var line: String {
         let raw = (msg.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if msg.placeNote == true, let r = raw.range(of: #"^\d{1,2}:\d{2}-寻"#, options: .regularExpression) {
+            return String(raw[..<r.upperBound].dropLast(2)) + " " + String(raw[r.upperBound...])
+        }
         if isMeal, raw.range(of: #"^\d{1,2}:\d{2}-寻吃"#, options: .regularExpression) != nil, let dash = raw.firstIndex(of: "-") {
             let time = String(raw[..<dash])
             var rest = String(raw[raw.index(after: dash)...])      // 寻吃了午餐：… / 寻吃过了：…

@@ -41,7 +41,9 @@ targets:
         # 健康原生化（09-08 寻定）：读健康库直推网关，取代快捷指令；位置只在推的时候取一次给天气
         NSHealthShareUsageDescription: Keep 读取你的睡眠、心率、步数等，只推给你自己的网关，不经第三方。
         NSHealthUpdateUsageDescription: Keep 不写入健康数据。
-        NSLocationWhenInUseUsageDescription: 只在同步健康数据时取一次位置，给克那边的天气用。
+        NSLocationWhenInUseUsageDescription: 同步健康数据时取一次位置给天气用；「常去的地方」记下这里时取一次精确定位。
+        # 09-10 寻定「位置」：地理围栏要「始终」——到了/离开常去的地方，手机在包里也能报到
+        NSLocationAlwaysAndWhenInUseUsageDescription: 选「始终」，到了或离开你记下的常去的地方时，Keep 才能在后台向你自己的网关报一声。只报地方的名字，不上传轨迹。
         # 09-09 寻定「克能实时查健康」：网关发静默推送把 Keep 叫醒读一份快照——没有这键静默推送不送到
         UIBackgroundModes:
           - remote-notification

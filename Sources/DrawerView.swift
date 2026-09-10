@@ -6,6 +6,7 @@ enum Route: Hashable {
     case books
     case album
     case mem
+    case places                          // 常去的地方（09-10）
     case arch(day: String?, q: String?, no: Int?)   // 档案馆：某一天 / 搜一个词 / #N 直跳
     case web(String)
 }
@@ -67,6 +68,8 @@ struct DrawerView: View {
                     row("留言板", badge: notesBadge) { onNavigate(.board(openLetter: nil)) }
                     hair
                     row("记忆") { onNavigate(.mem) }
+                    hair
+                    row("常去的地方") { onNavigate(.places) }
                 }
                 .padding(.top, 10)
 

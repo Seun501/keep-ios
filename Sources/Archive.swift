@@ -15,16 +15,17 @@ struct ArchEntry: Decodable, Identifiable {
     var sleepNote: Bool?
     var napNote: Bool?
     var rainNote: Bool?
+    var placeNote: Bool?
     var wake: Bool?
     var no: Int?
     var thinkSecs: Double?
     enum CodingKeys: String, CodingKey {
         case role, text, thinking, ts, images, note, diary, author, meal, wake, no
-        case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", thinkSecs = "think_secs"
+        case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", thinkSecs = "think_secs"
     }
     var id: String { "\(no ?? 0)-\(ts ?? "")-\(role ?? "")" }
     var hm: String { TimeFmt.hm(ts) }
-    var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true }
+    var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true || placeNote == true }
 }
 struct ArchDay: Decodable { var date: String; var entries: [ArchEntry] }
 struct ArchHit: Decodable, Identifiable {
@@ -217,7 +218,7 @@ struct ArchiveScreen: View {
     }
     private func pingMsg(_ e: ArchEntry) -> Msg {
         var msg = Msg(role: "user", content: e.text, ts: e.ts, images: e.images)
-        msg.meal = e.meal; msg.sleepNote = e.sleepNote; msg.napNote = e.napNote; msg.rainNote = e.rainNote
+        msg.meal = e.meal; msg.sleepNote = e.sleepNote; msg.napNote = e.napNote; msg.rainNote = e.rainNote; msg.placeNote = e.placeNote
         return msg
     }
     private func aiMsg(_ e: ArchEntry) -> Msg {

@@ -15,6 +15,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         Self.registerIfAuthorized()
         Task { @MainActor in HealthSync.shared.setupBackground() }   // 健康库后台投递：每次启动都要装（09-08）
         PhoneLink.shared.activate()   // 手表端（09-10）：激活完把登录票传过去
+        Task { @MainActor in Fences.shared.start() }   // 常去的地方（09-10）：围栏事件把 App 拉起来时收件人得在
         return true
     }
 
