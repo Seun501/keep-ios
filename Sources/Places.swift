@@ -178,6 +178,9 @@ final class Fences: NSObject, CLLocationManagerDelegate {
         let want = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
         for r in manager.monitoredRegions where want[r.identifier] == nil { manager.stopMonitoring(for: r) }
         for p in places {
+            // 没变的圆不重装（重装一次＝系统再判一次在不在，每记一个地方就把全部地方报一遍，7 个地方 14 条）
+            if let old = manager.monitoredRegions.first(where: { $0.identifier == p.id }) as? CLCircularRegion,
+               abs(old.center.latitude - p.lat) < 1e-7, abs(old.center.longitude - p.lon) < 1e-7, old.radius == CLLocationDistance(p.radius) { continue }
             let region = CLCircularRegion(center: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon),
                                           radius: CLLocationDistance(p.radius), identifier: p.id)
             region.notifyOnEntry = true; region.notifyOnExit = true
@@ -309,22 +312,37 @@ struct PlaceMap: UIViewRepresentable {
     func updateUIView(_ mv: MKMapView, context: Context) {
         let co = context.coordinator
         co.parent = self
-        let sig = places.map { "\($0.id)|\($0.name)|\($0.lat)|\($0.lon)|\($0.radius)" }.joined(separator: ";") + "#" + (draft.map { "\($0.id ?? "")|\($0.lat)|\($0.lon)|\($0.radius)" } ?? "")
-        if sig != co.sig {
-            co.sig = sig
-            mv.removeAnnotations(mv.annotations.filter { !($0 is MKUserLocation) })
+        // 钉只随地方清单变，不整批拆装：09-11 真机崩过一次——长按落在旧钉上，长按一落草稿这里把钉全拆了重画，
+        // 手指抬起时地图还要去「选中」那根已拆掉的钉。正在改的地方钉也留着，只把它的圆换成草稿圆。
+        let pinSig = places.map { "\($0.id)|\($0.name)|\($0.lat)|\($0.lon)" }.joined(separator: ";")
+        if pinSig != co.pinSig {
+            co.pinSig = pinSig
+            mv.removeAnnotations(mv.annotations.filter { ($0 as? PlacePin)?.pid != nil })
+            for p in places {
+                let pin = PlacePin(); pin.coordinate = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon)); pin.title = p.name; pin.pid = p.id
+                mv.addAnnotation(pin)
+            }
+        }
+        // 新钉草稿（id 空）单独一根「这里」，只加减它自己
+        let draftPinSig = draft.flatMap { $0.id == nil ? "\($0.lat)|\($0.lon)" : nil } ?? ""
+        if draftPinSig != co.draftPinSig {
+            co.draftPinSig = draftPinSig
+            mv.removeAnnotations(mv.annotations.filter { ($0 as? PlacePin).map { $0.pid == nil } ?? false })
+            if let d = draft, d.id == nil {
+                let pin = PlacePin(); pin.coordinate = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: d.lat, longitude: d.lon)); pin.title = "这里"
+                mv.addAnnotation(pin)
+            }
+        }
+        // 圆不接触摸，随便重画
+        let circleSig = places.map { "\($0.id)|\($0.lat)|\($0.lon)|\($0.radius)" }.joined(separator: ";") + "#" + (draft.map { "\($0.id ?? "")|\($0.lat)|\($0.lon)|\($0.radius)" } ?? "")
+        if circleSig != co.circleSig {
+            co.circleSig = circleSig
             mv.removeOverlays(mv.overlays)
             for p in places where p.id != draft?.id {
-                let c = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon))
-                let pin = PlacePin(); pin.coordinate = c; pin.title = p.name; pin.pid = p.id
-                mv.addAnnotation(pin)
-                mv.addOverlay(MKCircle(center: c, radius: CLLocationDistance(p.radius)))
+                mv.addOverlay(MKCircle(center: GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: p.lat, longitude: p.lon)), radius: CLLocationDistance(p.radius)))
             }
             if let d = draft {
-                let c = GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: d.lat, longitude: d.lon))
-                let pin = PlacePin(); pin.coordinate = c; pin.title = d.id.flatMap { id in places.first { $0.id == id }?.name } ?? "这里"
-                mv.addAnnotation(pin)
-                mv.addOverlay(DraftCircle(center: c, radius: CLLocationDistance(d.radius)))
+                mv.addOverlay(DraftCircle(center: GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: d.lat, longitude: d.lon)), radius: CLLocationDistance(d.radius)))
             }
         }
         if centerTick != co.centerTick {
@@ -355,7 +373,8 @@ struct PlaceMap: UIViewRepresentable {
     final class Coord: NSObject, MKMapViewDelegate {
         var parent: PlaceMap
         weak var map: MKMapView?
-        var sig = ""
+        var pinSig = "", draftPinSig = "", circleSig = ""
+        var lastLongPress = Date.distantPast
         var centerTick = 0
         var searchTick = 0
         var wantUserOnce = false
@@ -378,6 +397,7 @@ struct PlaceMap: UIViewRepresentable {
 
         @objc func longPress(_ g: UILongPressGestureRecognizer) {
             guard g.state == .began, let mv = map else { return }
+            lastLongPress = Date()
             let c = mv.convert(g.location(in: mv), toCoordinateFrom: mv)   // 地图坐标（国内＝火星）
             parent.onLongPress(GeoShift.gcjToWgs(c))
         }
@@ -408,6 +428,8 @@ struct PlaceMap: UIViewRepresentable {
         }
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             defer { mapView.deselectAnnotation(view.annotation, animated: false) }
+            // 长按落在旧钉上（想在「学校」圆里钉宿舍）：抬手时地图会把这当成「点钉」，盖掉刚落的草稿——长按后一秒半内不认选中
+            guard Date().timeIntervalSince(lastLongPress) > 1.5 else { return }
             guard let pin = view.annotation as? PlacePin, let pid = pin.pid, let p = parent.places.first(where: { $0.id == pid }) else { return }
             parent.onSelect(p)
         }
