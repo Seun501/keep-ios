@@ -26,6 +26,7 @@ struct DrawerView: View {
     }()
     // 日子和额度先用上次记下的（UserDefaults），拉到新的再换——通道慢时抽屉也别空着
     @State private var days: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.days") ?? [])   // 档案馆有记录的日子 yyyy-MM-dd
+    @State private var window: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.window") ?? [])   // 克此刻窗口里的日子
     @State private var ym: (Int, Int) = (Calendar.current.component(.year, from: Date()), Calendar.current.component(.month, from: Date()))
     @State private var usage = Preview.on ? "" : (UserDefaults.standard.string(forKey: "cache.usage") ?? "")
     @State private var notesBadge = 0
@@ -128,6 +129,8 @@ struct DrawerView: View {
         let firstWd = cal.component(.weekday, from: first) - 1
         let n = cal.range(of: .day, in: .month, for: first)?.count ?? 30
         let has = Set(days.filter { $0.hasPrefix(String(format: "%04d-%02d", y, m)) }.compactMap { Int($0.suffix(2)) })
+        // 克此刻窗口里的日子：淡橙底（寻 09-11 定；连成一段，一眼看出从哪天到哪天）
+        let win = Set(window.filter { $0.hasPrefix(String(format: "%04d-%02d", y, m)) }.compactMap { Int($0.suffix(2)) })
         // 寻验 32：整体放大一圈（格 34、字 14）；行数随月（固定六行留空她不要）；
         // 切月不动画：整张日历换身份（.id）——新月份直接落在最终位置，没有任何东西可插值
         let cellH: CGFloat = 34
@@ -157,10 +160,12 @@ struct DrawerView: View {
                                 Color.clear.frame(maxWidth: .infinity).frame(height: cellH)
                             } else {
                                 let on = has.contains(d)
+                                let inWin = win.contains(d)
                                 ZStack {
-                                    if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
-                                    Text(String(d)).font(Theme.round(14, weight: on ? .medium : .regular))
-                                        .foregroundColor(on ? Theme.text : Theme.muted.opacity(0.45))
+                                    if inWin { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.accent).opacity(0.13) }
+                                    else if on { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.dyn(0xF1EFEB, 0x34332F)).opacity(0.55) }
+                                    Text(String(d)).font(Theme.round(14, weight: (on || inWin) ? .medium : .regular))
+                                        .foregroundColor((on || inWin) ? Theme.text : Theme.muted.opacity(0.45))
                                 }
                                 .frame(maxWidth: .infinity).frame(height: cellH)
                                 .contentShape(Rectangle())
@@ -193,7 +198,7 @@ struct DrawerView: View {
     }
 
     private func load() async {
-        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01"]; ym = (2026, 9); usage = "5h 19% · week 5%"; notesBadge = 1; return }
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5%"; notesBadge = 1; return }
         guard let token = Keychain.token else { return }
         func get(_ path: String) async -> [String: Any]? {
             var r = URLRequest(url: Gateway.home.appendingPathComponent(path))
@@ -208,6 +213,8 @@ struct DrawerView: View {
         if let a = await a, let arr = a["days"] as? [[String: Any]] {
             days = arr.compactMap { $0["date"] as? String }
             UserDefaults.standard.set(days, forKey: "cache.days")
+            window = (a["window"] as? [String]) ?? []
+            UserDefaults.standard.set(window, forKey: "cache.window")
             if let last = days.last, let y = Int(last.prefix(4)), let m = Int(last.dropFirst(5).prefix(2)) { ym = (y, m) }
         }
         if let u = await u, let fh = (u["five_hour"] as? [String: Any])?["pct"] as? Double, let sd = (u["seven_day"] as? [String: Any])?["pct"] as? Double {
