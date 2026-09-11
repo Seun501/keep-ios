@@ -83,9 +83,16 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         // 09-09 三包都没见「start」：把门口的每个条件先报出来
         PushRegistrar.diag("health: morning enter hour=\(hour) busy=\(busyMorning) done=\(ud.string(forKey: "health.morningDay") ?? "-") today=\(todayKey) token=\(Keychain.token != nil)")
         guard Keychain.token != nil, !busyMorning else { return }
-        // 服务器随时收昨天档（按昨天入档）；这里只限 18 点前——再晚就等明早，免得半夜把昨天档盖一遍
-        guard hour < 18 else { return }
-        guard ud.string(forKey: "health.morningDay") != todayKey else { return }
+        // 服务器随时收昨天档（按昨天入档，同键合并）。窗口 6–18 点：09-11 栽过——00:10 她还醒着就推了昨天档，
+        // 觉还没睡完，睡眠那几键就永远缺了。记的值带小时「yyyy-MM-dd@H」：若今天那次是半夜推的（旧值没小时也算），
+        // 6 点后再补一次，不受 18 点限；补过就算数。
+        let rec = (ud.string(forKey: "health.morningDay") ?? "").split(separator: "@")
+        let recDay = rec.first.map(String.init) ?? ""
+        let recHour = rec.count > 1 ? (Int(rec[1]) ?? 0) : 0
+        guard hour >= 6 else { return }
+        let retry = recDay == todayKey && recHour < 6
+        guard retry || hour < 18 else { return }
+        guard recDay != todayKey || retry else { return }
         busyMorning = true; defer { busyMorning = false }
         PushRegistrar.diag("health: morning start hour=\(hour)")   // 09-09 首验：整段一句诊断都没出，先摸到走到哪
         let cal = Calendar.current
@@ -98,8 +105,8 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         PushRegistrar.diag("health: morning location done, posting")
         let code = await post(body, today: false)
         if code == 200 {
-            ud.set(todayKey, forKey: "health.morningDay")
-            PushRegistrar.diag("health: morning pushed keys=\(body.count)")
+            ud.set("\(todayKey)@\(hour)", forKey: "health.morningDay")
+            PushRegistrar.diag("health: morning pushed keys=\(body.count) sleep=\(body["睡眠原始"] != nil)\(retry ? " (retry)" : "")")
         } else {
             PushRegistrar.diag("health: morning post failed code=\(code) keys=\(body.count)")
         }
