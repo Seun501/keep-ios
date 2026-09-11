@@ -204,6 +204,8 @@ final class AlertsModel: ObservableObject {
     }
     /// 7 点后当天第一次进 Keep：今日紫外线最高 + 防晒建议（09-07 寻要的）。拿不到就不弹、也不算弹过，下次进来再试
     func uvOnce() async {
+        // 09-11 寻定：紫外线改成早上醒来推到手表（网关 APNs），手机上不再弹。留着函数，预览页还在用同一条文案。
+        if !Preview.on { return }
         guard !Preview.on, Calendar.current.component(.hour, from: Date()) >= 7 else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; let day = f.string(from: Date())
         guard Self.ud.string(forKey: "uvPopDay") != day else { return }
