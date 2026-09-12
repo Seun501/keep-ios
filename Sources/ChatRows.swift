@@ -189,13 +189,8 @@ struct AIRowView: View {
             // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
             let tools = msg.toolCalls ?? []
             let hasBody = !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty
-            // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；
-            // 正文上沿从 11 收到 6（只在有工具行时）。连排工具行之间照旧 4
-            ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in
-                ToolChipView(name: tc.shortName, done: true, inRow: true)
-                    .padding(.top, (i == 0 && !th.isEmpty) ? 4 : 0)
-                    .padding(.bottom, (i == tools.count - 1 && !hasBody) ? 0 : 4)
-            }
+            // 同一条里既有正文又有工具调用＝克先说了话再调工具（内容块顺序就是 text→tool_use），
+            // 工具行画在正文**后面**（09-12 寻验：写到一半调的工具，行跑到正文上头去了，和直播时的顺序对不上）
             if hasBody {
                 VStack(alignment: .leading, spacing: 8) {
                     // 照网页 .bubble img.att：克递来的相册照片 200 上限、圆角 12、点开看大图
@@ -206,8 +201,14 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                // 同条带工具行（少见）／上一行只有工具行：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15
-                .padding(.top, (tools.isEmpty && !afterTools) ? 11 : -2).padding(.bottom, 11)
+                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15；正文后面还有工具行时下沿收到 4
+                .padding(.top, afterTools ? -2 : 11).padding(.bottom, tools.isEmpty ? 11 : 4)
+            }
+            // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；连排工具行之间照旧 4
+            ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in
+                ToolChipView(name: tc.shortName, done: true, inRow: true)
+                    .padding(.top, (i == 0 && !hasBody && !th.isEmpty) ? 4 : 0)
+                    .padding(.bottom, i == tools.count - 1 ? 0 : 4)
             }
             if msg.toolCalls == nil {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -255,7 +256,7 @@ struct ToolChipView: View {
         HStack(spacing: 7) {
             Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 14, height: 14)   // 同 ThinkView 的 14
             Text(name + (done ? "" : "…"))   // 寻 09-08：不写中文，工具原名（labels 留着备用）
-                .font(Theme.serif(13))
+                .font(.system(size: 12.5, design: .monospaced))   // 09-12 寻定：换成代码块那种字（SF Mono）
         }
         .foregroundColor(Theme.muted)
         .frame(maxWidth: .infinity, alignment: .leading)

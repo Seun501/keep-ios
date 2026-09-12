@@ -302,10 +302,13 @@ struct PlaceMap: UIViewRepresentable {
         lp.minimumPressDuration = 0.5
         mv.addGestureRecognizer(lp)
         context.coordinator.map = mv
-        // 起始视野：有钉就框住全部；没钉等蓝点来（didUpdate userLocation）；截图/没定位就成都
-        if let r = Self.fitRegion(places) { mv.setRegion(r, animated: false) }
-        else if Preview.on { mv.setRegion(MKCoordinateRegion(center: GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: 30.66, longitude: 104.09)), latitudinalMeters: 2500, longitudinalMeters: 2500), animated: false) }
-        else { mv.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 30.66, longitude: 104.07), latitudinalMeters: 12000, longitudinalMeters: 12000), animated: false); context.coordinator.wantUserOnce = true }
+        // 起始视野（09-12 寻定：默认到她所在地，不是框住全部钉）：先框钉/成都垫着，蓝点一来就跳到她那 900 米（didUpdate userLocation）；截图固定成都
+        if Preview.on { mv.setRegion(MKCoordinateRegion(center: GeoShift.wgsToGcj(CLLocationCoordinate2D(latitude: 30.66, longitude: 104.09)), latitudinalMeters: 2500, longitudinalMeters: 2500), animated: false) }
+        else {
+            if let r = Self.fitRegion(places) { mv.setRegion(r, animated: false) }
+            else { mv.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 30.66, longitude: 104.07), latitudinalMeters: 12000, longitudinalMeters: 12000), animated: false) }
+            context.coordinator.wantUserOnce = true
+        }
         return mv
     }
 

@@ -649,10 +649,10 @@ struct ChatScreen: View {
         .zIndex(30)
     }
 
-    /// 「只有工具行」的 AI 行（正史里工具调用和正文是两条）：下一行的行距要收（thought 打头 8＝视觉 10，正文打头 4-2+13≈15）
+    /// 以工具行收尾的 AI 行（只有工具行，或正文后面跟着工具行——09-12 起工具行画在正文后）：下一行的行距要收（thought 打头 8＝视觉 10，正文打头 4-2+13≈15）
     private static func toolsOnly(_ item: TimelineItem) -> Bool {
         if case .ai(_, let m, _) = item {
-            return !(m.toolCalls ?? []).isEmpty && (m.images ?? []).isEmpty && (m.content ?? "").isEmpty
+            return !(m.toolCalls ?? []).isEmpty
         }
         return false
     }
