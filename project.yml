@@ -60,8 +60,10 @@ targets:
         com.apple.developer.healthkit: true                       # 09-08：App ID 已由 API 加 HEALTHKIT 能力、描述文件重做
         com.apple.developer.healthkit.access: []
         com.apple.developer.healthkit.background-delivery: true   # 新样本落库时后台叫醒（解锁后才读得到）
+        com.apple.developer.weatherkit: true                      # 09-12：紫外线改读手机天气（Apple 天气）；能力在开发者网站手点、描述文件重做
     dependencies:
       - sdk: HealthKit.framework
+      - sdk: WeatherKit.framework
       - sdk: CoreLocation.framework
       - sdk: MapKit.framework
       - sdk: WatchConnectivity.framework

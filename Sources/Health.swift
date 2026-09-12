@@ -105,8 +105,11 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         var body = await dayBody(yday0)
         guard !body.isEmpty else { PushRegistrar.diag("health: morning empty"); return }
         PushRegistrar.diag("health: morning keys=\(body.count), asking location")
-        if let l = await location() { body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude }
-        PushRegistrar.diag("health: morning location done, posting")
+        if let l = await location() {
+            body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude
+            if let uv = await UVToday.max(at: l) { body["_紫外线最高"] = uv }   // Apple 天气的数，网关晨推用它
+        }
+        PushRegistrar.diag("health: morning location done, posting uv=\(body["_紫外线最高"] ?? "-")")
         let code = await post(body, today: false)
         if code == 200 {
             ud.set("\(todayKey)@\(hour)", forKey: "health.morningDay")
@@ -210,6 +213,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         if let l = whereLoc {   // 「_」键＝随身元信息，只进状态不入档；克看到的是服务器算出的距离，不是这两个数
             body["_纬度"] = String(format: "%.5f", l.coordinate.latitude)
             body["_经度"] = String(format: "%.5f", l.coordinate.longitude)
+            if let uv = await UVToday.max(at: l) { body["_紫外线最高"] = uv }   // 一天只真问一次，之后是缓存
         }
         guard !body.isEmpty else { PushRegistrar.diag("health: now empty live=\(live)"); return false }
         let code = await post(body, today: true)
