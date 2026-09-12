@@ -90,7 +90,10 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         let recDay = rec.first.map(String.init) ?? ""
         let recHour = rec.count > 1 ? (Int(rec[1]) ?? 0) : 0
         guard hour >= 6 else { return }
-        let retry = recDay == todayKey && recHour < 6
+        // 09-12 又栽：11 点推的昨天档里没有睡眠（表还没把觉同步到手机），于是那晚永远缺。
+        // 推成功但没带睡眠的，之后每小时再试一次（到 22 点），哪次带上了就算数；服务器同键合并，重推无害。
+        let sleepDone = ud.string(forKey: "health.morningSleep") == todayKey
+        let retry = recDay == todayKey && (recHour < 6 || (!sleepDone && hour > recHour && hour < 22))
         guard retry || hour < 18 else { return }
         guard recDay != todayKey || retry else { return }
         busyMorning = true; defer { busyMorning = false }
@@ -106,6 +109,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         let code = await post(body, today: false)
         if code == 200 {
             ud.set("\(todayKey)@\(hour)", forKey: "health.morningDay")
+            if body["睡眠原始"] != nil { ud.set(todayKey, forKey: "health.morningSleep") }
             PushRegistrar.diag("health: morning pushed keys=\(body.count) sleep=\(body["睡眠原始"] != nil)\(retry ? " (retry)" : "")")
         } else {
             PushRegistrar.diag("health: morning post failed code=\(code) keys=\(body.count)")

@@ -52,7 +52,10 @@ final class ArchiveModel: ObservableObject {
 
     private func get(_ path: String) async -> Data? {
         guard let token = Keychain.token else { return nil }
-        var r = URLRequest(url: Gateway.home.appendingPathComponent(path))
+        // 带 ?q= 的搜索地址不能走 appendingPathComponent——它把 ? 编成 %3F 当路径，服务器答 404（09-12 寻验：关键词搜索坏了；同 Books 09-04 那坑）
+        let url: URL = path.contains("?") ? (URL(string: path, relativeTo: Gateway.home)?.absoluteURL ?? Gateway.home.appendingPathComponent(path))
+                                          : Gateway.home.appendingPathComponent(path)
+        var r = URLRequest(url: url)
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return d
