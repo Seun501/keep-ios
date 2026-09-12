@@ -254,11 +254,15 @@ struct ScrollObserver: UIViewRepresentable {
                     // 让位后的视口底（CADisplayLink，dur+0.2s），内容高是真的、钉得准。收键盘不用跟：视口放高底边自然还在
                     // 「在不在底」用键盘来之前记下的 lastDist 判：SwiftUI 的键盘观察者排在我前头，通知到我这儿时视口已经压矮、
                     // atBottom 已被算成「差一截」（sim-83：kb skip ab=false）
-                    if n != UIResponder.keyboardWillHideNotification, self.name == "chat", self.lastDist < 40,
-                       let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue, end.minY < UIScreen.main.bounds.height - 1 {
+                    // 收键盘也跟（09-12 寻验「在底端退出输入框，消息流卡在原本的高处一秒左右才下沉」——「视口放高底边自然还在」不总成立：
+                    // 框放高那几步偏移没人拨，内容停在高处，等系统事后夹回来）：框每改一步就把底边钉回视口底，和键盘同步下沉
+                    let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+                    let hiding = n == UIResponder.keyboardWillHideNotification
+                    let showing = !hiding && (end.map { $0.minY < UIScreen.main.bounds.height - 1 } ?? false)
+                    if self.name == "chat", self.lastDist < 40, showing || hiding {
                         self.startFollow(dur)
-                        ScrollObserver.note = String(format: "kb dur=%.2f end=%.0f d=%.0f", dur, end.minY, self.lastDist)
-                        self.followPin()   // 视口若已经压矮就当场钉一次（后面的每帧变化再由 KVO 接）
+                        ScrollObserver.note = String(format: "kb %@ dur=%.2f end=%.0f d=%.0f", hiding ? "hide" : "show", dur, end?.minY ?? -1, self.lastDist)
+                        self.followPin()   // 视口若已经改了就当场钉一次（后面的每帧变化再由 KVO 接）
                     } else if self.name == "chat" {
                         ScrollObserver.note = String(format: "kb skip d=%.0f", self.lastDist)
                     }
@@ -291,7 +295,8 @@ struct ScrollObserver: UIViewRepresentable {
             let inset = sv.adjustedContentInset
             let vh = sv.bounds.height - inset.top - inset.bottom
             let maxY = sv.contentSize.height - vh - inset.top
-            if maxY > -inset.top, sv.contentOffset.y < maxY - 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY); pins += 1; ScrollObserver.note = "pins=\(pins)" }
+            // 起键盘：偏移落后于变矮的视口（< maxY）往下钉；收键盘：偏移超过放高后的底（> maxY）往上夹——两头都归到 maxY
+            if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY); pins += 1; ScrollObserver.note = "pins=\(pins)" }
         }
         /// 排查用：键盘前后滚动区的帧/内容高/偏移/底距，进服务器 diag 日志（一次会话最多四回）
         private func snapshot(_ tag: String, _ note: Notification) {
