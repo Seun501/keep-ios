@@ -70,7 +70,7 @@ struct DrawerView: View {
                     hair
                     row("记忆") { onNavigate(.mem) }
                     hair
-                    row("常去的地方") { onNavigate(.places) }
+                    row("位置") { onNavigate(.places) }   // 09-12 寻改名
                 }
                 .padding(.top, 10)
 

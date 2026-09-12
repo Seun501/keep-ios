@@ -48,24 +48,57 @@ final class LintelModel: ObservableObject {
     var wxText: String { wxLabel + (wxTemp.map { " \(Int($0.rounded()))°" } ?? "") }
 }
 
+/// 门楣两行（09-12 寻定）：天气只占右下角一格，其余地方都是克的字——字绕着天气角排（UITextView 的 exclusionPaths），
+/// 两行满了尾部省略。高度固定两行，短句也不塌。服务器给克的上限 28 字，是按 iPhone 11 这个宽算的（一行 17 + 天气旁 11）。
 struct LintelColumn: View {
     @ObservedObject var m: LintelModel
+    static let lineH = ceil(Theme.uiCJK(15.5, weight: .semibold).lineHeight)
+    /// 天气角的尺寸：图标 15 + 间距 5 + 字宽 + 左边留 10
+    private var wxBox: CGSize {
+        guard !m.wxLabel.isEmpty else { return .zero }
+        let w = (m.wxText as NSString).size(withAttributes: [.font: Theme.uiCJK(13, weight: .semibold), .kern: 0.65]).width
+        return CGSize(width: ceil(w) + 15 + 5 + 10, height: Self.lineH)
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if !m.text.isEmpty {
-                Text(m.text).font(Theme.cjk(15.5, weight: .semibold)).tracking(0.8)
-                    .foregroundColor(Theme.accent).lineLimit(1).truncationMode(.tail)
-            }
+        ZStack(alignment: .bottomTrailing) {
+            LintelText(text: m.text, reserve: wxBox)
             if !m.wxLabel.isEmpty {
                 HStack(spacing: 5) {
                     Image(systemName: m.symbol).font(.system(size: 13, weight: .regular))
                     Text(m.wxText).font(Theme.cjk(13, weight: .semibold)).tracking(0.65)
                 }
                 .foregroundColor(Theme.accent.opacity(0.6))
+                .frame(height: Self.lineH)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 14).padding(.trailing, 8)
+    }
+}
+
+struct LintelText: UIViewRepresentable {
+    let text: String
+    let reserve: CGSize
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView(usingTextLayoutManager: false)
+        tv.isEditable = false; tv.isSelectable = false; tv.isScrollEnabled = false; tv.isUserInteractionEnabled = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
+        tv.textContainer.maximumNumberOfLines = 2; tv.textContainer.lineBreakMode = .byTruncatingTail
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return tv
+    }
+    func updateUIView(_ tv: UITextView, context: Context) {
+        tv.attributedText = NSAttributedString(string: text, attributes: [
+            .font: Theme.uiCJK(15.5, weight: .semibold), .kern: 0.8, .foregroundColor: UIColor(Theme.accent)])
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: UITextView, context: Context) -> CGSize? {
+        let w = proposal.width ?? (UIScreen.main.bounds.width - 130)
+        let h = LintelColumn.lineH * 2
+        tv.textContainer.exclusionPaths = reserve.width > 0
+            ? [UIBezierPath(rect: CGRect(x: w - reserve.width, y: h - reserve.height, width: reserve.width + 20, height: reserve.height + 20))]
+            : []
+        return CGSize(width: w, height: h)
     }
 }
 
