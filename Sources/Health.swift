@@ -57,7 +57,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             let oq = HKObserverQuery(sampleType: t, predicate: nil) { [weak self] _, done, _ in
                 Task { @MainActor in
                     guard let self else { done(); return }
-                    if t == self.sleepType { await self.pushMorning() } else { await self.pushNow(minGap: 15 * 60) }
+                    if t == self.sleepType { await self.pushMorning(fromSleep: true) } else { await self.pushNow(minGap: 15 * 60) }
                     done()
                 }
             }
@@ -78,7 +78,8 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
 
     private var todayKey: String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: Date()) }
 
-    func pushMorning() async {
+    /// fromSleep：健康库刚写进睡眠样本（表同步到了）叫醒的——没带睡眠的那次之后不等下一个整点，当场补
+    func pushMorning(fromSleep: Bool = false) async {
         let hour = Calendar.current.component(.hour, from: Date())
         // 09-09 三包都没见「start」：把门口的每个条件先报出来
         PushRegistrar.diag("health: morning enter hour=\(hour) busy=\(busyMorning) done=\(ud.string(forKey: "health.morningDay") ?? "-") today=\(todayKey) token=\(Keychain.token != nil)")
@@ -93,7 +94,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         // 09-12 又栽：11 点推的昨天档里没有睡眠（表还没把觉同步到手机），于是那晚永远缺。
         // 推成功但没带睡眠的，之后每小时再试一次（到 22 点），哪次带上了就算数；服务器同键合并，重推无害。
         let sleepDone = ud.string(forKey: "health.morningSleep") == todayKey
-        let retry = recDay == todayKey && (recHour < 6 || (!sleepDone && hour > recHour && hour < 22))
+        let retry = recDay == todayKey && (recHour < 6 || (!sleepDone && (fromSleep || hour > recHour) && hour < 22))
         guard retry || hour < 18 else { return }
         guard recDay != todayKey || retry else { return }
         busyMorning = true; defer { busyMorning = false }
