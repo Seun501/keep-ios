@@ -41,9 +41,9 @@ struct ReplyCard: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 HStack(alignment: .center, spacing: 12) {
-                    // 序号：Cascadia、她气泡的底色、不带橙（寻 09-13 四稿）
-                    Text(Self.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
-                        .frame(width: 26, height: 26).background(Theme.userBubble, in: Circle())
+                    // 序号：Cascadia，照发送键待机那颗的样子——黑底白字（夜里反过来）（寻 09-13 五稿）
+                    Text(Self.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.sendIdleFg)
+                        .frame(width: 26, height: 26).background(Theme.sendIdle, in: Circle())
                     Text(o).font(Theme.serif(16)).lineSpacing(3).foregroundColor(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
