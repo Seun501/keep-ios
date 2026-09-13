@@ -195,7 +195,7 @@ struct AlbumScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { if book != nil { book = nil } else { onBack() } } label: {
-                        Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                        BackChevron()
                     }.buttonStyle(.plain).padding(.leading, -8)
                     Text(book == nil ? "相册" : "").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
@@ -483,7 +483,7 @@ struct MemScreen: View {
             Theme.boardBg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { onBack() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+                    Button { onBack() } label: { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
                     Text("记忆").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
                 }

@@ -685,9 +685,8 @@ struct ChatScreen: View {
         case .daySep(let d): DaySepView(day: d)
         case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
         case .ai(_, let m, let u):
-            // 选项卡只在最末一条、克没在说话时能点：点一个＝把那句发出去；「自己说…」＝焦点给输入框
-            AIRowView(msg: m, showUsage: u, afterTools: afterTools, replyActive: last && model.live == nil && !model.sending,
-                      onPick: { model.send(text: $0, images: []) }, onOwn: { composerFocused = true })
+            // 最末一条的选项正摊在输入卡上方时，话下面那排淡的就不画（× 收起后再画回来）
+            AIRowView(msg: m, showUsage: u, afterTools: afterTools, chips: !(last && activeReplies != nil))
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
         case .ping(let m): PingChipView(msg: m)
         case .wakeChip(let hm): WakeChipView(hm: hm)
@@ -727,9 +726,22 @@ struct ChatScreen: View {
         }
     }
 
+    /// 克的选项卡：最末一条是他的话且带 [reply: …]、他没在说话、她没按 × 收起 → 摊在输入卡上方
+    @State private var replyClosedId: String? = nil
+    private var activeReplies: (id: String, options: [String])? {
+        guard model.live == nil, !model.sending, let last = model.items.last, case .ai(_, let m, _) = last.item else { return nil }
+        let opts = Replies.split(m.content ?? "").options
+        guard !opts.isEmpty, replyClosedId != last.id else { return nil }
+        return (last.id, opts)
+    }
+
     /// 输入卡（照网页 #inputbox）：composer 底、1.5px 发丝圈、26 圆角、两层阴影；上排文字，下排＋与发送。
+    /// 克在问的时候（09-13 寻定，照 claude.ai）：选项卡从卡顶长出来，输入行留在底下当「自己说」
     private var composer: some View {
         VStack(spacing: 6) {
+            if let r = activeReplies {
+                ReplyCard(options: r.options, onPick: { model.send(text: $0, images: []) }, onClose: { replyClosedId = r.id })
+            }
             if !pending.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -745,7 +757,7 @@ struct ChatScreen: View {
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            Composer(text: $draft, focused: $composerFocused)      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
+            Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "自己说…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
@@ -909,7 +921,7 @@ struct WebShellScreen: View {
         VStack(spacing: 0) {
             HStack {
                 Button { onBack(); dismiss() } label: {
-                    Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                    BackChevron()
                 }.buttonStyle(.plain).padding(.leading, -8)
                 Spacer()
             }

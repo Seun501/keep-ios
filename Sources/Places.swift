@@ -459,7 +459,7 @@ struct PlacesScreen: View {
             Theme.boardBg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { onBack() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+                    Button { onBack() } label: { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
                     Text("位置 · \(m.places.count)").font(Theme.round(14)).foregroundColor(Theme.muted)   // 09-12 寻：「常去的地方」太难听，改叫「位置」
                     Spacer()
                     if !m.now.isEmpty { Text("此刻在：" + m.now).font(Theme.round(12)).foregroundColor(Theme.accent) }

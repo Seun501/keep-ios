@@ -231,7 +231,7 @@ struct BooksScreen: View {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { back() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+                    Button { back() } label: { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
                     Text(title).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
                     Spacer()
                     if case .shelf = m.mode {   // 新书上架

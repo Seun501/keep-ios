@@ -179,9 +179,7 @@ struct AIRowView: View {
     var flash = false
     var highlight = ""
     var afterTools = false   // 上一行是「只有工具行」的 AI 行（列表给的行距已收到 4/8）：正文顶不再 11
-    var replyActive = false  // 选项卡能点（只有聊天页最末一条、克没在说话时）；其余地方选项只看不点
-    var onPick: (String) -> Void = { _ in }
-    var onOwn: () -> Void = {}
+    var chips = true         // 他给的选项淡淡地画在话下面；聊天页正在输入卡上方摊着选项卡的那条不画（免得重复）
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
@@ -193,7 +191,7 @@ struct AIRowView: View {
             let tools = msg.toolCalls ?? []
             let parsed = Replies.split(msg.content ?? "")   // [reply: …] 摘出来画成选项卡，正文只剩他的话
             let hasBody = !(msg.images ?? []).isEmpty || !parsed.text.isEmpty
-            let hasChips = !parsed.options.isEmpty
+            let hasChips = chips && !parsed.options.isEmpty
             // 同一条里既有正文又有工具调用＝克先说了话再调工具（内容块顺序就是 text→tool_use），
             // 工具行画在正文**后面**（09-12 寻验：写到一半调的工具，行跑到正文上头去了，和直播时的顺序对不上）
             if hasBody {
@@ -211,7 +209,7 @@ struct AIRowView: View {
                 .padding(.top, afterTools ? -2 : 11).padding(.bottom, (tools.isEmpty && !hasChips) ? 11 : 4)
             }
             if hasChips {
-                ReplyChips(options: parsed.options, active: replyActive, onPick: onPick, onOwn: onOwn)
+                ReplyChips(options: parsed.options)
                     .padding(.top, hasBody ? 4 : 11).padding(.bottom, tools.isEmpty ? 11 : 4)
             }
             // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；连排工具行之间照旧 4
@@ -347,6 +345,15 @@ struct PingChipView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// 各页左上角的返回键（09-13 寻验：字符「‹」在行里偏高，和旁边的日期、# 不在一条线上）：
+/// 改用同族 Lucide 线条箭头（chev 转向），和档案馆翻天的细箭头一家，靠框居中对齐
+struct BackChevron: View {
+    var body: some View {
+        Image("chev").renderingMode(.template).resizable().frame(width: 20, height: 20).rotationEffect(.degrees(90))
+            .foregroundColor(Theme.muted).frame(width: 34, height: 34)
     }
 }
 

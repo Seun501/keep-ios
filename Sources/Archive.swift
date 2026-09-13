@@ -136,8 +136,7 @@ struct ArchiveScreen: View {
         }
     }
 
-    /// 前一天/后一天（寻 09-13：翻天不用退出去重进月历）：一对线条箭头挨在一起放右边——左上角单独一个的是返回，
-    /// 成对的才是翻页，形状也不同（同一族 Lucide 箭头转向）；到头那边淡掉
+    /// 前一天/后一天（寻 09-13：翻天不用退出去重进月历）：细箭头贴在日期两侧（同族 Lucide 箭头转向，比返回键小一号）；到头那边淡掉
     private func dayArrow(_ dir: Int) -> some View {
         let on = m.neighbor(dir) != nil
         return Button {
@@ -145,7 +144,7 @@ struct ArchiveScreen: View {
             markIdx = -1
             Task { await m.step(dir) }
         } label: {
-            Image("chev").renderingMode(.template).resizable().frame(width: 16, height: 16)
+            Image("chev").renderingMode(.template).resizable().frame(width: 14, height: 14)
                 .rotationEffect(.degrees(dir < 0 ? 90 : -90))
                 .foregroundColor(Theme.muted.opacity(on ? 1 : 0.3))
                 .frame(width: 30, height: 30)
@@ -157,25 +156,34 @@ struct ArchiveScreen: View {
         if m.view == "day", !m.hits.isEmpty { m.view = "hits"; markIdx = -1 } else { onBack() }
     }
 
+    /// 天页：日期居中、两侧细箭头翻前一天/后一天（寻 09-13：箭头放日期旁边好看；离左上角的返回键远，不混）
     private var head: some View {
-        HStack(spacing: 12) {
-            Button { back() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
-            Text(m.view == "hits" ? "搜「\(m.q)」· \(m.hits.count)\(m.truncated ? "+" : "") 处" : (m.day?.date ?? "")).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
-            Spacer()
-            if m.view == "day" {   // 前一天 / 后一天
-                HStack(spacing: 0) { dayArrow(-1); dayArrow(1) }
-            }
-            if m.view == "day", !m.q.isEmpty, markCount > 0 {   // 命中逐处跳转（▲▼）：计数居中
-                HStack(spacing: 2) {
-                    Button { jump(-1) } label: { Text("▲").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
-                    Text("\(markIdx + 1)/\(markCount)").font(Theme.round(12)).foregroundColor(Theme.muted).frame(minWidth: 26)
-                    Button { jump(1) } label: { Text("▼").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
+        ZStack {
+            HStack(spacing: 12) {
+                Button { back() } label: { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+                if m.view == "hits" {
+                    Text("搜「\(m.q)」· \(m.hits.count)\(m.truncated ? "+" : "") 处").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                }
+                Spacer()
+                if m.view == "day", !m.q.isEmpty, markCount > 0 {   // 命中逐处跳转（▲▼）：计数居中
+                    HStack(spacing: 2) {
+                        Button { jump(-1) } label: { Text("▲").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
+                        Text("\(markIdx + 1)/\(markCount)").font(Theme.round(12)).foregroundColor(Theme.muted).frame(minWidth: 26)
+                        Button { jump(1) } label: { Text("▼").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
+                    }
+                }
+                if m.view == "day" {   // 条数开关（08-31 寻定）：点亮＝每条尾巴挂全局编号
+                    Button { m.showNums.toggle() } label: {
+                        Text("#").font(.custom("Georgia", size: 15)).foregroundColor(m.showNums ? Theme.accent : Theme.muted).frame(width: 30, height: 30)
+                    }.buttonStyle(.plain)
                 }
             }
-            if m.view == "day" {   // 条数开关（08-31 寻定）：点亮＝每条尾巴挂全局编号
-                Button { m.showNums.toggle() } label: {
-                    Text("#").font(.custom("Georgia", size: 15)).foregroundColor(m.showNums ? Theme.accent : Theme.muted).frame(width: 30, height: 30)
-                }.buttonStyle(.plain)
+            if m.view == "day" {
+                HStack(spacing: 2) {
+                    dayArrow(-1)
+                    Text(m.day?.date ?? "").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                    dayArrow(1)
+                }
             }
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)

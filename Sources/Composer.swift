@@ -6,6 +6,7 @@ import UIKit
 struct Composer: UIViewRepresentable {
     @Binding var text: String
     @Binding var focused: Bool
+    var placeholder = "Chat with…"       // 克在问时换成「自己说…」
     static let size: CGFloat = 18
     static let minH: CGFloat = 28.8      // 1.6em
     static let maxH: CGFloat = 160
@@ -31,7 +32,7 @@ struct Composer: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let ph = UILabel()
-        ph.text = "Chat with…"; ph.font = Theme.uiSys(Self.size)   // 占位照原样系统字（寻验 43）
+        ph.text = placeholder; ph.font = Theme.uiSys(Self.size)   // 占位照原样系统字（寻验 43）
         ph.textColor = UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1)
         ph.tag = 9; ph.sizeToFit(); ph.frame.origin = .zero
         tv.addSubview(ph)
@@ -45,6 +46,7 @@ struct Composer: UIViewRepresentable {
             tv.attributedText = NSAttributedString(string: text, attributes: Self.attrs)
             tv.typingAttributes = Self.attrs
         }
+        if let ph = context.coordinator.placeholder, ph.text != placeholder { ph.text = placeholder; ph.sizeToFit() }
         context.coordinator.placeholder?.isHidden = !text.isEmpty
         if focused != tv.isFirstResponder {
             DispatchQueue.main.async { if focused { tv.becomeFirstResponder() } else { tv.resignFirstResponder() } }

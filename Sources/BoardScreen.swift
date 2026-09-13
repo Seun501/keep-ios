@@ -124,7 +124,7 @@ struct BoardScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { onBack() } label: {
-                        Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                        BackChevron()
                     }.buttonStyle(.plain).padding(.leading, -8)
                     Spacer()
                     Text(motto[m.tab] ?? "").font(Theme.cjk(13.5, weight: .medium)).tracking(1)

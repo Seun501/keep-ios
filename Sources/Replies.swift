@@ -34,32 +34,56 @@ enum Replies {
     }
 }
 
-/// 选项那一排：照她的气泡裁小一号（同底色、同字、圆角 20），短的并排、长的自己折行；
-/// 末尾一格「自己说…」＝一个都不选，把焦点给输入框（寻定：这一格必须留）。
-/// active＝false（档案馆、聊天里已经回过的旧条）：只看不点、淡一档，留个「他当时给过什么」的痕迹。
+/// 选项卡（09-13 寻定：照 claude.ai 那种，从输入卡上方长出来，和输入框是同一张卡）：
+/// 小字「克在问」＋×，一行一个选项（Georgia 序号、发丝分隔线、右端细箭头），底下就是原来的输入行——
+/// 「自己说」＝直接在下面打字。点一项＝那句当她的消息发出去；× ＝收起（他的话下面还留着淡掉的一排）。
+struct ReplyCard: View {
+    let options: [String]
+    var onPick: (String) -> Void
+    var onClose: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center) {
+                Text("克在问").font(Theme.round(11)).tracking(1.5).foregroundColor(Theme.muted)
+                Spacer()
+                Text("✕").font(Theme.ui(15, weight: .light)).foregroundColor(Theme.muted)
+                    .frame(width: 28, height: 28).contentShape(Rectangle()).onTapGesture(perform: onClose)
+            }
+            .padding(.top, -6)
+            ForEach(Array(options.enumerated()), id: \.offset) { i, o in
+                HStack(alignment: .center, spacing: 12) {
+                    Text(Self.mark(i)).font(.custom("Georgia", size: 12.5)).foregroundColor(Theme.muted)
+                        .frame(width: 26, height: 26).background(Theme.panel, in: Circle())
+                    Text(o).font(Font(Theme.uiUser(16))).lineSpacing(3).foregroundColor(Theme.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
+                        .foregroundColor(Theme.muted.opacity(0.7))
+                }
+                .padding(.vertical, 11)
+                .contentShape(Rectangle())
+                .onTapGesture { onPick(o) }
+                Rectangle().fill(Theme.border).frame(height: 1)   // 最后一条下面这根＝和输入行的分界
+            }
+        }
+        .padding(.bottom, 6)
+    }
+    /// A、B、C…；超过 26 个用数字
+    static func mark(_ i: Int) -> String { i < 26 ? String(UnicodeScalar(UInt8(65 + i))) : String(i + 1) }
+}
+
+/// 他的话下面淡掉的一排（聊天里回过的旧条、档案馆）：只看不点，留个「他当时给过什么」的痕迹
 struct ReplyChips: View {
     let options: [String]
-    var active = true
-    var onPick: (String) -> Void = { _ in }
-    var onOwn: () -> Void = {}
     var body: some View {
         FlowLayout(spacing: 8) {
             ForEach(Array(options.enumerated()), id: \.offset) { _, o in
-                chip(o, fg: Theme.text)
+                Text(o).font(Font(Theme.uiUser(15))).lineSpacing(3).foregroundColor(Theme.text)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .onTapGesture { if active { onPick(o) } }
-            }
-            if active {
-                chip("自己说…", fg: Theme.muted).contentShape(Rectangle()).onTapGesture { onOwn() }
             }
         }
-        .opacity(active ? 1 : 0.55)
+        .opacity(0.55)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    private func chip(_ s: String, fg: Color) -> some View {
-        Text(s).font(Font(Theme.uiUser(15))).lineSpacing(3).foregroundColor(fg)
-            .padding(.horizontal, 14).padding(.vertical, 8)
     }
 }
 
