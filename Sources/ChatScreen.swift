@@ -757,7 +757,7 @@ struct ChatScreen: View {
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            Composer(text: $draft, focused: $composerFocused)      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
+            Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "Reply…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                 .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）

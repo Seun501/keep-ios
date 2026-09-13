@@ -32,7 +32,7 @@ struct Composer: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let ph = UILabel()
-        ph.text = placeholder; ph.font = Theme.uiSys(Self.size)   // 占位照原样系统字（寻验 43）
+        ph.text = placeholder; ph.font = UIFont.systemFont(ofSize: Self.size)   // 占位照原样系统字（寻验 43；09-13 定：占位符不走 Cascadia）
         ph.textColor = UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1)
         ph.tag = 9; ph.sizeToFit(); ph.frame.origin = .zero
         tv.addSubview(ph)
@@ -95,7 +95,8 @@ struct PlainField: UIViewRepresentable {
         tf.backgroundColor = .clear; tf.borderStyle = .none
         tf.textAlignment = align; tf.keyboardType = keyboard
         tf.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)
-        tf.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1), .font: font])
+        // 占位符维持系统字，不走 Cascadia（寻 09-13）
+        tf.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1), .font: UIFont.systemFont(ofSize: font.pointSize)])
         tf.returnKeyType = returnKey
         tf.delegate = context.coordinator
         tf.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)

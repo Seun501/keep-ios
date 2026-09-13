@@ -38,7 +38,7 @@ struct MealSheet: View {
                     }
                     .padding(.horizontal, 4).padding(.top, 13).padding(.bottom, 6)
                     HStack(spacing: 10) {
-                        TextField("", text: $text, prompt: Text("Eating…").foregroundColor(Wax.inkMuted.opacity(0.6)))
+                        TextField("", text: $text, prompt: Text("Eating…").font(.system(size: 13.5, design: .rounded)).foregroundColor(Wax.inkMuted.opacity(0.6)))   // 占位符维持原来的圆体（寻 09-13）
                             .textFieldStyle(.plain)
                             .font(Theme.round(13.5)).foregroundColor(Wax.ink).tint(Theme.scrollTint)
                             .focused($focused)
