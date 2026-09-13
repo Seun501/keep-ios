@@ -281,6 +281,13 @@ struct ScrollObserver: UIViewRepresentable {
                         }
                     }
                     if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
+                    // 收键盘也记一串（寻 09-13 夜：「退出输入框消息流下降还是有点慢」）：0 / 0.1 / 0.25 / 0.5 / 0.9 秒各一帧的框与偏移，看它是哪一步才落下去
+                    if hiding, self.hideLogged < 3, self.name == "chat" {
+                        self.hideLogged += 1
+                        for t in [0.0, 0.1, 0.25, 0.5, 0.9] {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + t) { self.snapshot(String(format: "kb-hide+%.2f pins=%d", t, self.pins), note) }
+                        }
+                    }
                 })
             }
             fire()
@@ -289,6 +296,7 @@ struct ScrollObserver: UIViewRepresentable {
         // 不能用 CADisplayLink：它在每帧开头跑、SwiftUI 布局在后头把偏移写回（sim-82 实证纹丝不动）；KVO 是在它改完框之后回调，钉了才算数
         private var followUntil: CFTimeInterval = 0
         private var pins = 0
+        private var hideLogged = 0
         private func startFollow(_ dur: Double) { followUntil = CACurrentMediaTime() + dur + 0.3; pins = 0 }
         private func followPin() {
             guard let sv, CACurrentMediaTime() <= followUntil, !sv.isTracking, !sv.isDragging else { return }
