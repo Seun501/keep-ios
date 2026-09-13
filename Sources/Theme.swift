@@ -138,8 +138,8 @@ enum Theme {
     /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia 400 → 汉字系统宋体；粗体 Cascadia 600 → 宋体粗
     static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
         let song = uiSongti(size, bold: bold).fontDescriptor
-        // 寻 09-13 晚：400 档挨着宋体显粗 → 降到 320（可变字重 200–700 之间随调）
-        guard let d = casDescriptor(size, wght: bold ? 600 : 320, cascade: [song]) else { return UIFont(descriptor: song, size: size) }
+        // 寻 09-13 晚：400 档挨着宋体显粗、320 又太细 → 360（可变字重 200–700 之间随调）
+        guard let d = casDescriptor(size, wght: bold ? 600 : 360, cascade: [song]) else { return UIFont(descriptor: song, size: size) }
         return UIFont(descriptor: d, size: size)
     }
     /// 纯中文场合（门楣、题）：Noto 打头。
