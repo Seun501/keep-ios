@@ -42,7 +42,7 @@ struct ReplyCard: View {
             ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 HStack(alignment: .center, spacing: 12) {
                     // 序号：Cascadia、她气泡的底色、不带橙（寻 09-13 定稿：黑底白字试过一版，还是这个好看）
-                    Text(Self.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
+                    Text(Replies.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
                         .frame(width: 26, height: 26).background(Theme.userBubble, in: Circle())
                     Text(o).font(Theme.serif(16)).lineSpacing(3).foregroundColor(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,8 +56,17 @@ struct ReplyCard: View {
         }
         .padding(.top, -4).padding(.bottom, 4)
     }
+}
+
+extension Replies {
     /// A、B、C…；超过 26 个用数字
     static func mark(_ i: Int) -> String { i < 26 ? String(UnicodeScalar(UInt8(65 + i))) : String(i + 1) }
+    /// 她这句是不是点的选项（寻 09-14：气泡下时间前标个「B」，不然看不出哪句是点的）：
+    /// 和前一条克的话末尾那排选项逐一比，对上哪个给哪个序号。正史里没存「点的」，靠字面对——她自己打出一模一样的也算，无妨。
+    static func pick(of text: String?, options: [String]) -> String? {
+        guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return options.firstIndex(of: t).map(mark)
+    }
 }
 
 // 09-14 寻定：她回过之后不留痕迹（聊天页只摘掉不画）；档案馆放原文，[reply: …] 照排——淡胶囊那排撤了

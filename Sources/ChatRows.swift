@@ -3,7 +3,7 @@ import SwiftUI
 /// 消息流里的一格。规则照网页 buildRangeFrag。
 enum TimelineItem {
     case daySep(String)
-    case user(text: String, stamp: String, images: [String])
+    case user(text: String, stamp: String, images: [String], pick: String? = nil)   // pick＝这句是点了克给的哪个选项（A/B/C）
     case ai(index: Int, msg: Msg, showUsage: Bool)
     case toolChip(String, first: Bool)   // first＝上一行不是胶囊（网页 .toolchip 负边距只在连排的头一颗吃上边）
     case ping(Msg)
@@ -29,6 +29,9 @@ extension TimelineItem {
         // 注意：这里不能用 defer——`return rows` 先求值、defer 后跑，最后一条永远进不了返回值
         //（构建 28 前一直如此：克的最新一条要等下一条来了才露面，寻验「克也不回复我」的病根）
         var prevDay = from > 0 ? msgs[from - 1].localDay : ""
+        // 克最近一条话末尾给的选项（她点的那句要标序号）：从渲染起点往前找最近一条克的话
+        var options: [String] = []
+        if let prev = msgs[..<from].last(where: { $0.role == "assistant" && !$0.isWake }) { options = Replies.split(prev.content ?? "").options }
         for i in from..<to {
             flush(); cur = i
             let m = msgs[i]
@@ -48,6 +51,7 @@ extension TimelineItem {
             let d = m.localDay
             if !d.isEmpty, d != prevDay { out.append(.daySep(d)); prevDay = d }
             if m.role == "assistant" {
+                options = Replies.split(m.content ?? "").options
                 let hasText = !(m.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 // 工具行画在 AI 行里（thought 下面），有工具调用的消息即使没字没思考也要有一行
                 if hasText || !m.cleanThinking.isEmpty || !(m.toolCalls ?? []).isEmpty {
@@ -58,7 +62,7 @@ extension TimelineItem {
                 else if m.knock == true {
                     out.append(.user(text: m.knockText ?? m.content ?? "", stamp: TimeFmt.stamp(m.ts) + " · Knock", images: []))
                 } else {
-                    out.append(.user(text: m.content ?? "", stamp: TimeFmt.stamp(m.ts), images: m.images ?? []))
+                    out.append(.user(text: m.content ?? "", stamp: TimeFmt.stamp(m.ts), images: m.images ?? [], pick: Replies.pick(of: m.content, options: options)))
                 }
             }
         }
@@ -84,6 +88,7 @@ struct UserRowView: View {
     var tagNo: String? = nil          // 档案馆条数开关：#N 贴时间旁（她的气泡时间顶右，编号从左边进）
     var flash = false                 // #N 直跳：编号闪几秒
     var highlight = ""                // 检索关键词标黄
+    var pick: String? = nil           // 这句是点了克给的哪个选项：时间前标「B」（寻 09-14）
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
             // 照网页 .row.user > img.att：图站在气泡外上方、素着不加修饰、贴右、圆角 26 同她的气泡、点开看大图；图下空 6
@@ -100,6 +105,7 @@ struct UserRowView: View {
             if !stamp.isEmpty {
                 HStack(spacing: 8) {
                     if let t = tagNo { NoTag(t, flash: flash) }
+                    if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted) }
                     Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted)
                 }
             }

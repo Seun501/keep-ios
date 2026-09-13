@@ -684,7 +684,7 @@ struct ChatScreen: View {
     @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
         switch item {
         case .daySep(let d): DaySepView(day: d)
-        case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
+        case .user(let t, let s, let imgs, let p): UserRowView(text: t, stamp: s, images: imgs, pick: p)
         case .ai(_, let m, let u):
             AIRowView(msg: m, showUsage: u, afterTools: afterTools)
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)

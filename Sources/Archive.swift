@@ -193,8 +193,9 @@ struct ArchiveScreen: View {
     private func dayView(_ d: ArchDay) -> some View {
         ScrollViewReader { proxy in
             OrangeScroll(name: "arch") {
+                let picks = Self.picks(d)
                 LazyVStack(spacing: 22) {
-                    ForEach(d.entries) { e in row(e).id(e.id) }
+                    ForEach(d.entries) { e in row(e, pick: picks[e.id]).id(e.id) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
             }
@@ -244,7 +245,17 @@ struct ArchiveScreen: View {
         return m
     }
 
-    @ViewBuilder private func row(_ e: ArchEntry) -> some View {
+    /// 她哪句是点的选项：和前一条克的话末尾那排比（同聊天页）
+    private static func picks(_ d: ArchDay) -> [String: String] {
+        var out: [String: String] = [:]
+        var options: [String] = []
+        for e in d.entries where e.note == nil && e.diary != true {
+            if e.role == "assistant" { options = Replies.split(e.text ?? "").options }
+            else if e.role == "user", !e.isPing, let p = Replies.pick(of: e.text, options: options) { out[e.id] = p }
+        }
+        return out
+    }
+    @ViewBuilder private func row(_ e: ArchEntry, pick: String? = nil) -> some View {
         let tag: String? = m.showNums ? e.no.map { "#\($0)" } : nil
         let flash = (m.flashNo != nil && m.flashNo == e.no) ? "#\(e.no ?? 0)" : nil
         if let n = e.note {   // 档案里的系统说明块（非对话）
@@ -265,7 +276,7 @@ struct ArchiveScreen: View {
         } else if e.role == "user" && e.isPing {
             PingChipView(msg: pingMsg(e))
         } else if e.role == "user" {
-            UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q)
+            UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick)
         } else {
             AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, parseReplies: false)   // 档案馆放原文，[reply: …] 照排
         }
