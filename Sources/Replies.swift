@@ -1,29 +1,26 @@
 import SwiftUI
 
-/// 克的「选项卡」（09-13 寻与克定的）：他在回复里写 [reply: 甲 | 乙 | 丙]，App 把这一段从正文里摘出来画成可点的选项；
+/// 克的「选项卡」（09-13 寻与克定的）：他在回复**最末尾**写 [reply: 甲 | 乙 | 丙]，App 把这一段从正文里摘出来画成可点的选项；
 /// 点一个＝把那句当她的消息发出去。正史里存的是他的原文（网关不动；他回看自己的话、档案馆重排都还认得）。
-/// 冒号、竖线全角半角都认；空项、重复项剔掉；一条里写了几段都收进同一排。
+/// 只认收尾那一段（寻 09-13：正文中间出现的可能只是在和她聊这个格式，不算）；冒号、竖线全角半角都认；空项、重复项剔掉。
 enum Replies {
     final class Parsed { let text: String; let options: [String]; init(_ t: String, _ o: [String]) { text = t; options = o } }
-    private static let re = try! NSRegularExpression(pattern: #"\[\s*reply\s*[:：]([^\[\]]*)\]"#, options: [.caseInsensitive])
+    private static let re = try! NSRegularExpression(pattern: #"\[\s*reply\s*[:：]([^\[\]]*)\]\s*$"#, options: [.caseInsensitive])
     private static let cache: NSCache<NSString, Parsed> = { let c = NSCache<NSString, Parsed>(); c.countLimit = 400; return c }()
 
     static func split(_ s: String) -> Parsed {
         if let c = cache.object(forKey: s as NSString) { return c }
         let ns = s as NSString
         var options: [String] = []
-        var out = ""
-        var last = 0
-        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
-            out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+        var text = s
+        if let m = re.firstMatch(in: s, range: NSRange(location: 0, length: ns.length)) {
             for part in ns.substring(with: m.range(at: 1)).components(separatedBy: CharacterSet(charactersIn: "|｜")) {
                 let t = part.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty, !options.contains(t) { options.append(t) }
             }
-            last = m.range.location + m.range.length
+            if !options.isEmpty { text = ns.substring(to: m.range.location).trimmingCharacters(in: .whitespacesAndNewlines) }
         }
-        out += ns.substring(from: last)
-        let p = Parsed(options.isEmpty ? s : out.trimmingCharacters(in: .whitespacesAndNewlines), options)
+        let p = Parsed(text, options)
         cache.setObject(p, forKey: s as NSString)
         return p
     }
