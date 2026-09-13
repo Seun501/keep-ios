@@ -32,28 +32,28 @@ enum Replies {
 }
 
 /// 选项卡（09-13 寻定：照 claude.ai 那种，从输入卡上方长出来，和输入框是同一张卡）：
-/// 一行一个选项——淡陶土底（赤陶 12%）、Georgia 序号、克的宋体字、右端细箭头；没有标题没有×没有分隔线（寻 09-13 二稿），
-/// 底下就是原来的输入行（占位照旧）——不选就直接打字。点一项＝那句当她的消息发出去。
+/// 一行一个选项——序号 A/B/C 坐在半透明赤陶的小圆上（寻 09-13 三稿：圆底用我们本来的橙，行本身不铺底、不画分隔线）、
+/// 克的宋体字、右端细箭头；没有标题没有×，底下就是原来的输入行（占位照旧）——不选就直接打字。点一项＝那句当她的消息发出去。
 struct ReplyCard: View {
     let options: [String]
     var onPick: (String) -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 HStack(alignment: .center, spacing: 12) {
-                    Text(Self.mark(i)).font(.custom("Georgia", size: 13)).foregroundColor(Theme.accent).frame(width: 16)
+                    Text(Self.mark(i)).font(.custom("Georgia", size: 12.5)).foregroundColor(Theme.accent)
+                        .frame(width: 26, height: 26).background(Theme.accent.opacity(0.14), in: Circle())
                     Text(o).font(Theme.serif(16)).lineSpacing(3).foregroundColor(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
-                        .foregroundColor(Theme.accent.opacity(0.7))
+                        .foregroundColor(Theme.muted.opacity(0.7))
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.horizontal, 2).padding(.vertical, 8)
+                .contentShape(Rectangle())
                 .onTapGesture { onPick(o) }
             }
         }
-        .padding(.top, -4).padding(.bottom, 6)
+        .padding(.top, -4).padding(.bottom, 4)
     }
     /// A、B、C…；超过 26 个用数字
     static func mark(_ i: Int) -> String { i < 26 ? String(UnicodeScalar(UInt8(65 + i))) : String(i + 1) }
