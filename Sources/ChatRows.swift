@@ -205,8 +205,8 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15；正文后面还有工具行/选项卡时下沿收到 4
-                .padding(.top, afterTools ? -2 : 11).padding(.bottom, (tools.isEmpty && !hasChips) ? 11 : 4)
+                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 9-2+13≈20；正文后面还有工具行时下沿 9（寻 09-13：夹在文中的工具行上下太窄）、选项卡 4
+                .padding(.top, afterTools ? -2 : 11).padding(.bottom, (tools.isEmpty && !hasChips) ? 11 : (tools.isEmpty ? 4 : 9))
             }
             if hasChips {
                 ReplyChips(options: parsed.options)
