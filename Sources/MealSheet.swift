@@ -22,14 +22,14 @@ struct MealSheet: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 9) {
                         Image("bowl").renderingMode(.template).resizable().frame(width: 19, height: 19).foregroundColor(Theme.accent)
-                        Text("吃吃").font(Theme.cjk(16.5, weight: .bold)).tracking(1.6).foregroundColor(Theme.text)
+                        Text("吃吃").font(Theme.cjk(16.5, weight: .bold)).tracking(1.6).foregroundColor(Wax.ink)   // 白笺上用定色墨（夜间模式，寻验 09-13）
                     }
                     HStack {
                         ForEach(["早餐", "午餐", "晚餐", "零食"], id: \.self) { k in
                             let sel = kind == k
                             Button { kind = sel ? "" : k } label: {
                                 Text(k).font(Theme.cjk(13.5, weight: sel ? .bold : .regular))
-                                    .foregroundColor(sel ? Theme.accent : Theme.muted)
+                                    .foregroundColor(sel ? Theme.accent : Wax.inkMuted)
                                     .padding(.horizontal, 1).padding(.vertical, 2)
                                     .overlay(alignment: .bottom) { Rectangle().fill(sel ? Theme.accent : .clear).frame(height: 1) }
                             }.buttonStyle(.plain)
@@ -38,17 +38,17 @@ struct MealSheet: View {
                     }
                     .padding(.horizontal, 4).padding(.top, 13).padding(.bottom, 6)
                     HStack(spacing: 10) {
-                        TextField("", text: $text, prompt: Text("Eating…").foregroundColor(Theme.muted.opacity(0.6)))
+                        TextField("", text: $text, prompt: Text("Eating…").foregroundColor(Wax.inkMuted.opacity(0.6)))
                             .textFieldStyle(.plain)
-                            .font(Theme.round(13.5)).foregroundColor(Theme.text).tint(Theme.scrollTint)
+                            .font(Theme.round(13.5)).foregroundColor(Wax.ink).tint(Theme.scrollTint)
                             .focused($focused)
                             .submitLabel(.send).onSubmit(send)   // 回车直接发（寻）
                             .padding(.vertical, 7).padding(.horizontal, 2)
-                            .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
+                            .overlay(alignment: .bottom) { Rectangle().fill(Wax.paperLine).frame(height: 1) }
                         PhotosPicker(selection: $pick, maxSelectionCount: 1, matching: .images) {
-                            Text("＋").font(Theme.ui(16)).foregroundColor(Theme.muted)
+                            Text("＋").font(Theme.ui(16)).foregroundColor(Wax.inkMuted)
                                 .frame(width: 28, height: 28)
-                                .overlay(Circle().stroke(Theme.border, lineWidth: 1))
+                                .overlay(Circle().stroke(Wax.paperLine, lineWidth: 1))
                         }.buttonStyle(.plain)
                         Button(action: send) {
                             Image("mealSend").renderingMode(.template).resizable().frame(width: 14, height: 14).foregroundColor(.white)
@@ -60,7 +60,7 @@ struct MealSheet: View {
                 .padding(EdgeInsets(top: 19, leading: 21, bottom: 18, trailing: 21))
                 .frame(width: min(UIScreen.main.bounds.width * 0.88, 344), alignment: .leading)
                 .background(strip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.border, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Wax.paperLine, lineWidth: 1))
                 .shadow(color: Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.26), radius: 24, y: 16)
 
                 if let image {

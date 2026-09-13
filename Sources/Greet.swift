@@ -92,7 +92,7 @@ struct GreetOverlay: View {
             let top = g.frame(in: .global).minY
             ZStack(alignment: .top) {
                 Theme.bg.ignoresSafeArea()
-                ClawdWeb(state: "idle", flip: false, onReady: { textOn = true })
+                ClawdWeb(state: "idle", flip: false, onReady: { reveal() })
                     .frame(width: 150, height: 150)
                     .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)   // 与聊天页开场站位同一个点
                 HangingText(text: line)
@@ -109,10 +109,17 @@ struct GreetOverlay: View {
         .onTapGesture { bye() }
         .onAppear {
             line = Greet.pick()
-            // 网页是 2.6s 后起 0.8s 淡出＝实际能看 3.4s；这边瞬切（寻定不淡出），2.6 就显得跳得快（寻 09-08）→ 3.4
-            if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) { bye() } }
+            // 冷启动 WKWebView 起进程要两三秒，句子等它一起出、而 3.4 秒的表从进门就走——寻验 09-13：开屏大半是空白纸、字一闪就没。
+            // 表改从「露出」那一刻起走；画 1.2 秒还没装好也先把句子放出来
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { reveal() }
             Task { await Greet.refreshCache() }
         }
+    }
+    /// 句子露出，同时起 3.4 秒的表（网页是 2.6s 后起 0.8s 淡出＝实际能看 3.4s；这边瞬切（寻定不淡出），2.6 显得跳得快（寻 09-08））
+    private func reveal() {
+        guard !textOn else { return }
+        textOn = true
+        if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) { bye() } }
     }
     private func bye() { shown = false }   // 寻定：不淡出，直接走
 }

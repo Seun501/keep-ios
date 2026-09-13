@@ -107,6 +107,7 @@ struct FitImage: View {
 enum GatewayImageCache {
     static let thumbPx: CGFloat = 480        // 总览三格（≈110pt）
     static let waterfallPx: CGFloat = 720    // 分册两列（≈170pt）
+    static let soloPx: CGFloat = 1200        // 当天独一张的横图铺满两列（≈374pt）
     static let fullPx: CGFloat = 2600        // 看图器（屏幕 3 倍够用；原图有时上万像素）
     static let shared: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 400; c.totalCostLimit = 180 * 1024 * 1024; return c }()
     private static func key(_ url: URL, _ px: CGFloat) -> NSString { "\(url.absoluteString)#\(Int(px))" as NSString }
@@ -114,7 +115,7 @@ enum GatewayImageCache {
     /// 已经解过的任何一档（缩略也行）——看图器开门先拿它垫着，原图到了再换
     static func peekAny(_ url: URL?) -> UIImage? {
         guard let url else { return nil }
-        for px in [fullPx, waterfallPx, thumbPx, 0] { if let c = shared.object(forKey: key(url, px)) { return c } }
+        for px in [fullPx, soloPx, waterfallPx, thumbPx, 0] { if let c = shared.object(forKey: key(url, px)) { return c } }
         return nil
     }
     static func load(_ url: URL?, maxPixel: CGFloat = 0) async -> UIImage? {
@@ -300,9 +301,13 @@ struct AlbumScreen: View {
                         Text(String(day.suffix(2))).font(.custom("Georgia-Bold", size: 28)).foregroundColor(Theme.accent)
                         Text("/" + monShort(day)).font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
                     }.padding(.horizontal, 4).padding(.bottom, 12)
-                    HStack(alignment: .top, spacing: 14) {
-                        column(arr.enumerated().filter { $0.offset % 2 == 0 }.map { $0.element })
-                        column(arr.enumerated().filter { $0.offset % 2 == 1 }.map { $0.element })
+                    if arr.count == 1 {   // 当天独一张（寻 09-13）：横图铺满两列那么宽、按原比例定高；竖图/方图照旧占一列
+                        SoloPhoto(p: arr[0], colW: Self.colW, fullW: Self.colW * 2 + 14, onTap: { lightbox = arr[0] })
+                    } else {
+                        HStack(alignment: .top, spacing: 14) {
+                            column(arr.enumerated().filter { $0.offset % 2 == 0 }.map { $0.element })
+                            column(arr.enumerated().filter { $0.offset % 2 == 1 }.map { $0.element })
+                        }
                     }
                 }
                 .padding(EdgeInsets(top: 28, leading: 20, bottom: 0, trailing: 20))
@@ -310,22 +315,26 @@ struct AlbumScreen: View {
         }
         .padding(.bottom, 40)
     }
+    static let colW = ((UIScreen.main.bounds.width - 40 - 14) / 2).rounded(.down)   // 两列瀑布：页边 20、列距 14
     private func column(_ arr: [Photo]) -> some View {
-        let cw = ((UIScreen.main.bounds.width - 40 - 14) / 2).rounded(.down)   // 两列瀑布：页边 20、列距 14
-        return VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 20) {
             ForEach(arr) { p in
                 VStack(alignment: .leading, spacing: 0) {
-                    FitImage(url: p.url, width: cw, radius: 12)
+                    FitImage(url: p.url, width: Self.colW, radius: 12)
                         .onTapGesture { lightbox = p }
-                    Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(14, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text).padding(.top, 8).padding(.horizontal, 2)
-                    if let n = p.intro, !n.isEmpty { Text(n).font(Theme.serif(13)).lineSpacing(3.5).foregroundColor(Theme.muted).padding(.top, 3).padding(.horizontal, 2) }
-                    if p.src == "surf", let u = p.surfUrl, let url = URL(string: u) {
-                        Link("冲浪存的 ↗", destination: url).font(Theme.round(11)).foregroundColor(Theme.muted).padding(.top, 5).padding(.horizontal, 2)
-                    }
+                    Self.caption(p)
                 }
             }
         }
-        .frame(width: cw)
+        .frame(width: Self.colW)
+    }
+    /// 图下的名字 / 简介 / 冲浪来源（两列与独张共用）
+    @ViewBuilder static func caption(_ p: Photo) -> some View {
+        Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(14, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text).padding(.top, 8).padding(.horizontal, 2)
+        if let n = p.intro, !n.isEmpty { Text(n).font(Theme.serif(13)).lineSpacing(3.5).foregroundColor(Theme.muted).padding(.top, 3).padding(.horizontal, 2) }
+        if p.src == "surf", let u = p.surfUrl, let url = URL(string: u) {
+            Link("冲浪存的 ↗", destination: url).font(Theme.round(11)).foregroundColor(Theme.muted).padding(.top, 5).padding(.horizontal, 2)
+        }
     }
     private func dayGroups(_ ph: [Photo]) -> [(String, [Photo])] {
         var out: [(String, [Photo])] = []
@@ -339,6 +348,30 @@ struct AlbumScreen: View {
         let mons = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
         if let m = Int(day.dropFirst(5).prefix(2)), m >= 1, m <= 12 { return mons[m - 1] }
         return String(day.dropFirst(5).prefix(2))
+    }
+}
+
+/// 当天独一张：先拿到图再定宽——横图（宽＞高）铺满两列那么宽，竖图/方图占一列；高按原比例。没拿到先按一列 4:3 占位
+struct SoloPhoto: View {
+    let p: Photo
+    let colW: CGFloat
+    let fullW: CGFloat
+    var onTap: () -> Void
+    @State private var image: UIImage? = nil
+    var body: some View {
+        let wide = image.map { $0.size.width > $0.size.height } ?? false
+        let w = wide ? fullW : colW
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if let image { Image(uiImage: image).resizable().frame(width: w, height: (w * image.size.height / max(image.size.width, 1)).rounded()) }
+                else { Theme.panel.frame(width: colW, height: (colW * 0.75).rounded()) }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onTapGesture(perform: onTap)
+            AlbumScreen.caption(p)
+        }
+        .frame(width: w, alignment: .leading)
+        .task(id: p.url) { image = await GatewayImageCache.load(p.url, maxPixel: GatewayImageCache.soloPx) }
     }
 }
 

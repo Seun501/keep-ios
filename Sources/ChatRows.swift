@@ -179,6 +179,9 @@ struct AIRowView: View {
     var flash = false
     var highlight = ""
     var afterTools = false   // 上一行是「只有工具行」的 AI 行（列表给的行距已收到 4/8）：正文顶不再 11
+    var replyActive = false  // 选项卡能点（只有聊天页最末一条、克没在说话时）；其余地方选项只看不点
+    var onPick: (String) -> Void = { _ in }
+    var onOwn: () -> Void = {}
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
@@ -188,7 +191,9 @@ struct AIRowView: View {
             }
             // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
             let tools = msg.toolCalls ?? []
-            let hasBody = !(msg.images ?? []).isEmpty || !(msg.content ?? "").isEmpty
+            let parsed = Replies.split(msg.content ?? "")   // [reply: …] 摘出来画成选项卡，正文只剩他的话
+            let hasBody = !(msg.images ?? []).isEmpty || !parsed.text.isEmpty
+            let hasChips = !parsed.options.isEmpty
             // 同一条里既有正文又有工具调用＝克先说了话再调工具（内容块顺序就是 text→tool_use），
             // 工具行画在正文**后面**（09-12 寻验：写到一半调的工具，行跑到正文上头去了，和直播时的顺序对不上）
             if hasBody {
@@ -197,12 +202,17 @@ struct AIRowView: View {
                     ForEach(Array((msg.images ?? []).enumerated()), id: \.offset) { _, u in
                         StreamImage(src: u, maxW: 200, maxH: 200, radius: 12)
                     }
-                    if let c = msg.content, !c.isEmpty {
+                    if !parsed.text.isEmpty {
+                        let c = parsed.text
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15；正文后面还有工具行时下沿收到 4
-                .padding(.top, afterTools ? -2 : 11).padding(.bottom, tools.isEmpty ? 11 : 4)
+                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 4-2+13≈15；正文后面还有工具行/选项卡时下沿收到 4
+                .padding(.top, afterTools ? -2 : 11).padding(.bottom, (tools.isEmpty && !hasChips) ? 11 : 4)
+            }
+            if hasChips {
+                ReplyChips(options: parsed.options, active: replyActive, onPick: onPick, onOwn: onOwn)
+                    .padding(.top, hasBody ? 4 : 11).padding(.bottom, tools.isEmpty ? 11 : 4)
             }
             // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；连排工具行之间照旧 4
             ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in

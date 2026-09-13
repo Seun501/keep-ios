@@ -515,7 +515,7 @@ struct ChatScreen: View {
                 }.buttonStyle(.plain).padding(.top, 4)
             }
             ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
-                row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item)).padding(.top, gapBefore(i))
+                row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item), last: i == model.items.count - 1).padding(.top, gapBefore(i))
             }
             if let live = model.live {
                 VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
@@ -680,11 +680,14 @@ struct ChatScreen: View {
         }
     }
 
-    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false) -> some View {
+    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
         switch item {
         case .daySep(let d): DaySepView(day: d)
         case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
-        case .ai(_, let m, let u): AIRowView(msg: m, showUsage: u, afterTools: afterTools)
+        case .ai(_, let m, let u):
+            // 选项卡只在最末一条、克没在说话时能点：点一个＝把那句发出去；「自己说…」＝焦点给输入框
+            AIRowView(msg: m, showUsage: u, afterTools: afterTools, replyActive: last && model.live == nil && !model.sending,
+                      onPick: { model.send(text: $0, images: []) }, onOwn: { composerFocused = true })
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
         case .ping(let m): PingChipView(msg: m)
         case .wakeChip(let hm): WakeChipView(hm: hm)
@@ -714,7 +717,8 @@ struct ChatScreen: View {
                         Text(e).font(Theme.serif(15)).foregroundColor(.red)
                     } else if s.shown > 0 {
                         // 紧跟工具行的正文：顶 0（行距 4 + 宋体 13 顶空≈15，同正史）；其余照网页 .bubble 上下 11
-                        RichText(attr: MDWhole.make(s.shownText)).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
+                        // 直播里 [reply: …] 不上屏（半截的先藏、整段的摘掉）；说完落成正史那条再画成选项卡
+                        RichText(attr: MDWhole.make(Replies.split(Replies.hidePartial(s.shownText)).text)).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
                     }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

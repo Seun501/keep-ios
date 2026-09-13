@@ -49,6 +49,8 @@ final class ArchiveModel: ObservableObject {
     @Published var focusTime: String? = nil
     @Published var showNums = false
     @Published var flashNo: Int? = nil
+    /// 档案馆有记录的日子（和抽屉月历同一份缓存，进门先用旧的、后台再拉新）——前一天/后一天只在这些日子之间跳
+    @Published var days: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.days") ?? [])
 
     private func get(_ path: String) async -> Data? {
         guard let token = Keychain.token else { return nil }
@@ -59,6 +61,26 @@ final class ArchiveModel: ObservableObject {
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return d
+    }
+    func loadDays() async {
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; return }
+        guard let d = await get("api/archive/days"), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let arr = j["days"] as? [[String: Any]] else { return }
+        days = arr.compactMap { $0["date"] as? String }
+        UserDefaults.standard.set(days, forKey: "cache.days")
+    }
+    /// 前一天（dir=-1）/后一天（+1）：当前这天在表里就取邻居；不在（表旧了）就取最近的一天；到头了＝nil
+    func neighbor(_ dir: Int) -> String? {
+        guard let cur = day?.date, view == "day" else { return nil }
+        if let i = days.firstIndex(of: cur) {
+            let j = i + dir
+            return (j >= 0 && j < days.count) ? days[j] : nil
+        }
+        return dir < 0 ? days.last(where: { $0 < cur }) : days.first(where: { $0 > cur })
+    }
+    func step(_ dir: Int) async {
+        guard let d = neighbor(dir) else { return }
+        await openDay(d)
     }
     func openDay(_ d: String, time: String? = nil, no: Int? = nil) async {
         let data: Data?
@@ -110,7 +132,24 @@ struct ArchiveScreen: View {
             if let q = query { await m.search(q) }
             else if let day { await m.openDay(day, no: focusNo) }
             else if Preview.on { await m.openDay("2026-09-02") }
+            await m.loadDays()
         }
+    }
+
+    /// 前一天/后一天（寻 09-13：翻天不用退出去重进月历）：一对线条箭头挨在一起放右边——左上角单独一个的是返回，
+    /// 成对的才是翻页，形状也不同（同一族 Lucide 箭头转向）；到头那边淡掉
+    private func dayArrow(_ dir: Int) -> some View {
+        let on = m.neighbor(dir) != nil
+        return Button {
+            guard on else { return }
+            markIdx = -1
+            Task { await m.step(dir) }
+        } label: {
+            Image("chev").renderingMode(.template).resizable().frame(width: 16, height: 16)
+                .rotationEffect(.degrees(dir < 0 ? 90 : -90))
+                .foregroundColor(Theme.muted.opacity(on ? 1 : 0.3))
+                .frame(width: 30, height: 30)
+        }.buttonStyle(.plain)
     }
 
     /// 从某一天返回：若是从搜索结果进来的，先回到结果列表；否则关闭档案页
@@ -123,6 +162,9 @@ struct ArchiveScreen: View {
             Button { back() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
             Text(m.view == "hits" ? "搜「\(m.q)」· \(m.hits.count)\(m.truncated ? "+" : "") 处" : (m.day?.date ?? "")).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
             Spacer()
+            if m.view == "day" {   // 前一天 / 后一天
+                HStack(spacing: 0) { dayArrow(-1); dayArrow(1) }
+            }
             if m.view == "day", !m.q.isEmpty, markCount > 0 {   // 命中逐处跳转（▲▼）：计数居中
                 HStack(spacing: 2) {
                     Button { jump(-1) } label: { Text("▲").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
@@ -160,6 +202,7 @@ struct ArchiveScreen: View {
             }
             .onChange(of: markIdx) { i in if i >= 0, i < markEntries.count { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(markEntries[i], anchor: .center) } } }
         }
+        .id(d.date)   // 翻到另一天＝整页重来（滚回顶、命中定位重跑），不带着上一天的滚动位置
     }
     /// 命中的条（按出现顺序；同一条多处算多次，跳转按条）
     private var markEntries: [String] {

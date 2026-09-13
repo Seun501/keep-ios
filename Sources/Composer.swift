@@ -85,10 +85,11 @@ struct PlainField: UIViewRepresentable {
     var align: NSTextAlignment = .natural          // 拨盘打字要居中（寻验 09-04）
     var returnKey: UIReturnKeyType = .send
     var keyboard: UIKeyboardType = .default
+    var textColor: UIColor = Theme.uiText          // 定色纸上的输入行传定色墨（锁信口令，夜间模式）
     var onSubmit: () -> Void = {}
     func makeUIView(context: Context) -> UITextField {
         let tf = UITextField()
-        tf.font = font; tf.textColor = Theme.uiText
+        tf.font = font; tf.textColor = textColor
         tf.backgroundColor = .clear; tf.borderStyle = .none
         tf.textAlignment = align; tf.keyboardType = keyboard
         tf.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)

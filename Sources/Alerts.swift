@@ -105,15 +105,16 @@ struct StripPop: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 9) {
                     Image(icon).renderingMode(.template).resizable().frame(width: 19, height: 19).foregroundColor(Theme.accent)
-                    if en { Text(title).font(.custom("Georgia-Bold", size: 16.5)).tracking(0.66).foregroundColor(Theme.text) }
-                    else { Text(title).font(Theme.cjk(16.5, weight: .bold)).tracking(1.65).foregroundColor(Theme.text) }
+                    // 纸是定色白笺，字用定色墨（夜间模式下别跟着变白——寻验 09-13）
+                    if en { Text(title).font(.custom("Georgia-Bold", size: 16.5)).tracking(0.66).foregroundColor(Wax.ink) }
+                    else { Text(title).font(Theme.cjk(16.5, weight: .bold)).tracking(1.65).foregroundColor(Wax.ink) }
                 }
-                RichText(attr: MD.keNS(msg, size: 13.5, weight: .regular, lineHeight: 1.68)).padding(.top, 10)
+                RichText(attr: MD.keNS(msg, size: 13.5, weight: .regular, color: Wax.uiInk, lineHeight: 1.68)).padding(.top, 10)
             }
             .padding(EdgeInsets(top: 19, leading: 21, bottom: 18, trailing: 21))
             .frame(width: min(UIScreen.main.bounds.width * 0.88, 344), alignment: .leading)
             .background(Wax.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.border, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Wax.paperLine, lineWidth: 1))
             .shadow(color: Wax.ink.opacity(0.26), radius: 24, y: 16)
         }
     }

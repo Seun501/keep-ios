@@ -197,6 +197,11 @@ enum Wax {
     static let xunRead = Color(red: 0x85/255, green: 0xA2/255, blue: 0x92/255)   // 灰松绿
     static let paper = Color(red: 0xFC/255, green: 0xFA/255, blue: 0xF6/255)
     static let ink = Color(red: 48/255, green: 45/255, blue: 39/255)
+    // 纸是定死的浅色（夜里也是白笺），纸上的字就不能跟着夜间模式变白——寻验 09-13：夜间弹窗白底白字啥也看不清。
+    // 纸上一律用这三样定色：墨、淡墨、纸纹线（数值＝日间的 text / muted / border）
+    static let inkMuted = Color(red: 0x9B/255, green: 0x91/255, blue: 0x83/255)
+    static let paperLine = Color(red: 0xE4/255, green: 0xDD/255, blue: 0xCF/255)
+    static let uiInk = UIColor(red: 48/255, green: 45/255, blue: 39/255, alpha: 1)
     static func color(mine: Bool, read: Bool) -> Color { mine ? (read ? xunRead : xun) : (read ? keRead : ke) }
 }
 
@@ -252,17 +257,17 @@ struct EnvelopeView: View {
                 .frame(maxWidth: .infinity).offset(y: 36)
             let lk = LetterFmt.lockLine(e)
             if !lk.isEmpty {
-                Text(lk).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Theme.muted)
+                Text(lk).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Wax.inkMuted)   // 纸上定色字（夜间模式）
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(.leading, 14).padding(.bottom, 9)
             }
-            Text(LetterFmt.dayEnShort(e.ts) + " · " + TimeFmt.hm(e.ts)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Theme.muted)
+            Text(LetterFmt.dayEnShort(e.ts) + " · " + TimeFmt.hm(e.ts)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Wax.inkMuted)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(.trailing, 12).padding(.bottom, 9)
         }
         .frame(height: 86)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.border, lineWidth: 0.8))   // 寻验 09-04：1 偏粗
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Wax.paperLine, lineWidth: 0.8))   // 寻验 09-04：1 偏粗
         .contentShape(Rectangle())
     }
 }
@@ -760,16 +765,17 @@ struct LockPop: View {
             Wax.ink.opacity(0.38).ignoresSafeArea().onTapGesture { onClose() }
             VStack(spacing: 0) {
                 if let until = untilIso, let d = TimeFmt.parse(until) {
-                    Text(countdown(d)).font(.custom("Georgia", size: 27)).fontWeight(.light).tracking(1.4).foregroundColor(Theme.text).padding(.bottom, 4)
-                    Text(LetterFmt.lockWhen(until)).font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Theme.muted).lineSpacing(4)
+                    // 信纸是定色的，字用定色墨（夜间模式下别变白——寻验 09-13）
+                    Text(countdown(d)).font(.custom("Georgia", size: 27)).fontWeight(.light).tracking(1.4).foregroundColor(Wax.ink).padding(.bottom, 4)
+                    Text(LetterFmt.lockWhen(until)).font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Wax.inkMuted).lineSpacing(4)
                 } else {
-                    Text("没配钟点——要口令才打开").font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Theme.muted)
+                    Text("没配钟点——要口令才打开").font(Theme.cjk(12.5)).tracking(0.75).foregroundColor(Wax.inkMuted)
                 }
                 if e.hasPassphrase == true {
                     HStack(spacing: 12) {
-                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: Theme.uiSys(13), onSubmit: { go() })   // 「口令」靠左（寻 09-05：居左好看）
+                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: Theme.uiSys(13), textColor: Wax.uiInk, onSubmit: { go() })   // 「口令」靠左（寻 09-05：居左好看）
                             .frame(height: 18).padding(.vertical, 5).padding(.horizontal, 2)
-                            .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
+                            .overlay(alignment: .bottom) { Rectangle().fill(Wax.paperLine).frame(height: 1) }
                         Button { go() } label: {
                             Text("启").font(Theme.round(12)).tracking(1.8).foregroundColor(Wax.paper)
                                 .padding(.horizontal, 13).padding(.vertical, 4)
@@ -793,7 +799,7 @@ struct LockPop: View {
             }
             .frame(width: min(UIScreen.main.bounds.width * 0.80, 300))
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.border, lineWidth: 0.8))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Wax.paperLine, lineWidth: 0.8))
             .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Wax.paper).shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16))   // 投影挂纸上，别给口令框描晕
         }
         .onAppear { if Preview.on, Preview.screen == "lockerr" { err = "不是这句——再想想" } }   // 截图：口令错了的样子（文案同网页）
@@ -833,10 +839,10 @@ struct LetterAlert: View {
                         EnvelopeFlap(height: 46).offset(y: open ? -46 : 0)
                         WaxSeal(color: e.mine ? Wax.xun : Wax.ke, locked: e.locked).offset(y: 38 - 8.5).opacity(open ? 0 : 1).scaleEffect(open ? 0.55 : 1)
                         if e.locked {
-                            Text(LetterFmt.lockLine(e)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Theme.muted)
+                            Text(LetterFmt.lockLine(e)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Wax.inkMuted)   // 纸上定色字（夜间模式）
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 14).padding(.bottom, 9)
                         }
-                        Text(LetterFmt.dayEnShort(e.ts) + " · " + TimeFmt.hm(e.ts)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Theme.muted)
+                        Text(LetterFmt.dayEnShort(e.ts) + " · " + TimeFmt.hm(e.ts)).font(.custom("Georgia", size: 11)).tracking(0.66).foregroundColor(Wax.inkMuted)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding(.trailing, 12).padding(.bottom, 9)
                         // 信纸：三道淡线，从底下升上来
                         VStack(alignment: .leading, spacing: 13) {
@@ -850,7 +856,7 @@ struct LetterAlert: View {
                     }
                     .frame(width: min(UIScreen.main.bounds.width * 0.8, 308), height: 102)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.border, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Wax.paperLine, lineWidth: 1))
                     .shadow(color: Wax.ink.opacity(0.28), radius: 24, y: 16)
                     .animation(.easeInOut(duration: 0.5), value: open)
                     .contentShape(Rectangle())
