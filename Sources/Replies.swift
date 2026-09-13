@@ -35,37 +35,28 @@ enum Replies {
 }
 
 /// 选项卡（09-13 寻定：照 claude.ai 那种，从输入卡上方长出来，和输入框是同一张卡）：
-/// 小字「克在问」＋×，一行一个选项（Georgia 序号、发丝分隔线、右端细箭头），底下就是原来的输入行——
-/// 「自己说」＝直接在下面打字。点一项＝那句当她的消息发出去；× ＝收起（他的话下面还留着淡掉的一排）。
+/// 一行一个选项——淡陶土底（赤陶 12%）、Georgia 序号、克的宋体字、右端细箭头；没有标题没有×没有分隔线（寻 09-13 二稿），
+/// 底下就是原来的输入行（占位照旧）——不选就直接打字。点一项＝那句当她的消息发出去。
 struct ReplyCard: View {
     let options: [String]
     var onPick: (String) -> Void
-    var onClose: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center) {
-                Text("克在问").font(Theme.round(11)).tracking(1.5).foregroundColor(Theme.muted)
-                Spacer()
-                Text("✕").font(Theme.ui(15, weight: .light)).foregroundColor(Theme.muted)
-                    .frame(width: 28, height: 28).contentShape(Rectangle()).onTapGesture(perform: onClose)
-            }
-            .padding(.top, -6)
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(options.enumerated()), id: \.offset) { i, o in
                 HStack(alignment: .center, spacing: 12) {
-                    Text(Self.mark(i)).font(.custom("Georgia", size: 12.5)).foregroundColor(Theme.muted)
-                        .frame(width: 26, height: 26).background(Theme.panel, in: Circle())
-                    Text(o).font(Font(Theme.uiUser(16))).lineSpacing(3).foregroundColor(Theme.text)
+                    Text(Self.mark(i)).font(.custom("Georgia", size: 13)).foregroundColor(Theme.accent).frame(width: 16)
+                    Text(o).font(Theme.serif(16)).lineSpacing(3).foregroundColor(Theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
-                        .foregroundColor(Theme.muted.opacity(0.7))
+                        .foregroundColor(Theme.accent.opacity(0.7))
                 }
-                .padding(.vertical, 11)
-                .contentShape(Rectangle())
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .onTapGesture { onPick(o) }
-                Rectangle().fill(Theme.border).frame(height: 1)   // 最后一条下面这根＝和输入行的分界
             }
         }
-        .padding(.bottom, 6)
+        .padding(.top, -4).padding(.bottom, 6)
     }
     /// A、B、C…；超过 26 个用数字
     static func mark(_ i: Int) -> String { i < 26 ? String(UnicodeScalar(UInt8(65 + i))) : String(i + 1) }
