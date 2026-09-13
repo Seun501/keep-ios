@@ -121,7 +121,7 @@ struct ThinkView: View {
                 // 同一族线图标、同一尺寸（寻 09-09：album 和 Thought 离图标的距离不一样——SF 符号 12pt 满框、Lucide 24 视框自带 2 边距，
                 // 12 框只画 10；两边都换成 14 框的 Lucide，网页 .think-head svg 也是 14）
                 Image("tool-clock").renderingMode(.template).resizable().frame(width: 14, height: 14)
-                Text(label).font(Theme.serif(13))
+                Text(label).font(Theme.mono(12.5))   // 09-13 寻：和下面的工具行同款字（Cascadia），同一族两行别是两种字
             }
             .foregroundColor(Theme.muted)
             .padding(.vertical, 2)
