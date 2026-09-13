@@ -194,7 +194,7 @@ struct AlbumScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { if book != nil { book = nil } else { onBack() } } label: {
-                        Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                        Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
                     }.buttonStyle(.plain).padding(.leading, -8)
                     Text(book == nil ? "相册" : "").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
@@ -240,7 +240,7 @@ struct AlbumScreen: View {
                         VStack(alignment: .leading, spacing: 0) {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(k.isEmpty ? "未分册" : k).font(Theme.georgiaCJK(24)).foregroundColor(Theme.text)   // 中文回落思源宋（寻验 09-04）
-                                if !k.isEmpty && m.pins.contains(k) { Text("★").font(.system(size: 14)).foregroundColor(Theme.dyn(0xE0A896, 0xC98A76)).offset(y: -2) }
+                                if !k.isEmpty && m.pins.contains(k) { Text("★").font(Theme.ui(14)).foregroundColor(Theme.dyn(0xE0A896, 0xC98A76)).offset(y: -2) }
                                 Spacer()
                                 Text("\(ph.count)").font(Theme.round(13.5)).foregroundColor(Theme.muted)
                             }
@@ -284,7 +284,7 @@ struct AlbumScreen: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(k.isEmpty ? "未分册" : k).font(Theme.georgiaCJK(34)).foregroundColor(Theme.text)
                 if !k.isEmpty {
-                    Text("★").font(.system(size: 17)).foregroundColor(m.pins.contains(k) ? Theme.dyn(0xE0A896, 0xC98A76) : Theme.border)
+                    Text("★").font(Theme.ui(17)).foregroundColor(m.pins.contains(k) ? Theme.dyn(0xE0A896, 0xC98A76) : Theme.border)
                         .onTapGesture { m.togglePin(k) }   // 你点的：置顶/取消
                 }
             }
@@ -450,7 +450,7 @@ struct MemScreen: View {
             Theme.boardBg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { onBack() } label: { Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+                    Button { onBack() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
                     Text("记忆").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
                 }

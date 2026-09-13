@@ -53,6 +53,7 @@ targets:
           - NotoSerifSC-SemiBold.otf
           - NotoSerifSC-Bold.otf
           - Lora.ttf
+          - CascadiaMonoASCII.ttf        # 09-13 寻定：界面/她的气泡里的字母数字标点（只含 ASCII 的子集，可变字重）
     entitlements:
       path: Keep.entitlements
       properties:

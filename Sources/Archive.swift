@@ -120,14 +120,14 @@ struct ArchiveScreen: View {
 
     private var head: some View {
         HStack(spacing: 12) {
-            Button { back() } label: { Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+            Button { back() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
             Text(m.view == "hits" ? "搜「\(m.q)」· \(m.hits.count)\(m.truncated ? "+" : "") 处" : (m.day?.date ?? "")).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
             Spacer()
             if m.view == "day", !m.q.isEmpty, markCount > 0 {   // 命中逐处跳转（▲▼）：计数居中
                 HStack(spacing: 2) {
-                    Button { jump(-1) } label: { Text("▲").font(.system(size: 13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
+                    Button { jump(-1) } label: { Text("▲").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
                     Text("\(markIdx + 1)/\(markCount)").font(Theme.round(12)).foregroundColor(Theme.muted).frame(minWidth: 26)
-                    Button { jump(1) } label: { Text("▼").font(.system(size: 13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
+                    Button { jump(1) } label: { Text("▼").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
                 }
             }
             if m.view == "day" {   // 条数开关（08-31 寻定）：点亮＝每条尾巴挂全局编号

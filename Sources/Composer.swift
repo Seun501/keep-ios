@@ -31,7 +31,7 @@ struct Composer: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let ph = UILabel()
-        ph.text = "Chat with…"; ph.font = UIFont.systemFont(ofSize: Self.size)   // 占位照原样系统字（寻验 43）
+        ph.text = "Chat with…"; ph.font = Theme.uiSys(Self.size)   // 占位照原样系统字（寻验 43）
         ph.textColor = UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1)
         ph.tag = 9; ph.sizeToFit(); ph.frame.origin = .zero
         tv.addSubview(ph)
@@ -81,7 +81,7 @@ struct PlainField: UIViewRepresentable {
     @Binding var text: String
     @Binding var focused: Bool
     var placeholder = ""
-    var font = UIFont.systemFont(ofSize: 15)
+    var font = Theme.uiSys(15)
     var align: NSTextAlignment = .natural          // 拨盘打字要居中（寻验 09-04）
     var returnKey: UIReturnKeyType = .send
     var keyboard: UIKeyboardType = .default

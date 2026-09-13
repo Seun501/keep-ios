@@ -231,11 +231,11 @@ struct BooksScreen: View {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button { back() } label: { Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
+                    Button { back() } label: { Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34) }.buttonStyle(.plain).padding(.leading, -8)
                     Text(title).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
                     Spacer()
                     if case .shelf = m.mode {   // 新书上架
-                        Button { Task { await m.openUpload() } } label: { Text("+").font(.system(size: 27, weight: .light)).foregroundColor(Theme.text).frame(width: 34, height: 34) }.buttonStyle(.plain)
+                        Button { Task { await m.openUpload() } } label: { Text("+").font(Theme.ui(27, weight: .light)).foregroundColor(Theme.text).frame(width: 34, height: 34) }.buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).frame(minHeight: 52)
@@ -277,7 +277,7 @@ struct BooksScreen: View {
     // MARK: 书架
     @ViewBuilder private var shelf: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("书架").font(.system(size: 29, weight: .semibold)).foregroundColor(Theme.text)
+            Text("书架").font(Theme.ui(29, weight: .semibold)).foregroundColor(Theme.text)
             Text(m.books.isEmpty ? "给克，也给以后在这里读书的你" : "已经上架 \(m.workCount) 本书").font(Theme.round(13.5)).foregroundColor(Theme.muted).padding(.top, 5)
         }
         .padding(EdgeInsets(top: 8, leading: 2, bottom: 22, trailing: 2))
@@ -320,13 +320,13 @@ struct BooksScreen: View {
         tags += (b.tags ?? []).prefix(2)
         let glyph = String((b.title ?? "书").replacingOccurrences(of: "[《》：:·\\s]", with: "", options: .regularExpression).prefix(1)).isEmpty ? "书" : String((b.title ?? "书").replacingOccurrences(of: "[《》：:·\\s]", with: "", options: .regularExpression).prefix(1))
         return HStack(spacing: 13) {
-            Text(glyph).font(.system(size: 18, weight: .semibold)).foregroundColor(.white)
+            Text(glyph).font(Theme.ui(18, weight: .semibold)).foregroundColor(.white)
                 .frame(width: 52, height: 70)
                 .background(index % 3 == 0 ? Color(red: 0x8C/255, green: 0x83/255, blue: 0x74/255) : Color(red: 0xB9/255, green: 0x79/255, blue: 0x62/255),
                             in: UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 5, bottomTrailingRadius: 10, topTrailingRadius: 10))
                 .overlay(alignment: .leading) { Rectangle().fill(Wax.ink.opacity(0.12)).frame(width: 4).clipShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 5)) }
             VStack(alignment: .leading, spacing: 0) {
-                Text(b.title ?? "未命名").font(.system(size: 16, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text)
+                Text(b.title ?? "未命名").font(Theme.ui(16, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text)
                 Text(b.author ?? b.editionLabel ?? "作者未录入").font(Theme.round(12.5)).foregroundColor(Theme.muted).padding(.top, 4)
                 if !tags.isEmpty {
                     HStack(spacing: 5) { ForEach(tags, id: \.self) { t in Text(t).font(Theme.round(11)).foregroundColor(Theme.muted).padding(.horizontal, 8).padding(.vertical, 3).background(Theme.bg, in: Capsule()) } }.padding(.top, 7)
@@ -339,7 +339,7 @@ struct BooksScreen: View {
         .shadow(color: Wax.ink.opacity(0.05), radius: 2, y: 1)
     }
     private func emptyBig(_ a: String, _ b: String) -> some View {
-        VStack(spacing: 5) { Text(a).font(.system(size: 19)).foregroundColor(Theme.text); Text(b).font(Theme.round(13)).foregroundColor(Theme.muted) }
+        VStack(spacing: 5) { Text(a).font(Theme.ui(19)).foregroundColor(Theme.text); Text(b).font(Theme.round(13)).foregroundColor(Theme.muted) }
             .frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.26)
     }
     private func status(_ t: String, _ d: String) -> some View {
@@ -352,7 +352,7 @@ struct BooksScreen: View {
     }
     private func lead(_ h: String, _ p: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(h).font(.system(size: 25, weight: .semibold)).foregroundColor(Theme.text)
+            Text(h).font(Theme.ui(25, weight: .semibold)).foregroundColor(Theme.text)
             Text(p).font(Theme.round(13.5)).lineSpacing(5).foregroundColor(Theme.muted)
         }.padding(EdgeInsets(top: 7, leading: 2, bottom: 18, trailing: 2)).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -383,8 +383,8 @@ struct BooksScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             lead("新书上架", "可以一次放进同一本书的多个版本。先转换验书，确认后才会出现在正式书架。")
             VStack(spacing: 0) {
-                Text("+").font(.system(size: 35, weight: .light)).foregroundColor(Theme.accent)
-                Text("选择电子书").font(.system(size: 16)).foregroundColor(Theme.text).padding(.top, 9)
+                Text("+").font(Theme.ui(35, weight: .light)).foregroundColor(Theme.accent)
+                Text("选择电子书").font(Theme.ui(16)).foregroundColor(Theme.text).padding(.top, 9)
                 Text("EPUB · MOBI · AZW3 · FB2 · PDF · TXT\n单个不超过 120 MB，一次最多 8 个版本").font(Theme.round(12)).lineSpacing(4).multilineTextAlignment(.center).foregroundColor(Theme.muted).padding(.top, 5)
             }
             .frame(maxWidth: .infinity).frame(minHeight: 170).padding(EdgeInsets(top: 24, leading: 20, bottom: 24, trailing: 20))
@@ -408,10 +408,10 @@ struct BooksScreen: View {
     private func fileRow(_ fmt: String, _ name: String, _ size: Int, remove: @escaping () -> Void) -> some View {
         HStack(spacing: 10) {
             Text(fmt).font(Theme.round(12)).foregroundColor(Theme.accent).frame(minWidth: 36, alignment: .leading)
-            Text(name).font(.system(size: 13.5)).foregroundColor(Theme.text).lineLimit(1).truncationMode(.middle)
+            Text(name).font(Theme.ui(13.5)).foregroundColor(Theme.text).lineLimit(1).truncationMode(.middle)
             Spacer()
             Text(sizeText(size)).font(Theme.round(11)).foregroundColor(Theme.muted)
-            Button(action: remove) { Text("×").font(.system(size: 18)).foregroundColor(Theme.muted).padding(.horizontal, 4).padding(.vertical, 2) }.buttonStyle(.plain)
+            Button(action: remove) { Text("×").font(Theme.ui(18)).foregroundColor(Theme.muted).padding(.horizontal, 4).padding(.vertical, 2) }.buttonStyle(.plain)
         }
         .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -442,7 +442,7 @@ struct BooksScreen: View {
                     }
                     ForEach(Array((r.failedFiles ?? []).enumerated()), id: \.offset) { _, f in
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(f.filename ?? "未命名版本").font(.system(size: 16, weight: .semibold)).foregroundColor(Theme.text)
+                            Text(f.filename ?? "未命名版本").font(Theme.ui(16, weight: .semibold)).foregroundColor(Theme.text)
                             Text("这个版本没有转换成功，不会妨碍其他版本继续上架。").font(Theme.round(12)).foregroundColor(Theme.muted)
                             Text(f.error ?? "文件可能已损坏").font(Theme.round(12)).foregroundColor(Theme.dyn(0xA54E38, 0xE2A18B))
                         }
@@ -483,7 +483,7 @@ struct BooksScreen: View {
                     }
                     VStack(alignment: .leading, spacing: 5) {
                         Text("标签（用逗号隔开）").font(Theme.round(12)).foregroundColor(Theme.muted).padding(.leading, 2)
-                        PlainField(text: $pubTags, focused: .constant(false), placeholder: "例如：共读，唯识，待读", font: UIFont.systemFont(ofSize: 14))
+                        PlainField(text: $pubTags, focused: .constant(false), placeholder: "例如：共读，唯识，待读", font: Theme.uiSys(14))
                             .frame(height: 18).padding(EdgeInsets(top: 11, leading: 12, bottom: 11, trailing: 12))
                             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.border, lineWidth: 1))
@@ -513,7 +513,7 @@ struct BooksScreen: View {
         let on = m.selected.contains(bk.id)
         let q = bk.quality
         return VStack(alignment: .leading, spacing: 3) {
-            Text(bk.title ?? "未命名").font(.system(size: 16, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text)
+            Text(bk.title ?? "未命名").font(Theme.ui(16, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text)
             Text(bk.sourceFilename ?? "").font(Theme.round(12)).foregroundColor(Theme.muted)
             Text((bk.author ?? "作者未录入") + (bk.editionLabel.map { " · " + $0 } ?? "")).font(Theme.round(12)).foregroundColor(Theme.muted)
             if recommended { Text("建议采用").font(Theme.round(12)).foregroundColor(Theme.accent) }
@@ -528,7 +528,7 @@ struct BooksScreen: View {
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(on ? Theme.accent : Theme.border, lineWidth: on ? 2 : 1))
         .overlay(alignment: .topTrailing) {
-            ZStack { RoundedRectangle(cornerRadius: 6).fill(on ? Theme.accent : .clear); RoundedRectangle(cornerRadius: 6).stroke(on ? Theme.accent : Theme.border, lineWidth: 1.5); if on { Text("✓").font(.system(size: 13, weight: .semibold)).foregroundColor(.white) } }
+            ZStack { RoundedRectangle(cornerRadius: 6).fill(on ? Theme.accent : .clear); RoundedRectangle(cornerRadius: 6).stroke(on ? Theme.accent : Theme.border, lineWidth: 1.5); if on { Text("✓").font(Theme.ui(13, weight: .semibold)).foregroundColor(.white) } }
                 .frame(width: 20, height: 20).padding(.top, 15).padding(.trailing, 14)
         }
         .contentShape(Rectangle())
@@ -549,7 +549,7 @@ struct BooksScreen: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("扫描页 \(it.sourcePage ?? 0) · \(it.reason ?? "待确认")").font(Theme.round(12)).foregroundColor(Theme.muted)
                         TextEditor(text: Binding(get: { m.ocrTexts[it.id] ?? "" }, set: { m.ocrTexts[it.id] = $0 }))
-                            .font(.system(size: 14)).foregroundColor(Theme.text).scrollContentBackground(.hidden)
+                            .font(Theme.ui(14)).foregroundColor(Theme.text).scrollContentBackground(.hidden)
                             .frame(minHeight: 72).padding(6)
                             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.border, lineWidth: 1))
@@ -575,8 +575,8 @@ struct SampleDisclosure: View {
             if open {
                 ForEach(["开头", "中间", "结尾"], id: \.self) { k in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(k).font(.system(size: 13.5, weight: .semibold)).foregroundColor(Theme.text)
-                        Text(bk.samples?[k] ?? "（没有提取到文字）").font(.system(size: 13.5)).lineSpacing(5).foregroundColor(Theme.text)
+                        Text(k).font(Theme.ui(13.5, weight: .semibold)).foregroundColor(Theme.text)
+                        Text(bk.samples?[k] ?? "（没有提取到文字）").font(Theme.ui(13.5)).lineSpacing(5).foregroundColor(Theme.text)
                     }.padding(.top, 9)
                 }
             }

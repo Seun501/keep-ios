@@ -124,7 +124,7 @@ struct BoardScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { onBack() } label: {
-                        Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                        Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
                     }.buttonStyle(.plain).padding(.leading, -8)
                     Spacer()
                     Text(motto[m.tab] ?? "").font(Theme.cjk(13.5, weight: .medium)).tracking(1)
@@ -147,7 +147,7 @@ struct BoardScreen: View {
             // 写信入口＝右下角小圆球（08-27 寻定：墨色，橙用太多了），钉在底栏上方
             if m.tab == "letters" && letterOpen == nil && !composing {
                 Button { composeDraft = nil; composing = true } label: {
-                    Text("＋").font(.system(size: 25, weight: .light)).foregroundColor(Theme.bg).padding(.bottom, 2)   // 网页是全角＋（半角的太小，寻验 09-04）
+                    Text("＋").font(Theme.ui(25, weight: .light)).foregroundColor(Theme.bg).padding(.bottom, 2)   // 网页是全角＋（半角的太小，寻验 09-04）
                         .frame(width: 44, height: 44).background(Circle().fill(Theme.text).shadow(color: Wax.ink.opacity(0.28), radius: 7, y: 5))
                 }.buttonStyle(.plain)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -400,7 +400,7 @@ struct NotePop: View {
                 .overlay(Capsule().stroke(Theme.hairRing, lineWidth: 1.5))
             Button { sendReply() } label: {
                 Text((note.isTicket && !note.closed && text.trimmingCharacters(in: .whitespaces).isEmpty) ? "✓" : "↑")
-                    .font(.system(size: 15)).foregroundColor(.white)
+                    .font(Theme.ui(15)).foregroundColor(.white)
                     .frame(width: 30, height: 30).background(Theme.accent, in: Circle())
             }
             .buttonStyle(.plain)

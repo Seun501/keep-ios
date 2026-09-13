@@ -327,7 +327,7 @@ struct DraftCard: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             // 删除键（照 .draft-del：40 圆、橙）：叉＝右下角那个全角＋原样转 45°（寻验 09-04 二回：和＋一般大，「相当于旋转一下」）
-            Text("＋").font(.system(size: 25, weight: .light)).foregroundColor(.white).rotationEffect(.degrees(45))
+            Text("＋").font(Theme.ui(25, weight: .light)).foregroundColor(.white).rotationEffect(.degrees(45))
                 .frame(width: 40, height: 40).background(Circle().fill(Theme.accent).shadow(color: Theme.accent.opacity(0.32), radius: 7, y: 5))
                 .padding(.trailing, 6)
                 .contentShape(Circle())
@@ -431,7 +431,7 @@ struct LetterComposeView: View {
                 .onChange(of: text) { t in draftId = m.upsertDraft(draftId, t) }
             HStack(alignment: .center) {
                 // ✕ 同纸飞机一样大、一样高（寻验 09-04：26 太大）
-                Button { onClose() } label: { Text("✕").font(.system(size: 19, weight: .light)).foregroundColor(Theme.muted).frame(width: 23, height: 23).padding(8) }.buttonStyle(.plain)
+                Button { onClose() } label: { Text("✕").font(Theme.ui(19, weight: .light)).foregroundColor(Theme.muted).frame(width: 23, height: 23).padding(8) }.buttonStyle(.plain)
                 Spacer()
                 Button {
                     let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -587,7 +587,7 @@ struct SealSheet: View {
                 HStack(spacing: 13) {
                     Text("口令").font(Theme.round(15)).foregroundColor(Theme.text)
                     Spacer()
-                    PlainField(text: $pass, focused: $passFocused, placeholder: "", font: UIFont.systemFont(ofSize: 14))
+                    PlainField(text: $pass, focused: $passFocused, placeholder: "", font: Theme.uiSys(14))
                         .frame(height: 18)
                         .padding(.vertical, 8).padding(.horizontal, 13)
                         .frame(maxWidth: UIScreen.main.bounds.width * 0.5)
@@ -711,7 +711,7 @@ struct NumCell: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card).shadow(color: Wax.ink.opacity(0.05), radius: 1.5, y: 1)
                 if typing {
                     // 点进去＝空格子、光标居中、数字键盘；什么都没填就退出＝保留原数（寻验 09-04）
-                    PlainField(text: $buf, focused: $typingFocus, placeholder: "", font: UIFont.systemFont(ofSize: 18, weight: .semibold),
+                    PlainField(text: $buf, focused: $typingFocus, placeholder: "", font: Theme.uiSys(18, weight: .semibold),
                                align: .center, returnKey: .done, keyboard: .numberPad, onSubmit: { commit() })
                         .frame(height: 22).padding(.horizontal, 6)
                         .onChange(of: typingFocus) { f in if !f { commit() } }
@@ -767,7 +767,7 @@ struct LockPop: View {
                 }
                 if e.hasPassphrase == true {
                     HStack(spacing: 12) {
-                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: UIFont.systemFont(ofSize: 13), onSubmit: { go() })   // 「口令」靠左（寻 09-05：居左好看）
+                        PlainField(text: $pass, focused: $passFocused, placeholder: "口令", font: Theme.uiSys(13), onSubmit: { go() })   // 「口令」靠左（寻 09-05：居左好看）
                             .frame(height: 18).padding(.vertical, 5).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
                         Button { go() } label: {

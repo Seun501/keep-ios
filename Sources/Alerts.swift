@@ -52,7 +52,7 @@ struct DoorView: View {
                 }
                 if !knocked {   // 敲一句穿门：门关着时她唯一能递进来的一句
                     HStack(spacing: 12) {
-                        PlainField(text: $text, focused: $focused, placeholder: "Knock…", font: UIFont.systemFont(ofSize: 14), onSubmit: { send() })
+                        PlainField(text: $text, focused: $focused, placeholder: "Knock…", font: Theme.uiSys(14), onSubmit: { send() })
                             .frame(height: 20).padding(.vertical, 7).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(focused ? Theme.muted : Theme.border).frame(height: 1) }
                         Button { send() } label: {

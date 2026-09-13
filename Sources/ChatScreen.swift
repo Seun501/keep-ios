@@ -537,7 +537,7 @@ struct ChatScreen: View {
             .scrollIndicators(.visible)               // 系统原生指示条（染成赤陶，见 ScrollObserver）：能拖、拉到头会缩、和网页同款
             .scrollBounceBehavior(.always, axes: .vertical)
             .scrollDismissesKeyboard(.interactively)
-            .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(.system(size: 9)).foregroundColor(.red).padding(4) } }
+            .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(Theme.ui(9)).foregroundColor(.red).padding(4) } }
             // 什么都没拉到（没缓存、两次都连不上）：一行小字，点一下再试（展示样式待寻审）
             .overlay {
                 if model.items.isEmpty, model.live == nil, let e = model.lastError {
@@ -638,7 +638,7 @@ struct ChatScreen: View {
             LintelColumn(m: lintel)
             Button { showMeal = true } label: {
                 Group {
-                    if mealOk { Text("✓").font(.system(size: 17, weight: .bold)).foregroundColor(Theme.accent) }
+                    if mealOk { Text("✓").font(Theme.ui(17, weight: .bold)).foregroundColor(Theme.accent) }
                     else { Image("bowl").renderingMode(.template).resizable().frame(width: 20, height: 20).foregroundColor(Theme.muted) }
                 }.frame(width: 34, height: 34)
             }
@@ -762,7 +762,7 @@ struct ChatScreen: View {
                         if model.sending {
                             RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
                         } else if canSend {
-                            Text("↑").font(.system(size: 17, weight: .medium)).foregroundColor(.white)   // 照网页 #send .arr
+                            Text("↑").font(Theme.ui(17, weight: .medium)).foregroundColor(.white)   // 照网页 #send .arr
                         } else {
                             Image("wav").renderingMode(.template).resizable().frame(width: 25, height: 25)
                                 .foregroundColor(Theme.sendIdleFg)                              // 网页那份 SVG 原件
@@ -905,7 +905,7 @@ struct WebShellScreen: View {
         VStack(spacing: 0) {
             HStack {
                 Button { onBack(); dismiss() } label: {
-                    Text("‹").font(.system(size: 26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
+                    Text("‹").font(Theme.ui(26)).foregroundColor(Theme.muted).frame(width: 34, height: 34)
                 }.buttonStyle(.plain).padding(.leading, -8)
                 Spacer()
             }

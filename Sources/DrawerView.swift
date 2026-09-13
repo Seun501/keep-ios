@@ -20,10 +20,7 @@ struct DrawerView: View {
     var onNavigate: (Route) -> Void = { _ in }
     @State private var q = ""
     @State private var qFocused = false
-    private static let searchFont: UIFont = {
-        let d = UIFont.systemFont(ofSize: 14).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 14).fontDescriptor
-        return UIFont(descriptor: d, size: 14)
-    }()
+    private static let searchFont: UIFont = Theme.uiRound(14)   // 09-13：Cascadia → 圆体
     // 日子和额度先用上次记下的（UserDefaults），拉到新的再换——通道慢时抽屉也别空着
     @State private var days: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.days") ?? [])   // 档案馆有记录的日子 yyyy-MM-dd
     @State private var window: [String] = Preview.on ? [] : (UserDefaults.standard.stringArray(forKey: "cache.window") ?? [])   // 克此刻窗口里的日子
@@ -136,11 +133,11 @@ struct DrawerView: View {
         let cellH: CGFloat = 34
         return VStack(spacing: 8) {
             HStack {
-                Button { shift(-1) } label: { Text("‹").font(.system(size: 21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
+                Button { shift(-1) } label: { Text("‹").font(Theme.ui(21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
                 Spacer()
                 Text("\(String(y)) 年 \(m) 月").font(Theme.round(14.5)).foregroundColor(Theme.text)
                 Spacer()
-                Button { shift(1) } label: { Text("›").font(.system(size: 21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
+                Button { shift(1) } label: { Text("›").font(Theme.ui(21)).foregroundColor(Theme.accent).padding(.horizontal, 12) }
             }
             .buttonStyle(.plain)
             // 非懒排：整月一次量完（LazyVGrid 换月时先按旧高度排、下一帧再改，箭头会「升起来」）

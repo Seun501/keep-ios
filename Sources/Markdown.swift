@@ -87,7 +87,7 @@ enum MD {
     /// 粗体用 600：网页自托管的思源宋体只有 400/500/600，**粗** 在网页上落到 600（寻验 36 对比图：App 的 700 太重）
     static func keNS(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium, color: UIColor = Theme.uiText, lineHeight: CGFloat = 1.6) -> NSAttributedString {
         ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .semibold),
-           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: color, lineHeight: lineHeight,
+           mono: Theme.uiMono(size * 0.86, weight: .regular), color: color, lineHeight: lineHeight,
            cjkLineHeight: Theme.uiCJK(size, weight: weight).lineHeight)
     }
     /// 寻的气泡与输入框：网页 body 那套字（Lora → 宋体 Songti SC，常规），18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
@@ -96,18 +96,18 @@ enum MD {
         let key = "\(size)|\(s)" as NSString
         if let c = xunCache.object(forKey: key) { return c }
         let r = ns(s, base: Theme.uiUser(size), bold: Theme.uiUser(size, bold: true),
-           mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular),
+           mono: Theme.uiMono(size * 0.86, weight: .regular),
            color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiSongti(size).lineHeight)
         xunCache.setObject(r, forKey: key)
         return r
     }
     static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
         styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
-               mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.text)
+               mono: Theme.uiMono(size * 0.86, weight: .regular), color: Theme.text)
     }
     static func xun(_ s: String, size: CGFloat = 17) -> AttributedString {
-        styled(s, base: UIFont.systemFont(ofSize: size), bold: UIFont.systemFont(ofSize: size, weight: .semibold),
-               mono: UIFont.monospacedSystemFont(ofSize: size * 0.86, weight: .regular), color: Theme.text)
+        styled(s, base: Theme.uiSys(size), bold: Theme.uiSys(size, weight: .semibold),
+               mono: Theme.uiMono(size * 0.86, weight: .regular), color: Theme.text)
     }
 
     static func parse(_ text: String) -> [Block] {
@@ -220,7 +220,7 @@ struct MarkdownView: View {
             RichText(attr: MD.keNS(s, size: lv <= 2 ? 21 : 18.5, weight: .semibold, lineHeight: 1.35))
         case .code(let c):
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(c).font(.system(size: 13.5, design: .monospaced)).foregroundColor(Theme.text)
+                Text(c).font(Theme.mono(13.5)).foregroundColor(Theme.text)
                     .padding(10)
             }
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -409,7 +409,7 @@ enum MDWhole {
             case .code(let c):
                 let p = NSMutableParagraphStyle(); p.paragraphSpacing = last ? 0 : 16; p.headIndent = 10; p.firstLineHeadIndent = 10
                 out.append(NSAttributedString(string: c, attributes: [
-                    .font: UIFont.monospacedSystemFont(ofSize: 13.5, weight: .regular), .foregroundColor: Theme.uiText,
+                    .font: Theme.uiMono(13.5, weight: .regular), .foregroundColor: Theme.uiText,
                     .backgroundColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27), .paragraphStyle: p]))
             case .table(let head, let rows):
                 var lines = [head.joined(separator: "  |  ")]

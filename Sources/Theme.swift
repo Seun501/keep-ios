@@ -79,13 +79,67 @@ enum Theme {
     static func uiSongti(_ size: CGFloat, bold: Bool = false) -> UIFont {
         UIFont(name: bold ? "STSongti-SC-Bold" : "STSongti-SC-Regular", size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
     }
-    /// 寻那一套（网页 body：'Lora', Georgia, 'Songti SC'）：Lora 400 → 系统宋体；粗体 Lora 600 → 宋体粗
+    // MARK: Cascadia Mono（寻 09-13）：界面和她的气泡里的字母、数字、英文标点走 Cascadia Mono。
+    // 打包的是只含 ASCII（U+0020–007E）的子集（38 KB，可变字重 200–700）——其余字符它根本没有，
+    // 一律落回后面的级联字体，所以汉字、中文标点、弯引号、emoji 都不会被它抢走。
+    // 克的正文/思考链（uiSerif/cjk）和 Georgia 装饰字、Snell 花体不走这里（寻定：3、6 不换）。
+    private static let casName = "CascadiaMono-Regular"
+    private static func casDescriptor(_ size: CGFloat, wght: CGFloat, cascade: [UIFontDescriptor]) -> UIFontDescriptor? {
+        guard UIFont(name: casName, size: size) != nil else { return nil }   // 字体没打进包就原样用后面的
+        let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        return UIFontDescriptor(name: casName, size: size)
+            .addingAttributes([variation: [2003265652: wght], .cascadeList: cascade])   // 'wght' 轴
+    }
+    private static func uiWeight(_ w: Font.Weight) -> UIFont.Weight {
+        switch w {
+        case .ultraLight: return .ultraLight
+        case .thin: return .thin
+        case .light: return .light
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        case .heavy: return .heavy
+        case .black: return .black
+        default: return .regular
+        }
+    }
+    private static func casWght(_ w: Font.Weight) -> CGFloat {
+        switch w {
+        case .ultraLight, .thin: return 200
+        case .light: return 300
+        case .medium: return 500
+        case .semibold: return 600
+        case .bold, .heavy, .black: return 700
+        default: return 400
+        }
+    }
+    /// 界面通用字（原来的 .system）：Cascadia → 苹果系统字同字重
+    static func uiSys(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let sys = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
+        guard let d = casDescriptor(size, wght: casWght(weight), cascade: [sys.fontDescriptor]) else { return sys }
+        return UIFont(descriptor: d, size: size)
+    }
+    static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiSys(size, weight: weight)) }
+    /// 圆体那一档（时间戳、纸条、搜索框）：Cascadia → 系统圆体
+    static func uiRound(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
+        let rd = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        guard let d = casDescriptor(size, wght: casWght(weight), cascade: [rd]) else { return UIFont(descriptor: rd, size: size) }
+        return UIFont(descriptor: d, size: size)
+    }
+    /// 等宽（工具行、代码块）：Cascadia → SF Mono
+    static func uiMono(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let mono = UIFont.monospacedSystemFont(ofSize: size, weight: uiWeight(weight))
+        guard let d = casDescriptor(size, wght: casWght(weight), cascade: [mono.fontDescriptor]) else { return mono }
+        return UIFont(descriptor: d, size: size)
+    }
+    static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiMono(size, weight: weight)) }
+
+    /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia 400 → 汉字系统宋体；粗体 Cascadia 600 → 宋体粗
     static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
         let song = uiSongti(size, bold: bold).fontDescriptor
-        var lora = descriptor("Lora-Regular", size: size, fallback: song)
-        let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
-        lora = lora.addingAttributes([variation: [2003265652: bold ? 600 : 400], .cascadeList: [song]])
-        return UIFont(descriptor: lora, size: size)
+        guard let d = casDescriptor(size, wght: bold ? 600 : 400, cascade: [song]) else { return UIFont(descriptor: song, size: size) }
+        return UIFont(descriptor: d, size: size)
     }
     /// 纯中文场合（门楣、题）：Noto 打头。
     static func cjk(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
@@ -102,6 +156,6 @@ enum Theme {
         return Font(UIFont(descriptor: g, size: size))
     }
     static func round(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
+        Font(uiRound(size, weight: weight))   // 09-13：圆体前头加 Cascadia（字母数字标点）
     }
 }

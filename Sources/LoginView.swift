@@ -28,7 +28,7 @@ struct LoginView: View {
                     .padding(.bottom, 34)
 
                 SecureField("", text: $text, prompt: Text("口令").foregroundColor(muted.opacity(0.7)))
-                    .font(.system(size: 17))
+                    .font(Theme.ui(17))
                     .foregroundStyle(fg)
                     .multilineTextAlignment(.center)
                     .textContentType(.password)
@@ -40,7 +40,7 @@ struct LoginView: View {
                     .background(field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 Text(error)
-                    .font(.system(size: 13))
+                    .font(Theme.ui(13))
                     .foregroundStyle(accent)
                     .frame(height: 30)
 

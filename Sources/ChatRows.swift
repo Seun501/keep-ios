@@ -135,7 +135,7 @@ struct ThinkView: View {
                 HStack(alignment: .top, spacing: 14) {
                     Rectangle().fill(Theme.border).frame(width: 1.5).padding(.leading, 4)
                     RichText(attr: MD.ns(text, base: Theme.uiSerif(14), bold: Theme.uiSerif(14, weight: .semibold),
-                                          mono: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular), color: Theme.uiMuted, lineHeight: 1.6))
+                                          mono: Theme.uiMono(12, weight: .regular), color: Theme.uiMuted, lineHeight: 1.6))
                 }
                 .padding(.vertical, 4)
             }
@@ -256,7 +256,7 @@ struct ToolChipView: View {
         HStack(spacing: 7) {
             Image(Self.icons[name] ?? "wrench").renderingMode(.template).resizable().frame(width: 14, height: 14)   // 同 ThinkView 的 14
             Text(name + (done ? "" : "…"))   // 寻 09-08：不写中文，工具原名（labels 留着备用）
-                .font(.system(size: 12.5, design: .monospaced))   // 09-12 寻定：换成代码块那种字（SF Mono）
+                .font(Theme.mono(12.5))   // 09-12 寻定：换成代码块那种字（SF Mono）
         }
         .foregroundColor(Theme.muted)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,10 +271,7 @@ struct PingChipView: View {
     let msg: Msg
     var forceMeal = false
     private static let font = Theme.round(12.5)
-    private static let uiFont: UIFont = {
-        let d = UIFont.systemFont(ofSize: 12.5).fontDescriptor.withDesign(.rounded) ?? UIFont.systemFont(ofSize: 12.5).fontDescriptor
-        return UIFont(descriptor: d, size: 12.5)
-    }()
+    private static let uiFont: UIFont = Theme.uiRound(12.5)   // 09-13：Cascadia → 圆体（与 font 同源）
 
     private var isMeal: Bool { msg.meal == true || forceMeal }
     private var icon: String { msg.rainNote == true ? "cloud" : (msg.placeNote == true ? "pin" : (isMeal ? "bowl" : "moon")) }

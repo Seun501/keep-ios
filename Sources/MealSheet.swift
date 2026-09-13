@@ -46,7 +46,7 @@ struct MealSheet: View {
                             .padding(.vertical, 7).padding(.horizontal, 2)
                             .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1) }
                         PhotosPicker(selection: $pick, maxSelectionCount: 1, matching: .images) {
-                            Text("＋").font(.system(size: 16)).foregroundColor(Theme.muted)
+                            Text("＋").font(Theme.ui(16)).foregroundColor(Theme.muted)
                                 .frame(width: 28, height: 28)
                                 .overlay(Circle().stroke(Theme.border, lineWidth: 1))
                         }.buttonStyle(.plain)
