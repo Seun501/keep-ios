@@ -60,43 +60,4 @@ struct ReplyCard: View {
     static func mark(_ i: Int) -> String { i < 26 ? String(UnicodeScalar(UInt8(65 + i))) : String(i + 1) }
 }
 
-/// 他的话下面淡掉的一排（聊天里回过的旧条、档案馆）：只看不点，留个「他当时给过什么」的痕迹
-struct ReplyChips: View {
-    let options: [String]
-    var body: some View {
-        FlowLayout(spacing: 8) {
-            ForEach(Array(options.enumerated()), id: \.offset) { _, o in
-                Text(o).font(Font(Theme.uiUser(15))).lineSpacing(3).foregroundColor(Theme.text)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            }
-        }
-        .opacity(0.55)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// 从左到右排、放不下换行（iOS 16 的 Layout）
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(proposal.width ?? (UIScreen.main.bounds.width - 32), subviews).size
-    }
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let a = arrange(bounds.width, subviews)
-        for (i, p) in a.points.enumerated() {
-            subviews[i].place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: ProposedViewSize(a.sizes[i]))
-        }
-    }
-    private func arrange(_ maxW: CGFloat, _ subviews: Subviews) -> (size: CGSize, points: [CGPoint], sizes: [CGSize]) {
-        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, w: CGFloat = 0
-        var pts: [CGPoint] = [], sizes: [CGSize] = []
-        for s in subviews {
-            let sz = s.sizeThatFits(ProposedViewSize(width: maxW, height: nil))
-            if x > 0, x + sz.width > maxW { x = 0; y += rowH + spacing; rowH = 0 }
-            pts.append(CGPoint(x: x, y: y)); sizes.append(sz)
-            x += sz.width + spacing; rowH = max(rowH, sz.height); w = max(w, x - spacing)
-        }
-        return (CGSize(width: w, height: y + rowH), pts, sizes)
-    }
-}
+// 09-14 寻定：她回过之后不留痕迹（聊天页只摘掉不画）；档案馆放原文，[reply: …] 照排——淡胶囊那排撤了

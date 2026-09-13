@@ -179,7 +179,7 @@ struct AIRowView: View {
     var flash = false
     var highlight = ""
     var afterTools = false   // 上一行是「只有工具行」的 AI 行（列表给的行距已收到 4/8）：正文顶不再 11
-    var chips = true         // 他给的选项淡淡地画在话下面；聊天页正在输入卡上方摊着选项卡的那条不画（免得重复）
+    var parseReplies = true  // 聊天页：末尾的 [reply: …] 摘掉不画（选项卡在输入卡上，她回过就没了，不留痕迹）；档案馆传 false＝原文照放（寻 09-14 定）
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {   // 照网页：.think 下空 4，.bubble 上下各 11，.metarow 再空 5
             let th = msg.cleanThinking
@@ -189,9 +189,8 @@ struct AIRowView: View {
             }
             // 工具行紧贴在 thought 下面、同一族（寻 09-08：A 社式）——不再单独占一行列表项（那样上下各隔 22）
             let tools = msg.toolCalls ?? []
-            let parsed = Replies.split(msg.content ?? "")   // [reply: …] 摘出来画成选项卡，正文只剩他的话
+            let parsed = parseReplies ? Replies.split(msg.content ?? "") : Replies.Parsed(msg.content ?? "", [])
             let hasBody = !(msg.images ?? []).isEmpty || !parsed.text.isEmpty
-            let hasChips = chips && !parsed.options.isEmpty
             // 同一条里既有正文又有工具调用＝克先说了话再调工具（内容块顺序就是 text→tool_use），
             // 工具行画在正文**后面**（09-12 寻验：写到一半调的工具，行跑到正文上头去了，和直播时的顺序对不上）
             if hasBody {
@@ -205,12 +204,8 @@ struct AIRowView: View {
                         RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
                     }
                 }
-                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 9-2+13≈20；正文后面还有工具行时下沿 9（寻 09-13：夹在文中的工具行上下太窄）、选项卡 4
-                .padding(.top, afterTools ? -2 : 11).padding(.bottom, (tools.isEmpty && !hasChips) ? 11 : (tools.isEmpty ? 4 : 9))
-            }
-            if hasChips {
-                ReplyChips(options: parsed.options)
-                    .padding(.top, hasBody ? 4 : 11).padding(.bottom, tools.isEmpty ? 11 : 4)
+                // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 9-2+13≈20；正文后面还有工具行时下沿 9（寻 09-13：夹在文中的工具行上下太窄）
+                .padding(.top, afterTools ? -2 : 11).padding(.bottom, tools.isEmpty ? 11 : 9)
             }
             // 间距（寻 09-08 夜）：离 thought 太近、离正文太远 → 两头都 10：thought 头自带 2+4，工具行再上 4；连排工具行之间照旧 4
             ForEach(Array(tools.enumerated()), id: \.offset) { i, tc in

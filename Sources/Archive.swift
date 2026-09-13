@@ -267,7 +267,7 @@ struct ArchiveScreen: View {
         } else if e.role == "user" {
             UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q)
         } else {
-            AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q)
+            AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, parseReplies: false)   // 档案馆放原文，[reply: …] 照排
         }
     }
     private func pingMsg(_ e: ArchEntry) -> Msg {

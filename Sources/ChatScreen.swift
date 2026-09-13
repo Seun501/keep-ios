@@ -686,8 +686,7 @@ struct ChatScreen: View {
         case .daySep(let d): DaySepView(day: d)
         case .user(let t, let s, let imgs): UserRowView(text: t, stamp: s, images: imgs)
         case .ai(_, let m, let u):
-            // 最末一条的选项正摊在输入卡上方时，话下面那排淡的就不画（她回过话、卡撤了再画回来）
-            AIRowView(msg: m, showUsage: u, afterTools: afterTools, chips: !(last && activeReplies != nil))
+            AIRowView(msg: m, showUsage: u, afterTools: afterTools)
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
         case .ping(let m): PingChipView(msg: m)
         case .wakeChip(let hm): WakeChipView(hm: hm)
