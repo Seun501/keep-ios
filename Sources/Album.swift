@@ -13,7 +13,8 @@ struct Photo: Decodable, Identifiable {
     var src: String?
     var surfUrl: String?
     var no: Int?
-    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, surfUrl = "surf_url" }
+    var pid: Int?      // 照片的永久编号（09-12）：克口中的 #N——和他说「哪张」就靠它
+    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, pid, surfUrl = "surf_url" }
     var id: String { img + (ts ?? "") }
     var url: URL? { img.hasPrefix("http") ? URL(string: img) : URL(string: img, relativeTo: Gateway.home)?.absoluteURL }
 }
@@ -414,7 +415,11 @@ struct Lightbox: View {
                 Spacer()
                 if sheet {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(17, weight: .bold)).lineSpacing(4).foregroundColor(Theme.text)
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            // 永久编号（寻 09-13：和克讲「哪张」要看得见）：同档案馆的 #N 小签，长按抄进剪贴板
+                            if let n = p.pid, n > 0 { NoTag("#\(n)", flash: false) }
+                            Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(17, weight: .bold)).lineSpacing(4).foregroundColor(Theme.text)
+                        }
                         if let c = p.intro, !c.isEmpty { RichText(attr: MD.keNS(c, size: 15.5, weight: .regular, lineHeight: 1.65)).padding(.top, 6) }
                         VStack(alignment: .leading, spacing: 0) {
                             Text(when(p.ts))
