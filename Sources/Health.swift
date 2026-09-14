@@ -104,6 +104,14 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         let yday0 = cal.date(byAdding: .day, value: -1, to: today0)!
         var body = await dayBody(yday0)
         guard !body.isEmpty else { PushRegistrar.diag("health: morning empty"); return }
+        // 经期近日补档（09-14 寻：09-11 记了但服务器没有——那天的档推过之后她才记的）：近 7 天的月经一并带上，服务器按天补
+        var mens: [String] = []
+        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+        for i in 1...7 {
+            let day = cal.date(byAdding: .day, value: -i, to: today0)!, next = cal.date(byAdding: .day, value: 1, to: day)!
+            if let m = (await samples(mensType, from: day, to: next)).last as? HKCategorySample, let w = Self.mensWord(m.value) { mens.append("\(df.string(from: day))=\(w)") }
+        }
+        if !mens.isEmpty { body["_月经近日"] = mens.joined(separator: ";") }
         PushRegistrar.diag("health: morning keys=\(body.count), asking location")
         if let l = await location() {
             body["纬度"] = l.coordinate.latitude; body["经度"] = l.coordinate.longitude
