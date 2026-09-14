@@ -75,7 +75,14 @@ enum GatewayAPI {
     /// 发一条消息，事件按到达顺序吐出。HTTP 层的失败（401/423/其他）在第一次 yield 前以 Failure 抛出。
     /// 语音条：m4a 整段 POST 上去，网关落盘＋转写＋写语气，回 {url, dur, text, tone}
     static func uploadVoice(file: URL, dur: Double) async throws -> Voice {
-        var req = try request("api/voice?dur=\(String(format: "%.1f", dur))", method: "POST", body: try Data(contentsOf: file))
+        // 秒数走 query（不能拼进 path：appendingPathComponent 会把 ? 转义成 %3F，网关 404——构建 216 寻第一条就撞上）
+        guard let token = Keychain.token else { throw Failure.unauthorized }
+        var comps = URLComponents(url: Gateway.home.appendingPathComponent("api/voice"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "dur", value: String(format: "%.1f", dur))]
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.httpBody = try Data(contentsOf: file)
         req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 60
         let (data, resp) = try await URLSession.shared.data(for: req)
