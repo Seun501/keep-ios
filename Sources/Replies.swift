@@ -44,7 +44,7 @@ struct ReplyCard: View {
                     // 序号：Cascadia、她气泡的底色、不带橙（寻 09-13 定稿：黑底白字试过一版，还是这个好看）
                     Text(Replies.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
                         .frame(width: 26, height: 26).background(Theme.userBubble, in: Circle())
-                    Text(o).font(Theme.serif(16)).lineSpacing(3).foregroundColor(Theme.text)
+                    Text(o).font(Font(Theme.uiUser(16))).lineSpacing(3).foregroundColor(Theme.text)   // 09-15 寻：选项字体同她的气泡（之前是克的宋体，看着别扭）
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
                         .foregroundColor(Theme.muted.opacity(0.7))

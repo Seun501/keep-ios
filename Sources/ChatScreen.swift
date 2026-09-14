@@ -456,7 +456,10 @@ struct ChatScreen: View {
                 .coordinateSpace(name: "clawdZone")
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
             }
-            if rec.recording { LiveCard(rec: rec).padding(.bottom, 10) }   // 边说边出字的小卡，浮在输入卡上方（寻 09-14 定的 A）
+            if rec.recording {   // A 版（寻 09-15 定回）：边说边出字的小卡浮在输入卡上方，卡下两侧「← 取消」「编辑 →」
+                LiveCard(rec: rec).padding(.bottom, 8)
+                HoldHints(rec: rec).padding(.bottom, 6)
+            }
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
@@ -909,8 +912,8 @@ struct ChatScreen: View {
         }
     }
     enum HoldMode { case send, edit, cancel }
-    /// 手指位置→意图：上滑 60 取消（优先），右滑 60 编辑，其余松手就发（寻 09-14 夜定：不用改就直接发，要改才滑）
-    private static func holdMode(_ t: CGSize) -> HoldMode { t.height < -60 ? .cancel : (t.width > 60 ? .edit : .send) }
+    /// 手指位置→意图（A 版）：左滑 60 取消（上滑也算），右滑 60 编辑，其余松手就发
+    private static func holdMode(_ t: CGSize) -> HoldMode { (t.width < -60 || t.height < -60) ? .cancel : (t.width > 60 ? .edit : .send) }
     /// 松手：取消＝作废；不到 1 秒＝当没录；发＝立刻传音频＋发出；编辑＝字落进输入框、键盘升起、留一个语音小签，等她点 ↑。
     /// 没听出字（识别没连上）时不能直接发，退成编辑态让她打字补
     private func endHold(_ mode: HoldMode) {

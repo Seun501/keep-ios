@@ -335,10 +335,11 @@ struct RecordingBar: View {
     @ObservedObject var rec: VoiceRecorder
     var body: some View {
         HStack(spacing: 10) {
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(0..<14, id: \.self) { i in
-                    let h = 4 + 16 * rec.level * CGFloat([0.5, 0.8, 1, 0.7, 0.9, 0.6, 1, 0.8, 0.5, 0.9, 0.7, 1, 0.6, 0.8][i])
-                    Capsule().fill(rec.cancelHint ? Theme.accent : Theme.text.opacity(rec.editHint ? 0.35 : 0.75)).frame(width: 3, height: max(4, h))
+            // 09-15 寻：条太粗——2 点宽、间距 2.5、最高 14
+            HStack(alignment: .center, spacing: 2.5) {
+                ForEach(0..<16, id: \.self) { i in
+                    let h = 3 + 11 * rec.level * CGFloat([0.5, 0.8, 1, 0.7, 0.9, 0.6, 1, 0.8, 0.5, 0.9, 0.7, 1, 0.6, 0.8, 0.5, 0.9][i])
+                    Capsule().fill(rec.cancelHint ? Theme.accent : Theme.text.opacity(rec.editHint ? 0.35 : 0.7)).frame(width: 2, height: max(3, h))
                         .animation(.linear(duration: 0.08), value: rec.level)
                 }
             }
@@ -346,7 +347,7 @@ struct RecordingBar: View {
             Text(String(format: "%d″", Int(rec.seconds))).font(Theme.mono(13, weight: .medium)).foregroundColor(Theme.text)
             Spacer()
             // 提示：默认「松手发出」；上滑「松手取消」（赤陶）；右滑「松手编辑」（深字）——寻 09-14 夜定：不用改就直接发，要改才滑
-            Text(rec.cancelHint ? "松手取消" : rec.editHint ? "松手编辑" : (rec.asrState.isEmpty ? "松手发出 · 右滑编辑" : rec.asrState))
+            Text(rec.cancelHint ? "松手取消" : rec.editHint ? "松手编辑" : (rec.asrState.isEmpty ? "松手发出" : rec.asrState))
                 .font(Theme.round(12.5)).foregroundColor(rec.cancelHint ? Theme.accent : Theme.muted)
         }
         .frame(height: Composer.minH)
@@ -357,13 +358,15 @@ struct RecordingBar: View {
 struct LiveCard: View {
     @ObservedObject var rec: VoiceRecorder
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: 2) {
+        HStack(spacing: 0) {
             if rec.liveText.isEmpty {
                 Text(rec.asrState.isEmpty ? "说吧…" : rec.asrState).font(Theme.round(15)).foregroundColor(Theme.muted)
             } else {
-                Text(rec.liveText).font(Theme.serif(17)).lineSpacing(4).foregroundColor(Theme.text)
+                // 字同她的气泡；光标是接在最后一个字后面的一个细竖条（09-15 寻：光标要跟字，不是排在行末）
+                (Text(rec.liveText).font(Font(Theme.uiUser(17))).foregroundColor(Theme.text)
+                 + Text("▏").font(Font(Theme.uiUser(17))).foregroundColor(Theme.accent))
+                    .lineSpacing(4)
             }
-            Rectangle().fill(Theme.accent).frame(width: 2, height: 18).opacity(rec.liveText.isEmpty ? 0 : 1)
             Spacer(minLength: 0)
         }
         .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
@@ -373,6 +376,24 @@ struct LiveCard: View {
             .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .padding(.horizontal, 26)
+    }
+}
+
+/// A 版的两侧提示（寻 09-15 定回 A）：卡下方「← 取消」「编辑 →」，选中换淡陶土底＋赤陶字
+struct HoldHints: View {
+    @ObservedObject var rec: VoiceRecorder
+    var body: some View {
+        HStack {
+            pill("← 取消", on: rec.cancelHint)
+            Spacer()
+            pill("编辑 →", on: rec.editHint)
+        }
+        .padding(.horizontal, 22)
+    }
+    private func pill(_ t: String, on: Bool) -> some View {
+        Text(t).font(Theme.round(13)).foregroundColor(on ? Theme.accent : Theme.muted)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(on ? Theme.dyn(0xEFE4DC, 0x3A302B) : Color.clear, in: Capsule())
     }
 }
 
