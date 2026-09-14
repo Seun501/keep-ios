@@ -19,8 +19,9 @@ struct ArchEntry: Decodable, Identifiable {
     var wake: Bool?
     var no: Int?
     var thinkSecs: Double?
+    var voice: Voice?          // 语音条（09-14）：档案里也能放
     enum CodingKeys: String, CodingKey {
-        case role, text, thinking, ts, images, note, diary, author, meal, wake, no
+        case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice
         case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", thinkSecs = "think_secs"
     }
     var id: String { "\(no ?? 0)-\(ts ?? "")-\(role ?? "")" }
@@ -276,7 +277,7 @@ struct ArchiveScreen: View {
         } else if e.role == "user" && e.isPing {
             PingChipView(msg: pingMsg(e))
         } else if e.role == "user" {
-            UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick)
+            UserRowView(text: e.voice != nil ? (e.voice?.text ?? Voice.stripNote(e.text ?? "")) : (e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick, voice: e.voice)
         } else {
             AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, parseReplies: false)   // 档案馆放原文，[reply: …] 照排
         }

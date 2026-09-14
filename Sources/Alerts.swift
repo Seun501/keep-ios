@@ -136,7 +136,7 @@ final class AlertsModel: ObservableObject {
         queue.removeFirst()
         if s.kind == "ops" { Task { _ = await get("api/alerts/ack", post: true) } }   // 看过就清（后端清空）
     }
-    private func push(_ s: Strip) { if !queue.contains(where: { $0.kind == s.kind }) { queue.append(s) } }
+    func push(_ s: Strip) { if !queue.contains(where: { $0.kind == s.kind }) { queue.append(s) } }   // 语音条的权限/录音提示也从外面推（09-14）
 
     private func get(_ path: String, post: Bool = false) async -> [String: Any]? {
         guard let token = Keychain.token else { return nil }

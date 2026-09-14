@@ -19,10 +19,11 @@ struct Msg: Decodable {
     var knockText: String? = nil
     var usage: Usage? = nil
     var interrupted: Bool? = nil
+    var voice: Voice? = nil        // 语音条（09-14）：url/秒数/语气/转写；content 是「字＋小注」
     var localEcho = false          // 吃吃就地回显：本地插进正史的小纸条，正牌纸条到了就撤
 
     enum CodingKeys: String, CodingKey {
-        case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted
+        case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted, voice
         case thinkSecs = "think_secs", toolCalls = "tool_calls", sleepNote = "sleep_note"
         case napNote = "nap_note", rainNote = "rain_note", knockText = "knock_text", placeNote = "place_note"
     }

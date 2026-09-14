@@ -73,13 +73,26 @@ enum GatewayAPI {
     }
 
     /// 发一条消息，事件按到达顺序吐出。HTTP 层的失败（401/423/其他）在第一次 yield 前以 Failure 抛出。
-    static func chat(conversationId: String?, message: String, images: [String], knock: Bool = false) -> AsyncThrowingStream<Event, Error> {
+    /// 语音条：m4a 整段 POST 上去，网关落盘＋转写＋写语气，回 {url, dur, text, tone}
+    static func uploadVoice(file: URL, dur: Double) async throws -> Voice {
+        var req = try request("api/voice?dur=\(String(format: "%.1f", dur))", method: "POST", body: try Data(contentsOf: file))
+        req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 60
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { throw Failure.unauthorized }
+        guard (200..<300).contains(code) else { throw Failure.http(code) }
+        return try JSONDecoder().decode(Voice.self, from: data)
+    }
+
+    static func chat(conversationId: String?, message: String, images: [String], knock: Bool = false, voice: Voice? = nil) -> AsyncThrowingStream<Event, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     var payload: [String: Any] = ["message": message, "images": images]
                     if let conversationId { payload["conversation_id"] = conversationId }
                     if knock { payload["knock"] = true }   // 敲门：门关着时寻唯一能递进来的一句（08-30 寻定）
+                    if let v = voice { payload["voice"] = ["url": v.url, "dur": v.dur, "tone": v.tone ?? "", "text": v.text ?? message] }   // 语音条元信息随消息落正史
                     let body = try JSONSerialization.data(withJSONObject: payload)
                     var req = try request("api/chat", method: "POST", body: body)
                     req.timeoutInterval = 600

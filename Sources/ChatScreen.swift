@@ -223,16 +223,44 @@ final class ChatModel: ObservableObject {
         items = TimelineItem.build(msgs, from: renderFrom, to: msgs.count, lastUsageIdx: lastUsage)
     }
 
-    func send(text: String, images: [String]) {
+    /// 语音条（09-14 寻定：录完直接发）：先在流尾画一个「转写中…」的语音气泡，传网关转写，字回来就当普通消息发（带 voice 元信息）。
+    /// 失败就把那个气泡改成一句灰字，下次重拉正史自然消失。
+    @Published var transcribing = false
+    func sendVoice(file: URL, dur: Double) {
+        guard !sending, !transcribing else { return }
+        transcribing = true
+        var echo = Msg(role: "user", content: "", ts: TimeFmt.nowIso()); echo.voice = Voice(url: "", dur: dur, pending: true)
+        msgs.append(echo); rebuild()
+        PushRegistrar.diag(String(format: "voice: send %.1fs", dur))
+        Task {
+            defer { transcribing = false }
+            func fail(_ why: String) {
+                if let i = msgs.lastIndex(where: { $0.voice?.pending == true }) { msgs[i].voice?.pending = nil; msgs[i].voice?.failed = why }
+                rebuild()
+            }
+            do {
+                let v = try await GatewayAPI.uploadVoice(file: file, dur: dur)
+                try? FileManager.default.removeItem(at: file)
+                guard let t = v.text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { fail("没听清说了什么，再说一次？"); return }
+                msgs.removeAll { $0.voice?.pending == true }
+                send(text: t, images: [], voice: v)
+            } catch {
+                PushRegistrar.diag("voice: upload failed \(error.localizedDescription)")
+                fail("转写没成功，再说一次？")
+            }
+        }
+    }
+
+    func send(text: String, images: [String], voice: Voice? = nil) {
         guard !sending, !(text.isEmpty && images.isEmpty) else { return }
         sending = true; lastError = nil; lastEventAt = Date()
-        msgs.append(Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images))
+        msgs.append(Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images, voice: voice))
         rebuild()
         live = LiveTurn()
         PushRegistrar.diag("chat: send")
         streamTask = Task {
             do {
-                for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images) {
+                for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice) {
                     lastEventAt = Date()
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
                     live?.apply(ev)
@@ -350,6 +378,8 @@ struct ChatScreen: View {
     @State private var farFromBottom = false
     @State private var dbg = ""
     @State private var composerFocused = false
+    @ObservedObject private var rec = VoiceRecorder.shared   // 语音条录音（09-14）
+    @State private var holdStarted = false
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
@@ -684,7 +714,7 @@ struct ChatScreen: View {
     @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
         switch item {
         case .daySep(let d): DaySepView(day: d)
-        case .user(let t, let s, let imgs, let p): UserRowView(text: t, stamp: s, images: imgs, pick: p)
+        case .user(let t, let s, let imgs, let p, let v): UserRowView(text: t, stamp: s, images: imgs, pick: p, voice: v)
         case .ai(_, let m, let u):
             AIRowView(msg: m, showUsage: u, afterTools: afterTools)
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
@@ -756,8 +786,13 @@ struct ChatScreen: View {
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "Reply…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
-                .padding(.top, 2).padding(.bottom, 4)
+            // 录音时输入行原地换成音量条＋秒数（高度同输入行，卡不变高）
+            ZStack {
+                Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "Reply…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
+                    .opacity(rec.recording ? 0 : 1)
+                if rec.recording { RecordingBar(rec: rec) }
+            }
+            .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
                 Button {
@@ -769,6 +804,20 @@ struct ChatScreen: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, -4)
+                // 语音条（09-14 寻定）：按住说话、松手发出、上滑取消。按着时钮变赤陶
+                Image("mic").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(rec.recording ? .white : Theme.text)
+                    .frame(width: 36, height: 36).background(rec.recording ? Theme.accent : Theme.attachBg, in: Circle())
+                    .contentShape(Circle())
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { v in
+                            if !holdStarted { holdStarted = true; startHold() }
+                            let c = v.translation.height < -60
+                            if rec.cancelHint != c { rec.cancelHint = c }
+                        }
+                        .onEnded { v in
+                            holdStarted = false
+                            endHold(cancel: v.translation.height < -60)
+                        })
                 Spacer()
                 Button {
                     if model.sending { model.stop() } else if canSend { sendNow() }
@@ -807,6 +856,27 @@ struct ChatScreen: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
+
+    /// 按住麦克风：先收键盘，问一次权限（只第一次会弹），起录
+    private func startHold() {
+        guard !model.sending, !model.transcribing, !rec.recording else { return }
+        composerFocused = false
+        Task {
+            if await rec.requestPermission() {
+                if !holdStarted { return }                       // 权限弹窗期间手已经松了
+                if !rec.start() { alerts.push(Strip(icon: "mic", title: "录不了音", en: false, msg: "麦克风起不来，再试一次。", kind: "voice")) }
+            } else {
+                alerts.push(Strip(icon: "mic", title: "没有麦克风权限", en: false, msg: "到 设置 → Keep → 麦克风 打开，就能按住说话了。", kind: "voice"))
+            }
+        }
+    }
+    /// 松手：上滑到位＝作废；不到 1 秒＝当没录（轻震一下）；否则传网关转写、发出
+    private func endHold(cancel: Bool) {
+        guard rec.recording else { return }
+        if cancel { rec.cancel(); UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
+        if let r = rec.finish() { model.sendVoice(file: r.0, dur: r.1) }
+        else { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    }
 
     private func sendNow() {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)

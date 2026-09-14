@@ -3,7 +3,7 @@ import SwiftUI
 /// 消息流里的一格。规则照网页 buildRangeFrag。
 enum TimelineItem {
     case daySep(String)
-    case user(text: String, stamp: String, images: [String], pick: String? = nil)   // pick＝这句是点了克给的哪个选项（A/B/C）
+    case user(text: String, stamp: String, images: [String], pick: String? = nil, voice: Voice? = nil)   // pick＝这句是点了克给的哪个选项（A/B/C）；voice＝语音条
     case ai(index: Int, msg: Msg, showUsage: Bool)
     case toolChip(String, first: Bool)   // first＝上一行不是胶囊（网页 .toolchip 负边距只在连排的头一颗吃上边）
     case ping(Msg)
@@ -61,6 +61,9 @@ extension TimelineItem {
                 if m.isPing { out.append(.ping(m)) }
                 else if m.knock == true {
                     out.append(.user(text: m.knockText ?? m.content ?? "", stamp: TimeFmt.stamp(m.ts) + " · Knock", images: []))
+                } else if let v = m.voice {
+                    // 语音条：气泡画转写的字（正史 content 是「字＋小注」，小注摘掉）
+                    out.append(.user(text: v.text ?? Voice.stripNote(m.content ?? ""), stamp: TimeFmt.stamp(m.ts), images: [], voice: v))
                 } else {
                     out.append(.user(text: m.content ?? "", stamp: TimeFmt.stamp(m.ts), images: m.images ?? [], pick: Replies.pick(of: m.content, options: options)))
                 }
@@ -89,13 +92,16 @@ struct UserRowView: View {
     var flash = false                 // #N 直跳：编号闪几秒
     var highlight = ""                // 检索关键词标黄
     var pick: String? = nil           // 这句是点了克给的哪个选项：时间前标「B」（寻 09-14）
+    var voice: Voice? = nil           // 语音条：播放钮＋秒数＋转写的字（09-14）
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
             // 照网页 .row.user > img.att：图站在气泡外上方、素着不加修饰、贴右、圆角 26 同她的气泡、点开看大图；图下空 6
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
                 StreamImage(src: u, maxW: 200, maxH: 200, radius: 26).padding(.bottom, 2)
             }
-            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let v = voice {
+                VoiceBubble(voice: v, text: text, highlight: highlight)
+            } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
                 RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
                     .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
