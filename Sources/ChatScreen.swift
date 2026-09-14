@@ -795,25 +795,28 @@ struct ChatScreen: View {
             ZStack {
                 Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "Reply…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                     .opacity(rec.recording ? 0 : 1)
+                    // 盖子挂成 overlay（和输入框一样大）——构建 226 把它当 ZStack 兄弟放，Color.clear 把能占的都占了，输入卡撑成半屏（寻验）
+                    .overlay {
+                        if !composerFocused && draft.isEmpty && voiceDraft == nil && !model.sending {
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { composerFocused = true }
+                                .gesture(LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                                    .onChanged { v in
+                                        switch v {
+                                        case .second(true, let drag):
+                                            if !holdStarted { holdStarted = true; startHold() }
+                                            let c = (drag?.translation.height ?? 0) < -60
+                                            if rec.cancelHint != c { rec.cancelHint = c; if c { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+                                        default: break
+                                        }
+                                    }
+                                    .onEnded { v in
+                                        holdStarted = false
+                                        if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -60) } else { endHold(cancel: true) }
+                                    })
+                        }
+                    }
                 if rec.recording { RecordingBar(rec: rec) }
-                if !composerFocused && draft.isEmpty && voiceDraft == nil && !model.sending {
-                    Color.clear.contentShape(Rectangle())
-                        .onTapGesture { composerFocused = true }
-                        .gesture(LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                            .onChanged { v in
-                                switch v {
-                                case .second(true, let drag):
-                                    if !holdStarted { holdStarted = true; startHold() }
-                                    let c = (drag?.translation.height ?? 0) < -60
-                                    if rec.cancelHint != c { rec.cancelHint = c; if c { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
-                                default: break
-                                }
-                            }
-                            .onEnded { v in
-                                holdStarted = false
-                                if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -60) } else { endHold(cancel: true) }
-                            })
-                }
             }
             .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
