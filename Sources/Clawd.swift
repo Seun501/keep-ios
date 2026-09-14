@@ -195,7 +195,6 @@ struct ScrollObserver: UIViewRepresentable {
         private var bounce = true
         private weak var sv: UIScrollView? = nil
         private var name: String? = nil
-        private var logged = 0
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
         deinit { kb.forEach { NotificationCenter.default.removeObserver($0) } }
         func attach(from v: UIView, name: String?, bounce: Bool) {
@@ -280,14 +279,8 @@ struct ScrollObserver: UIViewRepresentable {
                             self.lastDist = max(0, sv.contentSize.height - (sv.contentOffset.y + inset.top) - vh); self.lastH = vh
                         }
                     }
-                    if n == UIResponder.keyboardWillShowNotification, self.logged < 4, self.name == "chat" { self.logged += 1; self.snapshot("kb-show", note); DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { self.snapshot("kb-after", note) } }
-                    // 收键盘也记一串（寻 09-13 夜：「退出输入框消息流下降还是有点慢」）：0 / 0.1 / 0.25 / 0.5 / 0.9 秒各一帧的框与偏移，看它是哪一步才落下去
-                    if hiding, self.hideLogged < 3, self.name == "chat" {
-                        self.hideLogged += 1
-                        for t in [0.0, 0.1, 0.25, 0.5, 0.9] {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + t) { self.snapshot(String(format: "kb-hide+%.2f pins=%d", t, self.pins), note) }
-                        }
-                    }
+                    // 键盘前后的帧/偏移快照（09-13 夜排查「退出输入框消息流下降慢」用）09-14 撤了：真机实证 willHide+0 那一帧框已放满、偏移已到位，
+                    // 布局本身不慢；寻惯用点空白收键盘，新包她验「比较丝滑」，不再深挖
                 })
             }
             fire()
@@ -296,7 +289,6 @@ struct ScrollObserver: UIViewRepresentable {
         // 不能用 CADisplayLink：它在每帧开头跑、SwiftUI 布局在后头把偏移写回（sim-82 实证纹丝不动）；KVO 是在它改完框之后回调，钉了才算数
         private var followUntil: CFTimeInterval = 0
         private var pins = 0
-        private var hideLogged = 0
         private func startFollow(_ dur: Double) { followUntil = CACurrentMediaTime() + dur + 0.3; pins = 0 }
         private func followPin() {
             guard let sv, CACurrentMediaTime() <= followUntil, !sv.isTracking, !sv.isDragging else { return }
@@ -305,13 +297,6 @@ struct ScrollObserver: UIViewRepresentable {
             let maxY = sv.contentSize.height - vh - inset.top
             // 起键盘：偏移落后于变矮的视口（< maxY）往下钉；收键盘：偏移超过放高后的底（> maxY）往上夹——两头都归到 maxY
             if maxY > -inset.top, abs(sv.contentOffset.y - maxY) > 0.5 { sv.contentOffset = CGPoint(x: sv.contentOffset.x, y: maxY); pins += 1; ScrollObserver.note = "pins=\(pins)" }
-        }
-        /// 排查用：键盘前后滚动区的帧/内容高/偏移/底距，进服务器 diag 日志（一次会话最多四回）
-        private func snapshot(_ tag: String, _ note: Notification) {
-            guard let sv else { return }
-            let f = sv.convert(sv.bounds, to: nil)
-            let kf = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
-            PushRegistrar.diag(String(format: "%@: frame=%.0f..%.0f inset=%.0f cs=%.0f off=%.0f kbTop=%.0f dist=%.0f safe=%.0f", tag, f.minY, f.maxY, sv.contentInset.bottom, sv.contentSize.height, sv.contentOffset.y, kf.minY, lastDist, sv.safeAreaInsets.bottom))
         }
         /// 把系统指示条染成赤陶 40%（指示条是私有子视图，每次滚动时补染——它会被重建）
         static func tintIndicator(_ sv: UIScrollView) {   // 输入框（UITextView）也用它染（寻验 136：输入框滚动条没改色）
