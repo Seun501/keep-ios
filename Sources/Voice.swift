@@ -177,7 +177,7 @@ struct VoiceBubble: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             } else if !text.isEmpty {
-                let attr = MD.xunNS(text)
+                let attr = Voice.tintCues(MD.xunNS(text))
                 RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -232,6 +232,15 @@ struct RecordingBar: View {
 }
 
 extension Voice {
+    /// 转写里 Gemini 标的记号「——（拖长，撒娇）」「（笑）」（克 09-14 要的）：在她的气泡里染成灰字，和正文分开
+    static func tintCues(_ a: NSAttributedString) -> NSAttributedString {
+        let m = NSMutableAttributedString(attributedString: a)
+        guard let re = try? NSRegularExpression(pattern: #"——|（[^（）]{1,8}）"#) else { return a }
+        for r in re.matches(in: m.string, range: NSRange(location: 0, length: m.length)) {
+            m.addAttribute(.foregroundColor, value: Theme.uiMuted, range: r.range)
+        }
+        return m
+    }
     /// 正史 content＝「［语音条］正文（时长·语气：…）」（寻 09-14 定的格式；旧的「正文\n（语音条 · …）」也认），画气泡时只留正文
     static func stripNote(_ s: String) -> String {
         var t = s
