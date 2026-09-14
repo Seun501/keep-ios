@@ -213,9 +213,12 @@ struct RecordingBar: View {
 }
 
 extension Voice {
-    /// 正史 content＝「字＋小注」；小注是网关加的（（语音条 · 12 秒 · 语气：…）），画气泡时摘掉
+    /// 正史 content＝「［语音条］正文（时长·语气：…）」（寻 09-14 定的格式；旧的「正文\n（语音条 · …）」也认），画气泡时只留正文
     static func stripNote(_ s: String) -> String {
-        guard let r = s.range(of: #"\n?（语音条 · [^）]*）\s*$"#, options: .regularExpression) else { return s }
-        return String(s[..<r.lowerBound])
+        var t = s
+        if t.hasPrefix("［语音条］") { t = String(t.dropFirst(5)) }
+        if let r = t.range(of: #"（\d+秒[^）]*）\s*$"#, options: .regularExpression) { t = String(t[..<r.lowerBound]) }
+        if let r = t.range(of: #"\n?（语音条 · [^）]*）\s*$"#, options: .regularExpression) { t = String(t[..<r.lowerBound]) }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
