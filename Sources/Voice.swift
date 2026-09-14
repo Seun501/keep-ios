@@ -145,49 +145,68 @@ final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 // MARK: - 气泡
 
-/// 她的语音气泡：播放钮＋秒数一行，转写的字在下面（同一张气泡里，底色同她的气泡）。
-/// 转写中：钮位置放一个小转圈、字的位置「转写中…」；失败：灰字写原因。
+/// 她的语音气泡（寻 09-14 定，照微信「抄美了」）：先一个小气泡「8″ 声纹」，正文另起一个气泡（和打字的一模一样）；
+/// 语气那句放在时间那行前面（UserRowView 画），不带「语气：」。点小气泡放，放的时候三道弧一道道亮。
+/// 转写中：小气泡里是转圈，正文位置「转写中…」；失败：正文位置灰字写原因。
 struct VoiceBubble: View {
     let voice: Voice
     let text: String
     var highlight = ""
     @ObservedObject private var player = VoicePlayer.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                if voice.pending == true {
-                    ProgressView().controlSize(.small).tint(Theme.muted).frame(width: 22, height: 22)
-                } else if voice.url.isEmpty {
-                    Image("mic").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(Theme.muted).frame(width: 22, height: 22)
-                } else {
-                    Button { player.toggle(voice.url) } label: {
-                        Image(player.playing == voice.url ? "pause" : "play").renderingMode(.template).resizable()
-                            .frame(width: 13, height: 13).foregroundColor(.white)
-                            .frame(width: 22, height: 22).background(Theme.accent, in: Circle())
-                    }.buttonStyle(.plain)
+        VStack(alignment: .trailing, spacing: 4) {
+            Button { if !voice.url.isEmpty, voice.pending != true { player.toggle(voice.url) } } label: {
+                HStack(spacing: 10) {
+                    if voice.pending == true {
+                        ProgressView().controlSize(.small).tint(Theme.muted).frame(width: 22, height: 20)
+                    } else {
+                        Text(voice.secs).font(Theme.mono(13, weight: .medium)).foregroundColor(Theme.text)
+                    }
+                    WavesIcon(playing: player.playing == voice.url)
                 }
-                // 秒数用界面等宽字；放的时候底下一根细进度线（不描边、不铺底）
-                Text(voice.secs).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.muted)
-                if player.playing == voice.url {
-                    GeometryReader { g in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Theme.muted.opacity(0.25)).frame(height: 2)
-                            Capsule().fill(Theme.accent).frame(width: g.size.width * player.progress, height: 2)
-                        }.frame(maxHeight: .infinity)
-                    }.frame(width: 60, height: 22)
-                }
+                .padding(EdgeInsets(top: 9, leading: 16, bottom: 9, trailing: 14))
+                .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
+            .buttonStyle(.plain)
             if voice.pending == true {
-                Text("转写中…").font(Theme.round(13)).foregroundColor(Theme.muted)
+                Text("转写中…").font(Theme.round(13.5)).foregroundColor(Theme.muted)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             } else if let f = voice.failed {
-                Text(f).font(Theme.round(13)).foregroundColor(Theme.muted)
+                Text(f).font(Theme.round(13.5)).foregroundColor(Theme.muted)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             } else if !text.isEmpty {
                 let attr = MD.xunNS(text)
-                RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight)).textSelection(.enabled)
+                RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    .textSelection(.enabled)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+}
+
+/// 声纹：右边一个小点、左边三道弧（镜像的，声音朝正文那边发——寻 09-14：照微信、要镜像）。
+/// 放的时候按 0.35 秒一拍从内到外一道道亮成赤陶，循环；不放时三道都是深字色。
+struct WavesIcon: View {
+    var playing: Bool
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.35)) { ctx in
+            let lit = playing ? Int(ctx.date.timeIntervalSinceReferenceDate / 0.35) % 3 + 1 : 3
+            Canvas { g, size in
+                let c = CGPoint(x: size.width - 2.5, y: size.height / 2)
+                var dot = Path(); dot.addEllipse(in: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4))
+                g.fill(dot, with: .color(playing ? Theme.accent : Theme.text))
+                for (i, r) in [5.0, 9.0, 13.0].enumerated() {
+                    var p = Path()
+                    p.addArc(center: c, radius: r, startAngle: .degrees(135), endAngle: .degrees(225), clockwise: false)
+                    let on = i < lit
+                    g.stroke(p, with: .color(playing ? (on ? Theme.accent : Theme.muted.opacity(0.35)) : Theme.text), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                }
+            }
+            .frame(width: 18, height: 18)
+        }
     }
 }
 

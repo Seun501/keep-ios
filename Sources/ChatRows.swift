@@ -109,10 +109,15 @@ struct UserRowView: View {
                     .textSelection(.enabled)
             }
             if !stamp.isEmpty {
-                HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let t = tagNo { NoTag(t, flash: flash) }
                     if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted) }
-                    Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    // 语音条的语气（Gemini 听的）：灰字放时间前，不带「语气：」（寻 09-14 定）
+                    if let tone = voice?.tone?.trimmingCharacters(in: .whitespacesAndNewlines), !tone.isEmpty, voice?.pending != true {
+                        Text(tone).font(Theme.round(12)).foregroundColor(Theme.muted).multilineTextAlignment(.trailing)
+                        Text("·").font(Theme.round(12)).foregroundColor(Theme.muted)
+                    }
+                    Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted).fixedSize()
                 }
             }
         }
