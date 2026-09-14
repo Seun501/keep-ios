@@ -47,6 +47,7 @@ struct Msg: Decodable {
         knockText = try? c.decode(String.self, forKey: .knockText)
         usage = try? c.decode(Usage.self, forKey: .usage)
         interrupted = try? c.decode(Bool.self, forKey: .interrupted)
+        voice = try? c.decode(Voice.self, forKey: .voice)   // 09-14 漏了这行：本地那条有 voice、服务器拉回来的没有，发下一条后语音气泡变普通气泡（寻验）
     }
 
     init(role: String, content: String?, ts: String?, images: [String]? = nil) {
