@@ -223,26 +223,26 @@ final class ChatModel: ObservableObject {
         items = TimelineItem.build(msgs, from: renderFrom, to: msgs.count, lastUsageIdx: lastUsage)
     }
 
-    /// 语音条（09-14 寻定：录完直接发）：先在流尾画一个「转写中…」的语音气泡，传网关转写，字回来就当普通消息发（带 voice 元信息）。
-    /// 失败就把那个气泡改成一句灰字，下次重拉正史自然消失。
+    /// 语音条（09-14 夜二版）：字已经在手机上出好（腾讯实时识别）、她定稿了；这里传音频、再当普通消息发（带 voice：定稿＋识别原文＋annotate），
+    /// 网关让 Gemini 照定稿标记号写语气。先画一个转圈的小气泡＋字，传好就换成真的。失败就把小气泡下面改成一句灰字。
     @Published var transcribing = false
-    func sendVoice(file: URL, dur: Double) {
-        guard !sending, !transcribing else { return }
+    func sendVoice(file: URL, dur: Double, text: String, orig: String) {
+        guard !sending, !transcribing, !text.isEmpty else { return }
         transcribing = true
-        var echo = Msg(role: "user", content: "", ts: TimeFmt.nowIso()); echo.voice = Voice(url: "", dur: dur, pending: true)
+        var echo = Msg(role: "user", content: text, ts: TimeFmt.nowIso()); echo.voice = Voice(url: "", dur: dur, text: text, pending: true)
         msgs.append(echo); rebuild()
-        PushRegistrar.diag(String(format: "voice: send %.1fs", dur))
+        PushRegistrar.diag(String(format: "voice: send %.1fs chars=%d edited=%d", dur, text.count, text != orig ? 1 : 0))
         Task {
             defer { transcribing = false }
             do {
-                let v = try await GatewayAPI.uploadVoice(file: file, dur: dur)
+                var v = try await GatewayAPI.uploadVoice(file: file, dur: dur, transcribe: false)
                 try? FileManager.default.removeItem(at: file)
-                guard let t = v.text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { voiceFailed("没听清说了什么，再说一次？"); return }
+                v.text = text; v.orig = orig; v.annotate = true
                 msgs.removeAll { $0.voice?.pending == true }
-                send(text: t, images: [], voice: v)
+                send(text: text, images: [], voice: v)
             } catch {
                 PushRegistrar.diag("voice: upload failed \(error.localizedDescription)")
-                voiceFailed("转写没成功，再说一次？")
+                voiceFailed("音频没传上去，再说一次？")
             }
         }
     }
@@ -381,6 +381,8 @@ struct ChatScreen: View {
     @State private var composerFocused = false
     @ObservedObject private var rec = VoiceRecorder.shared   // 语音条录音（09-14）
     @State private var holdStarted = false
+    struct VoiceDraft { let file: URL; let dur: Double; let orig: String }   // 松手后、发出前：音频＋识别原文（字在 draft 里，她可以改）
+    @State private var voiceDraft: VoiceDraft? = nil
     @Environment(\.scenePhase) private var phase
     private let pulseTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
@@ -454,6 +456,7 @@ struct ChatScreen: View {
                 .coordinateSpace(name: "clawdZone")
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
             }
+            if rec.recording { LiveCard(rec: rec).padding(.bottom, 10) }   // 边说边出字的小卡，浮在输入卡上方（寻 09-14 定的 A）
             composer
         }
         .background(Theme.bg.ignoresSafeArea())
@@ -787,11 +790,30 @@ struct ChatScreen: View {
                     }.padding(.horizontal, 2).padding(.top, 6)   // 给右上角的 × 留出头
                 }
             }
-            // 录音时输入行原地换成音量条＋秒数（高度同输入行，卡不变高）
+            // 语音条（09-14 夜寻定）：输入框没唤起、没字的时候**长按输入行**开录，输入行原地换成音量条＋秒数（卡不变高），
+            // 字在上方的小卡里边说边长；上滑取消；松手字落进这里，改不改都行，点 ↑ 发。长按由一层透明盖子接（不抢短按：短按仍是唤起输入）
             ZStack {
                 Composer(text: $draft, focused: $composerFocused, placeholder: activeReplies == nil ? "Chat with…" : "Reply…")      // 字同她的气泡（Lora→宋体）、行距 1.5、光标赤陶 40%
                     .opacity(rec.recording ? 0 : 1)
                 if rec.recording { RecordingBar(rec: rec) }
+                if !composerFocused && draft.isEmpty && voiceDraft == nil && !model.sending {
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { composerFocused = true }
+                        .gesture(LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                            .onChanged { v in
+                                switch v {
+                                case .second(true, let drag):
+                                    if !holdStarted { holdStarted = true; startHold() }
+                                    let c = (drag?.translation.height ?? 0) < -60
+                                    if rec.cancelHint != c { rec.cancelHint = c; if c { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+                                default: break
+                                }
+                            }
+                            .onEnded { v in
+                                holdStarted = false
+                                if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -60) } else { endHold(cancel: true) }
+                            })
+                }
             }
             .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
@@ -805,20 +827,18 @@ struct ChatScreen: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, -4)
-                // 语音条（09-14 寻定）：按住说话、松手发出、上滑取消。按着时钮变赤陶
-                Image("mic").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(rec.recording ? .white : Theme.text)
-                    .frame(width: 36, height: 36).background(rec.recording ? Theme.accent : Theme.attachBg, in: Circle())
-                    .contentShape(Circle())
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { v in
-                            if !holdStarted { holdStarted = true; startHold() }
-                            let c = v.translation.height < -60
-                            if rec.cancelHint != c { rec.cancelHint = c }
-                        }
-                        .onEnded { v in
-                            holdStarted = false
-                            endHold(cancel: v.translation.height < -60)
-                        })
+                // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
+                if let vd = voiceDraft {
+                    HStack(spacing: 6) {
+                        Image("mic").renderingMode(.template).resizable().frame(width: 12, height: 12).foregroundColor(Theme.text)
+                        Text("\(Int(vd.dur.rounded()))″").font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
+                        Button { discardVoiceDraft() } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted).frame(width: 18, height: 18)
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(.leading, 10).padding(.trailing, 4).frame(height: 28)
+                    .background(Theme.userBubble, in: Capsule())
+                }
                 Spacer()
                 Button {
                     if model.sending { model.stop() } else if canSend { sendNow() }
@@ -858,7 +878,7 @@ struct ChatScreen: View {
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
 
-    /// 按住麦克风：先收键盘，问一次权限（只第一次会弹），起录
+    /// 长按输入行：问一次权限（只第一次会弹），起录
     private func startHold() {
         guard !model.sending, !model.transcribing, !rec.recording else { return }
         composerFocused = false
@@ -871,12 +891,22 @@ struct ChatScreen: View {
             }
         }
     }
-    /// 松手：上滑到位＝作废；不到 1 秒＝当没录（轻震一下）；否则传网关转写、发出
+    /// 松手：上滑到位＝作废；不到 1 秒＝当没录（轻震一下）；否则字落进输入框、留一个语音小签，等她点发送
     private func endHold(cancel: Bool) {
         guard rec.recording else { return }
         if cancel { rec.cancel(); UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
-        if let r = rec.finish() { model.sendVoice(file: r.0, dur: r.1) }
-        else { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        Task {
+            guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
+            if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
+            voiceDraft = VoiceDraft(file: r.0, dur: r.1, orig: r.2)
+            draft = r.2
+            if r.2.isEmpty { alerts.push(AlertsModel.Strip(icon: "mic", title: "没听出字", en: false, msg: rec.asrState.isEmpty ? "可以直接打字补上，音频还在。" : rec.asrState + "，可以直接打字补上，音频还在。", kind: "voice")) }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+    private func discardVoiceDraft() {
+        if let vd = voiceDraft { try? FileManager.default.removeItem(at: vd.file) }
+        voiceDraft = nil; draft = ""
     }
 
     private func sendNow() {
@@ -884,6 +914,12 @@ struct ChatScreen: View {
         let imgs = pending
         draft = ""; pending = []
         composerFocused = false
+        if let vd = voiceDraft, imgs.isEmpty {
+            voiceDraft = nil
+            model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig)
+            return
+        }
+        if let vd = voiceDraft { try? FileManager.default.removeItem(at: vd.file); voiceDraft = nil }   // 带图就当普通消息发，音频不要了
         model.send(text: t, images: imgs)
     }
 

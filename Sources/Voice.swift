@@ -1,39 +1,56 @@
 import SwiftUI
 import AVFoundation
 
-/// 语音条（09-14 寻定：按住说话、松手发出、上滑取消；录完直接发，不先看字；克看到转写的字＋一行小注「语音条 · 秒 · 语气」）。
-/// 手机录 AAC/m4a（16k 单声道 32kbps，30 秒约 120K），传网关 `POST /api/voice`，网关叫 Gemini 转写＋写语气，
-/// 回来后照普通消息走 `/api/chat`（带 voice 元信息）。气泡上有播放钮和秒数，字在下面。
+/// 语音条（09-14 寻定，夜里二版）：长按输入行录，**边说边出字**——字由腾讯实时识别给（手机直连腾讯，网关只签票），
+/// 浮在输入卡上方的小卡里长；上滑取消；松手后字落进输入框，可改可直接发。发出去时带音频＋定稿＋识别原文，
+/// 网关让 Gemini 照定稿标记号、写语气（她不等，克那边多想几秒）。气泡：小气泡「8″ 声纹」＋正文另起一个气泡，语气灰字在时间前。
 struct Voice: Codable, Equatable {
-    var url: String            // /uploads/voice/<hash>.m4a（空＝还在转写）
+    var url: String            // /uploads/voice/<hash>.m4a（空＝还没传上去）
     var dur: Double
     var tone: String? = nil
-    var text: String? = nil    // 转写的字（正史 content 是「字＋小注」，气泡只画字）
-    var pending: Bool? = nil   // 本地回显：录完还没转出来
-    var failed: String? = nil  // 本地回显：转写失败的原因
+    var text: String? = nil    // 转写（带记号）；正史 content 是「［语音条］正文（秒·语气）」，气泡只画正文
+    var orig: String? = nil    // 识别原文（她改字前），学编辑用；只上行不下行
+    var annotate: Bool? = nil  // 二版：让网关照定稿标记号
+    var pending: Bool? = nil   // 本地回显：还在传
+    var failed: String? = nil  // 本地回显：失败原因
     var secs: String { dur < 1 ? "1″" : "\(Int(dur.rounded()))″" }
 }
 
-// MARK: - 录音
+// MARK: - 录音 + 实时识别
 
 @MainActor
-final class VoiceRecorder: ObservableObject {
+final class VoiceRecorder: NSObject, ObservableObject {
     static let shared = VoiceRecorder()
     @Published var recording = false
     @Published var level: CGFloat = 0        // 0…1，画音量
     @Published var seconds = 0.0
     @Published var cancelHint = false        // 手指上滑到取消区
-    private var rec: AVAudioRecorder? = nil
-    private var meter: Timer? = nil
-    private var t0 = Date()
+    @Published var liveText = ""             // 边说边出的字（已定句 + 当前半句）
+    @Published var asrState = ""             // 空＝正常；「识别没连上」之类给界面提示
     static let maxSeconds = 120.0
+
+    private let engine = AVAudioEngine()
+    private var converter: AVAudioConverter? = nil
+    private var file: AVAudioFile? = nil
+    private var fileURL: URL? = nil
+    private var ws: URLSessionWebSocketTask? = nil
+    private var wsOpen = false
+    private var pendingFrames: [Data] = []   // 票还没签好时先攒着
+    private var carry = Data()               // 不足 40ms 的尾巴
+    private var finished: [String] = []
+    private var partial = ""
+    private var gotFinal = false
+    private var finalWaiter: CheckedContinuation<Void, Never>? = nil
+    private var t0 = Date()
+    private var ticker: Timer? = nil
+    private static let pcmFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
 
     func requestPermission() async -> Bool {
         if #available(iOS 17, *) { return await AVAudioApplication.requestRecordPermission() }
         return await withCheckedContinuation { c in AVAudioSession.sharedInstance().requestRecordPermission { c.resume(returning: $0) } }
     }
 
-    /// 起录：失败（没权限/会话起不来）返回 false
+    /// 起录：麦克风当场开（票还没到的那几百毫秒音频先攒着），同时去网关签票、连腾讯
     func start() -> Bool {
         guard !recording else { return true }
         let s = AVAudioSession.sharedInstance()
@@ -41,48 +58,154 @@ final class VoiceRecorder: ObservableObject {
             try s.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try s.setActive(true)
         } catch { PushRegistrar.diag("voice: session \(error.localizedDescription)"); return false }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(Int(Date().timeIntervalSince1970)).m4a")
-        let settings: [String: Any] = [AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1,
-                                       AVEncoderBitRateKey: 32000, AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue]
-        do {
-            let r = try AVAudioRecorder(url: url, settings: settings)
-            r.isMeteringEnabled = true
-            guard r.record() else { return false }
-            rec = r
-        } catch { PushRegistrar.diag("voice: recorder \(error.localizedDescription)"); return false }
-        t0 = Date(); seconds = 0; level = 0; cancelHint = false; recording = true
         VoicePlayer.shared.stop()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        meter = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+        let input = engine.inputNode
+        let inFmt = input.outputFormat(forBus: 0)
+        guard inFmt.sampleRate > 0, let conv = AVAudioConverter(from: inFmt, to: Self.pcmFormat) else { PushRegistrar.diag("voice: no converter"); return false }
+        converter = conv
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(Int(Date().timeIntervalSince1970)).m4a")
+        do {
+            file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: Int(kAudioFormatMPEG4AAC), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 32000],
+                                   commonFormat: .pcmFormatInt16, interleaved: true)
+        } catch { PushRegistrar.diag("voice: file \(error.localizedDescription)"); return false }
+        fileURL = url
+        finished = []; partial = ""; liveText = ""; asrState = ""; gotFinal = false; pendingFrames = []; carry = Data(); wsOpen = false
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 2048, format: inFmt) { [weak self] buf, _ in
+            guard let self else { return }
+            // 音量（原始浮点缓冲的 RMS）
+            var rms: Float = 0
+            if let ch = buf.floatChannelData?[0], buf.frameLength > 0 {
+                var sum: Float = 0
+                for i in 0..<Int(buf.frameLength) { sum += ch[i] * ch[i] }
+                rms = sqrt(sum / Float(buf.frameLength))
+            }
+            // 转 16k Int16 单声道：写文件 + 切 40ms 帧推腾讯
+            let ratio = Self.pcmFormat.sampleRate / buf.format.sampleRate
+            guard let out = AVAudioPCMBuffer(pcmFormat: Self.pcmFormat, frameCapacity: AVAudioFrameCount(Double(buf.frameLength) * ratio) + 64) else { return }
+            var consumed = false
+            var err: NSError? = nil
+            conv.convert(to: out, error: &err) { _, status in
+                if consumed { status.pointee = .noDataNow; return nil }
+                consumed = true; status.pointee = .haveData; return buf
+            }
+            guard err == nil, out.frameLength > 0, let p = out.int16ChannelData?[0] else { return }
+            let data = Data(bytes: p, count: Int(out.frameLength) * 2)
             Task { @MainActor in
-                guard let self, let r = self.rec else { return }
-                r.updateMeters()
-                let db = r.averagePower(forChannel: 0)                       // -160…0
-                let lin = CGFloat(max(0, min(1, (db + 50) / 50)))
-                self.level = self.level * 0.6 + lin * 0.4
-                self.seconds = Date().timeIntervalSince(self.t0)
-                if self.seconds >= Self.maxSeconds { _ = self.finish() }
+                self.level = self.level * 0.6 + CGFloat(min(1, max(0, (20 * log10(max(rms, 1e-6)) + 50) / 50))) * 0.4
+                try? self.file?.write(from: out)
+                self.push(data)
             }
         }
-        RunLoop.main.add(meter!, forMode: .common)
+        do { engine.prepare(); try engine.start() } catch { PushRegistrar.diag("voice: engine \(error.localizedDescription)"); input.removeTap(onBus: 0); return false }
+        t0 = Date(); seconds = 0; level = 0; cancelHint = false; recording = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.recording else { return }
+                self.seconds = Date().timeIntervalSince(self.t0)
+                if self.seconds >= Self.maxSeconds { _ = await self.finish() }
+            }
+        }
+        RunLoop.main.add(ticker!, forMode: .common)
+        Task { await connect() }
         return true
     }
 
-    /// 松手：返回文件和时长；太短（<1 秒）返回 nil（当没录）
-    func finish() -> (URL, Double)? {
-        guard recording, let r = rec else { return nil }
+    /// 40ms 一帧（1280 字节）推给腾讯；票没到先攒
+    private func push(_ d: Data) {
+        carry.append(d)
+        while carry.count >= 1280 {
+            let frame = carry.prefix(1280); carry.removeFirst(1280)
+            if wsOpen, let ws { ws.send(.data(Data(frame))) { _ in } } else { pendingFrames.append(Data(frame)) }
+        }
+    }
+
+    private func connect() async {
+        do {
+            let url = try await GatewayAPI.voiceTicket()
+            let task = URLSession.shared.webSocketTask(with: url)
+            ws = task
+            task.resume()
+            receiveLoop(task)
+        } catch {
+            PushRegistrar.diag("voice: ticket \(error.localizedDescription)")
+            asrState = "识别没连上"
+        }
+    }
+
+    private func receiveLoop(_ task: URLSessionWebSocketTask) {
+        task.receive { [weak self] res in
+            Task { @MainActor in
+                guard let self, self.ws === task else { return }
+                switch res {
+                case .failure(let e):
+                    if self.recording && !self.gotFinal { PushRegistrar.diag("voice: ws \(e.localizedDescription)"); self.asrState = "识别断了" }
+                    self.finalWaiter?.resume(); self.finalWaiter = nil
+                    return
+                case .success(let m):
+                    var txt = ""
+                    if case .string(let s) = m { txt = s } else if case .data(let d) = m { txt = String(decoding: d, as: UTF8.self) }
+                    if let d = txt.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                        let code = j["code"] as? Int ?? 0
+                        if code != 0 {
+                            PushRegistrar.diag("voice: asr code=\(code) \((j["message"] as? String ?? "").prefix(60))")
+                            self.asrState = "识别出错 \(code)"
+                        } else if let r = j["result"] as? [String: Any] {
+                            let s = (r["voice_text_str"] as? String) ?? ""
+                            if (r["slice_type"] as? Int) == 2 { self.finished.append(s); self.partial = "" } else { self.partial = s }
+                            self.liveText = self.finished.joined() + self.partial
+                        } else if !self.wsOpen {
+                            // 第一条「success」：通道通了，把攒着的帧倒出去
+                            self.wsOpen = true
+                            for f in self.pendingFrames { task.send(.data(f)) { _ in } }
+                            self.pendingFrames = []
+                        }
+                        if (j["final"] as? Int) == 1 { self.gotFinal = true; self.finalWaiter?.resume(); self.finalWaiter = nil; return }
+                    }
+                    self.receiveLoop(task)
+                }
+            }
+        }
+    }
+
+    /// 松手：停麦、收文件、给腾讯发 end、等最后一句（最多 2.5 秒）。返回 (文件, 秒数, 字)；不到 1 秒当没录。
+    func finish() async -> (URL, Double, String)? {
+        guard recording else { return nil }
         let dur = Date().timeIntervalSince(t0)
-        r.stop(); rec = nil; meter?.invalidate(); meter = nil; recording = false; level = 0
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        if dur < 1 { try? FileManager.default.removeItem(at: r.url); return nil }
-        return (r.url, dur)
+        stopCapture()
+        if dur < 1 { discardFile(); closeWS(); recording = false; return nil }
+        if wsOpen, let ws {
+            ws.send(.string(#"{"type":"end"}"#)) { _ in }
+            if !gotFinal {
+                await withTaskGroup(of: Void.self) { g in
+                    g.addTask { await withCheckedContinuation { c in Task { @MainActor in self.finalWaiter = c } } }
+                    g.addTask { try? await Task.sleep(nanoseconds: 2_500_000_000) }
+                    await g.next(); g.cancelAll()
+                }
+            }
+        }
+        closeWS()
+        recording = false
+        let text = (finished.joined() + partial).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = fileURL else { return nil }
+        return (url, dur, text)
     }
 
     func cancel() {
-        guard recording, let r = rec else { return }
-        r.stop(); r.deleteRecording(); rec = nil; meter?.invalidate(); meter = nil; recording = false; level = 0; cancelHint = false
+        guard recording else { return }
+        stopCapture(); discardFile(); closeWS(); recording = false; cancelHint = false; liveText = ""
+    }
+
+    private func stopCapture() {
+        ticker?.invalidate(); ticker = nil
+        engine.inputNode.removeTap(onBus: 0); engine.stop()
+        file = nil   // 关文件（AVAudioFile 析构时收尾）
+        level = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+    private func discardFile() { if let u = fileURL { try? FileManager.default.removeItem(at: u) }; fileURL = nil }
+    private func closeWS() { ws?.cancel(with: .normalClosure, reason: nil); ws = nil; wsOpen = false; pendingFrames = [] }
 }
 
 // MARK: - 回放
@@ -130,7 +253,7 @@ final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         Task { @MainActor in self.stop() }
     }
 
-    /// 音频走 DiskCache 落盘（同一条只下一次）；路径带口令头（uploads 不要口令，但带着无害）
+    /// 音频走 DiskCache 落盘（同一条只下一次）
     private static func fetch(_ url: String) async -> Data? {
         let key = "voice-" + (url.split(separator: "/").last.map(String.init) ?? url)
         if let d = DiskCache.read(key) { return d }
@@ -147,7 +270,7 @@ final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 /// 她的语音气泡（寻 09-14 定，照微信「抄美了」）：先一个小气泡「8″ 声纹」，正文另起一个气泡（和打字的一模一样）；
 /// 语气那句放在时间那行前面（UserRowView 画），不带「语气：」。点小气泡放，放的时候三道弧一道道亮。
-/// 转写中：小气泡里是转圈，正文位置「转写中…」；失败：正文位置灰字写原因。
+/// 传送中：小气泡里是转圈，正文照常；失败：正文位置灰字写原因。
 struct VoiceBubble: View {
     let voice: Voice
     let text: String
@@ -168,11 +291,7 @@ struct VoiceBubble: View {
                 .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
             .buttonStyle(.plain)
-            if voice.pending == true {
-                Text("转写中…").font(Theme.round(13.5)).foregroundColor(Theme.muted)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            } else if let f = voice.failed {
+            if let f = voice.failed {
                 Text(f).font(Theme.round(13.5)).foregroundColor(Theme.muted)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -210,7 +329,7 @@ struct WavesIcon: View {
     }
 }
 
-/// 录音中替换输入行的那条：跳动的音量条＋秒数＋「上滑取消」；上滑到位时整条变赤陶
+/// 录音中替换输入行的那条：跳动的音量条＋秒数＋「松手…」；上滑到位时提示变赤陶
 struct RecordingBar: View {
     @ObservedObject var rec: VoiceRecorder
     var body: some View {
@@ -225,9 +344,32 @@ struct RecordingBar: View {
             .frame(height: 22)
             Text(String(format: "%d″", Int(rec.seconds))).font(Theme.mono(13, weight: .medium)).foregroundColor(Theme.text)
             Spacer()
-            Text(rec.cancelHint ? "松手取消" : "上滑取消").font(Theme.round(12.5)).foregroundColor(rec.cancelHint ? Theme.accent : Theme.muted)
+            Text(rec.cancelHint ? "松手取消" : (rec.asrState.isEmpty ? "松手落字" : rec.asrState)).font(Theme.round(12.5)).foregroundColor(rec.cancelHint ? Theme.accent : Theme.muted)
         }
         .frame(height: Composer.minH)
+    }
+}
+
+/// 边说边出字的小卡（寻 09-14 定的 A：只放字，干净）：白卡、她的字体、末尾一根赤陶光标；字还没来时一行灰字
+struct LiveCard: View {
+    @ObservedObject var rec: VoiceRecorder
+    var body: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 2) {
+            if rec.liveText.isEmpty {
+                Text(rec.asrState.isEmpty ? "说吧…" : rec.asrState).font(Theme.round(15)).foregroundColor(Theme.muted)
+            } else {
+                Text(rec.liveText).font(Theme.serif(17)).lineSpacing(4).foregroundColor(Theme.text)
+            }
+            Rectangle().fill(Theme.accent).frame(width: 2, height: 18).opacity(rec.liveText.isEmpty ? 0 : 1)
+            Spacer(minLength: 0)
+        }
+        .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.composer)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+            .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
+        .padding(.horizontal, 26)
     }
 }
 

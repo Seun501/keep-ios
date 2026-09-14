@@ -73,12 +73,20 @@ enum GatewayAPI {
     }
 
     /// 发一条消息，事件按到达顺序吐出。HTTP 层的失败（401/423/其他）在第一次 yield 前以 Failure 抛出。
-    /// 语音条：m4a 整段 POST 上去，网关落盘＋转写＋写语气，回 {url, dur, text, tone}
-    static func uploadVoice(file: URL, dur: Double) async throws -> Voice {
+    /// 腾讯实时识别的连接票（签好名的 wss 地址，60 秒内用）——密钥只在网关
+    private struct Ticket: Decodable { var url: String }
+    static func voiceTicket() async throws -> URL {
+        let t: Ticket = try await json("api/voice/ticket")
+        guard let u = URL(string: t.url) else { throw Failure.http(0) }
+        return u
+    }
+
+    /// 语音条：m4a 整段 POST 上去落盘。transcribe=false（二版）：只存，回 {url, dur}；true（一版）：网关转写＋写语气
+    static func uploadVoice(file: URL, dur: Double, transcribe: Bool = true) async throws -> Voice {
         // 秒数走 query（不能拼进 path：appendingPathComponent 会把 ? 转义成 %3F，网关 404——构建 216 寻第一条就撞上）
         guard let token = Keychain.token else { throw Failure.unauthorized }
         var comps = URLComponents(url: Gateway.home.appendingPathComponent("api/voice"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [URLQueryItem(name: "dur", value: String(format: "%.1f", dur))]
+        comps.queryItems = [URLQueryItem(name: "dur", value: String(format: "%.1f", dur)), URLQueryItem(name: "transcribe", value: transcribe ? "1" : "0")]
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -99,7 +107,11 @@ enum GatewayAPI {
                     var payload: [String: Any] = ["message": message, "images": images]
                     if let conversationId { payload["conversation_id"] = conversationId }
                     if knock { payload["knock"] = true }   // 敲门：门关着时寻唯一能递进来的一句（08-30 寻定）
-                    if let v = voice { payload["voice"] = ["url": v.url, "dur": v.dur, "tone": v.tone ?? "", "text": v.text ?? message] }   // 语音条元信息随消息落正史
+                    if let v = voice {   // 语音条元信息随消息落正史；二版带 orig（识别原文）+annotate（让网关照定稿标记号）
+                        var vd: [String: Any] = ["url": v.url, "dur": v.dur, "tone": v.tone ?? "", "text": v.text ?? message]
+                        if v.annotate == true { vd["annotate"] = 1; vd["orig"] = v.orig ?? "" }
+                        payload["voice"] = vd
+                    }
                     let body = try JSONSerialization.data(withJSONObject: payload)
                     var req = try request("api/chat", method: "POST", body: body)
                     req.timeoutInterval = 600
