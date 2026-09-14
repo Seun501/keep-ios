@@ -83,16 +83,8 @@ struct DrawerView: View {
                 // 额度一行：日历下 10、字 16 高、离屏底 24（伸进底部安全区，照网页；寻验 36：下面留空还是多）
                 Text(usage).font(Theme.round(12)).foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 10)
-                // Apple 天气署名（WeatherKit 使用条款要求：显示 Apple Weather 标记并链到其法律署名页）——紫外线读的是它；
-                // 放在额度下面一行、灰字小号，点开走 Safari（09-14）
-                Link(destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "apple.logo").font(.system(size: 10, weight: .medium))
-                        Text("Weather").font(Theme.round(11))
-                    }
-                    .foregroundColor(Theme.muted.opacity(0.75))
-                }
-                .frame(maxWidth: .infinity).frame(height: 14).padding(.top, 6)
+                // Apple 天气署名（WeatherKit 条款要求「显示天气数据处」署名）在构建 210 试放过这里一行，寻嫌不好看；
+                // 手机端没有任何一处显示紫外线、又只走 TestFlight 不上架，09-14 寻定不要
             }
             .padding(EdgeInsets(top: 20, leading: 22, bottom: 14, trailing: 22))   // 寻验 38：日历下面再收窄
             .frame(width: w)
