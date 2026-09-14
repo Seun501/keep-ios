@@ -805,14 +805,18 @@ struct ChatScreen: View {
                                         switch v {
                                         case .second(true, let drag):
                                             if !holdStarted { holdStarted = true; startHold() }
-                                            let c = (drag?.translation.height ?? 0) < -60
-                                            if rec.cancelHint != c { rec.cancelHint = c; if c { UIImpactFeedbackGenerator(style: .light).impactOccurred() } }
+                                            let m = Self.holdMode(drag?.translation ?? .zero)
+                                            let c = m == .cancel, e = m == .edit
+                                            if rec.cancelHint != c || rec.editHint != e {
+                                                rec.cancelHint = c; rec.editHint = e
+                                                if c || e { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                                            }
                                         default: break
                                         }
                                     }
                                     .onEnded { v in
                                         holdStarted = false
-                                        if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -60) } else { endHold(cancel: true) }
+                                        if case .second(true, let drag) = v { endHold(Self.holdMode(drag?.translation ?? .zero)) } else { endHold(.cancel) }
                                     })
                         }
                     }
@@ -894,16 +898,26 @@ struct ChatScreen: View {
             }
         }
     }
-    /// 松手：上滑到位＝作废；不到 1 秒＝当没录（轻震一下）；否则字落进输入框、留一个语音小签，等她点发送
-    private func endHold(cancel: Bool) {
+    enum HoldMode { case send, edit, cancel }
+    /// 手指位置→意图：上滑 60 取消（优先），右滑 60 编辑，其余松手就发（寻 09-14 夜定：不用改就直接发，要改才滑）
+    private static func holdMode(_ t: CGSize) -> HoldMode { t.height < -60 ? .cancel : (t.width > 60 ? .edit : .send) }
+    /// 松手：取消＝作废；不到 1 秒＝当没录；发＝立刻传音频＋发出；编辑＝字落进输入框、键盘升起、留一个语音小签，等她点 ↑。
+    /// 没听出字（识别没连上）时不能直接发，退成编辑态让她打字补
+    private func endHold(_ mode: HoldMode) {
         guard rec.recording else { return }
-        if cancel { rec.cancel(); UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
+        if mode == .cancel { rec.cancel(); UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
         Task {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
+            if mode == .send && !r.2.isEmpty {
+                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: r.2)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                return
+            }
             voiceDraft = VoiceDraft(file: r.0, dur: r.1, orig: r.2)
             draft = r.2
-            if r.2.isEmpty { alerts.push(AlertsModel.Strip(icon: "mic", title: "没听出字", en: false, msg: rec.asrState.isEmpty ? "可以直接打字补上，音频还在。" : rec.asrState + "，可以直接打字补上，音频还在。", kind: "voice")) }
+            if r.2.isEmpty { alerts.push(AlertsModel.Strip(icon: "mic", title: "没听出字", en: false, msg: (rec.asrState.isEmpty ? "" : rec.asrState + "，") + "可以直接打字补上，音频还在。", kind: "voice")) }
+            composerFocused = true
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }

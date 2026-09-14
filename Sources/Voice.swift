@@ -25,6 +25,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
     @Published var level: CGFloat = 0        // 0…1，画音量
     @Published var seconds = 0.0
     @Published var cancelHint = false        // 手指上滑到取消区
+    @Published var editHint = false          // 手指右滑到编辑区（松手字进输入框、键盘升起）
     @Published var liveText = ""             // 边说边出的字（已定句 + 当前半句）
     @Published var asrState = ""             // 空＝正常；「识别没连上」之类给界面提示
     static let maxSeconds = 120.0
@@ -98,7 +99,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
             }
         }
         do { engine.prepare(); try engine.start() } catch { PushRegistrar.diag("voice: engine \(error.localizedDescription)"); input.removeTap(onBus: 0); return false }
-        t0 = Date(); seconds = 0; level = 0; cancelHint = false; recording = true
+        t0 = Date(); seconds = 0; level = 0; cancelHint = false; editHint = false; recording = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -194,7 +195,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
 
     func cancel() {
         guard recording else { return }
-        stopCapture(); discardFile(); closeWS(); recording = false; cancelHint = false; liveText = ""
+        stopCapture(); discardFile(); closeWS(); recording = false; cancelHint = false; editHint = false; liveText = ""
     }
 
     private func stopCapture() {
@@ -337,14 +338,16 @@ struct RecordingBar: View {
             HStack(alignment: .center, spacing: 3) {
                 ForEach(0..<14, id: \.self) { i in
                     let h = 4 + 16 * rec.level * CGFloat([0.5, 0.8, 1, 0.7, 0.9, 0.6, 1, 0.8, 0.5, 0.9, 0.7, 1, 0.6, 0.8][i])
-                    Capsule().fill(rec.cancelHint ? Theme.accent : Theme.text.opacity(0.75)).frame(width: 3, height: max(4, h))
+                    Capsule().fill(rec.cancelHint ? Theme.accent : Theme.text.opacity(rec.editHint ? 0.35 : 0.75)).frame(width: 3, height: max(4, h))
                         .animation(.linear(duration: 0.08), value: rec.level)
                 }
             }
             .frame(height: 22)
             Text(String(format: "%d″", Int(rec.seconds))).font(Theme.mono(13, weight: .medium)).foregroundColor(Theme.text)
             Spacer()
-            Text(rec.cancelHint ? "松手取消" : (rec.asrState.isEmpty ? "松手落字" : rec.asrState)).font(Theme.round(12.5)).foregroundColor(rec.cancelHint ? Theme.accent : Theme.muted)
+            // 提示：默认「松手发出」；上滑「松手取消」（赤陶）；右滑「松手编辑」（深字）——寻 09-14 夜定：不用改就直接发，要改才滑
+            Text(rec.cancelHint ? "松手取消" : rec.editHint ? "松手编辑" : (rec.asrState.isEmpty ? "松手发出 · 右滑编辑" : rec.asrState))
+                .font(Theme.round(12.5)).foregroundColor(rec.cancelHint ? Theme.accent : Theme.muted)
         }
         .frame(height: Composer.minH)
     }
