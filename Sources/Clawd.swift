@@ -196,7 +196,7 @@ struct ScrollObserver: UIViewRepresentable {
         private weak var sv: UIScrollView? = nil
         private var name: String? = nil
         init(onChange: @escaping (CGFloat, CGFloat, CGFloat) -> Void) { self.onChange = onChange }
-        deinit { kb.forEach { NotificationCenter.default.removeObserver($0) } }
+        deinit { kb.forEach { NotificationCenter.default.removeObserver($0) }; hideLink?.invalidate() }
         func attach(from v: UIView, name: String?, bounce: Bool) {
             var s: UIView? = v
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
@@ -279,8 +279,10 @@ struct ScrollObserver: UIViewRepresentable {
                             self.lastDist = max(0, sv.contentSize.height - (sv.contentOffset.y + inset.top) - vh); self.lastH = vh
                         }
                     }
-                    // 键盘前后的帧/偏移快照（09-13 夜排查「退出输入框消息流下降慢」用）09-14 撤了：真机实证 willHide+0 那一帧框已放满、偏移已到位，
-                    // 布局本身不慢；寻惯用点空白收键盘，新包她验「比较丝滑」，不再深挖
+                    // 收键盘慢（寻 09-13 夜、09-14 下午两次报「点空白收键盘消息流下降缓慢」）：09-13 量的是账面值——willHide+0 框已放满、偏移已到位，
+                    // 可她看见的是屏幕上的动画层。这回量 presentation layer（真正画在屏上的框/偏移）在 0/0.1/0.25/0.5/0.9 秒各是多少，
+                    // 外加掉帧计数（>50ms 的帧间隔），一次会话最多记三回
+                    if hiding, self.name == "chat", self.hideLogged < 3 { self.hideLogged += 1; self.startHideMeter() }
                 })
             }
             fire()
@@ -289,6 +291,33 @@ struct ScrollObserver: UIViewRepresentable {
         // 不能用 CADisplayLink：它在每帧开头跑、SwiftUI 布局在后头把偏移写回（sim-82 实证纹丝不动）；KVO 是在它改完框之后回调，钉了才算数
         private var followUntil: CFTimeInterval = 0
         private var pins = 0
+        // 收键盘量尺（排查用）：动画层采样 + 掉帧计数，1.3 秒后一行进 diag
+        private var hideLogged = 0
+        private var hideLink: CADisplayLink?
+        private var hideT0: CFTimeInterval = 0, hideLast: CFTimeInterval = 0, hideMaxGap = 0.0, hideBig = 0
+        private var hideSamples: [String] = [], hideNext: [Double] = []
+        private func startHideMeter() {
+            guard let sv else { return }
+            hideLink?.invalidate()
+            hideT0 = CACurrentMediaTime(); hideLast = hideT0; hideMaxGap = 0; hideBig = 0; hideSamples = []; hideNext = [0.1, 0.25, 0.5, 0.9]
+            sampleHide(sv, 0)
+            let l = CADisplayLink(target: self, selector: #selector(hideTick(_:))); l.add(to: .main, forMode: .common); hideLink = l
+        }
+        @objc private func hideTick(_ l: CADisplayLink) {
+            let now = l.timestamp, gap = (now - hideLast) * 1000; hideLast = now
+            if gap > hideMaxGap { hideMaxGap = gap }; if gap > 50 { hideBig += 1 }
+            let t = now - hideT0
+            while let n = hideNext.first, t >= n { hideNext.removeFirst(); if let sv { sampleHide(sv, n) } }
+            if t > 1.3 {
+                l.invalidate(); hideLink = nil
+                PushRegistrar.diag(String(format: "kb-hide meter: maxgap=%.0fms big=%d pins=%d | %@", hideMaxGap, hideBig, pins, hideSamples.joined(separator: " | ")))
+            }
+        }
+        private func sampleHide(_ sv: UIScrollView, _ t: Double) {
+            let pb = sv.layer.presentation()?.bounds ?? sv.bounds                                   // 屏上正画着的框高 / 偏移
+            let pf = sv.layer.presentation().map { sv.superview?.layer.convert($0.frame, to: nil) ?? $0.frame } ?? sv.convert(sv.bounds, to: nil)
+            hideSamples.append(String(format: "%.2f: pres h=%.0f y=%.0f top=%.0f bot=%.0f · model h=%.0f y=%.0f", t, pb.height, pb.origin.y, pf.minY, pf.maxY, sv.bounds.height, sv.contentOffset.y))
+        }
         private func startFollow(_ dur: Double) { followUntil = CACurrentMediaTime() + dur + 0.3; pins = 0 }
         private func followPin() {
             guard let sv, CACurrentMediaTime() <= followUntil, !sv.isTracking, !sv.isDragging else { return }

@@ -25,7 +25,13 @@ final class WatchLink: NSObject, ObservableObject, WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
         let ctx = session.receivedApplicationContext
-        Task { @MainActor in self.take(ctx) }
+        Task { @MainActor in
+            self.take(ctx)
+            // 09-14：装包勤了表端 Keep 会被卸了重装、票丢了而 applicationContext 又没新东西——手里没票就主动向手机要一次
+            if !self.hasToken, session.isReachable {
+                session.sendMessage(["want": "token"], replyHandler: { reply in Task { @MainActor in self.take(reply) } }, errorHandler: nil)
+            }
+        }
     }
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext ctx: [String: Any]) {
         Task { @MainActor in self.take(ctx) }

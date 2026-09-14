@@ -27,6 +27,12 @@ final class PhoneLink: NSObject, WCSessionDelegate {
         PushRegistrar.diag("link: activated=\(state.rawValue) paired=\(session.isPaired) watchApp=\(session.isWatchAppInstalled)")
         sendToken()
     }
+    /// 表端手里没票时会敲一句「want token」（09-14：表端随装包被重装后票丢了）——当场把票回给它，顺手也更新 applicationContext
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        replyHandler(["token": Keychain.token ?? "", "at": Date().timeIntervalSince1970])
+        sendToken()
+        PushRegistrar.diag("link: watch asked for token")
+    }
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) { session.activate() }
     func sessionWatchStateDidChange(_ session: WCSession) { sendToken() }   // 她刚装上手表端＝这一刻传票
