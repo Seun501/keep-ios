@@ -234,27 +234,28 @@ final class ChatModel: ObservableObject {
         PushRegistrar.diag(String(format: "voice: send %.1fs", dur))
         Task {
             defer { transcribing = false }
-            func fail(_ why: String) {
-                if let i = msgs.lastIndex(where: { $0.voice?.pending == true }) { msgs[i].voice?.pending = nil; msgs[i].voice?.failed = why }
-                rebuild()
-            }
             do {
                 let v = try await GatewayAPI.uploadVoice(file: file, dur: dur)
                 try? FileManager.default.removeItem(at: file)
-                guard let t = v.text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { fail("没听清说了什么，再说一次？"); return }
+                guard let t = v.text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { voiceFailed("没听清说了什么，再说一次？"); return }
                 msgs.removeAll { $0.voice?.pending == true }
                 send(text: t, images: [], voice: v)
             } catch {
                 PushRegistrar.diag("voice: upload failed \(error.localizedDescription)")
-                fail("转写没成功，再说一次？")
+                voiceFailed("转写没成功，再说一次？")
             }
         }
+    }
+    private func voiceFailed(_ why: String) {
+        if let i = msgs.lastIndex(where: { $0.voice?.pending == true }) { msgs[i].voice?.pending = nil; msgs[i].voice?.failed = why }
+        rebuild()
     }
 
     func send(text: String, images: [String], voice: Voice? = nil) {
         guard !sending, !(text.isEmpty && images.isEmpty) else { return }
         sending = true; lastError = nil; lastEventAt = Date()
-        msgs.append(Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images, voice: voice))
+        var um = Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images); um.voice = voice
+        msgs.append(um)
         rebuild()
         live = LiveTurn()
         PushRegistrar.diag("chat: send")
@@ -864,9 +865,9 @@ struct ChatScreen: View {
         Task {
             if await rec.requestPermission() {
                 if !holdStarted { return }                       // 权限弹窗期间手已经松了
-                if !rec.start() { alerts.push(Strip(icon: "mic", title: "录不了音", en: false, msg: "麦克风起不来，再试一次。", kind: "voice")) }
+                if !rec.start() { alerts.push(AlertsModel.Strip(icon: "mic", title: "录不了音", en: false, msg: "麦克风起不来，再试一次。", kind: "voice")) }
             } else {
-                alerts.push(Strip(icon: "mic", title: "没有麦克风权限", en: false, msg: "到 设置 → Keep → 麦克风 打开，就能按住说话了。", kind: "voice"))
+                alerts.push(AlertsModel.Strip(icon: "mic", title: "没有麦克风权限", en: false, msg: "到 设置 → Keep → 麦克风 打开，就能按住说话了。", kind: "voice"))
             }
         }
     }
