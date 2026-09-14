@@ -500,6 +500,16 @@ struct ChatScreen: View {
                     guard let u = model.msgs.last(where: { $0.role == "user" && !($0.images ?? []).isEmpty })?.images?.first else { return }
                     Task { viewer.image = await StreamImageCache.load(u) }
                 }
+            case "voicehold", "voiceedit", "voicecancel":   // 语音条录音态截图：假装录着（字、秒数、音量），edit/cancel 再摆上对应手势的提示
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    rec.recording = true; rec.liveText = "今天雨停得早，我想去门口那棵树下坐一会儿"; rec.seconds = 6; rec.level = 0.6
+                    rec.editHint = Preview.screen == "voiceedit"; rec.cancelHint = Preview.screen == "voicecancel"
+                }
+            case "voicedraft":   // 松手编辑后：字在输入框、小签在动作行
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    draft = "今天雨停得早，我想去门口那棵树下坐一会儿"
+                    voiceDraft = VoiceDraft(file: FileManager.default.temporaryDirectory.appendingPathComponent("x.m4a"), dur: 6, orig: draft)
+                }
             case "kbup", "kbhide":   // 键盘：打几个字唤起；kbhide 再在 4 秒时收起（截图在 7 秒）
                 draft = "试试看"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { composerFocused = true }
