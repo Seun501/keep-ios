@@ -13,24 +13,35 @@ struct LoginView: View {
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// 09-15 寻定「试试 2」：口令页＝开屏那张的构图——Clawd 站在屏高 45%，欢迎语的位置换成一根输入线（居中打字、回车即进），
-    /// 没有按钮；报错一行赤陶小字在线下固定占位。整块按屏幕坐标钉死、不随键盘挪（键盘起来线还在原处，iPhone 11 上线在键盘上方）。
+    @State private var litAt: Date? = nil       // 口令对了：星座线从这一刻起 1.4 秒连完，再进屋
+    @State private var pendingToken = ""
+    private let here = StarSky.here()
+
+    /// 09-15 寻定「试试 2」：口令页＝开屏那张的构图——Clawd 站在屏高 45%，欢迎语的位置换成一根输入线（回车即进），没有按钮；
+    /// 报错一行赤陶小字在线下固定占位。整块按屏幕坐标钉死、不随键盘挪。底上是此刻头顶的真星图（StarSky.swift），入夜才出来。
+    /// 口令是粘贴的长串（寻）：线上不显字，粘进来线由淡变深算作「有东西了」；对了星座线连起来，然后进屋。
     var body: some View {
         GeometryReader { g in
             let H = UIScreen.main.bounds.height
             let top = g.frame(in: .global).minY
             ZStack(alignment: .top) {
                 Theme.bg.ignoresSafeArea()
+                TimelineView(.animation(paused: litAt == nil)) { ctx in
+                    let lit = litAt.map { min(1, ctx.date.timeIntervalSince($0) / 1.4) } ?? 0
+                    let night = (Preview.on && Preview.screen.hasPrefix("login")) ? 1 : StarSky.nightness(date: ctx.date, lat: here.0, lon: here.1)
+                    StarSkyView(date: Preview.on ? Self.previewDate : ctx.date, lat: here.0, lon: here.1, night: night, lit: lit)
+                }
+                .ignoresSafeArea()
                 ClawdWeb(state: "idle", flip: false)
                     .frame(width: 150, height: 150)
                     .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)
                 VStack(spacing: 8) {
                     PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiUser(17), align: .center, returnKey: .go,
-                               secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
+                               textColor: .clear, secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
                         .frame(height: 24).padding(.vertical, 6)
-                        .overlay(alignment: .bottom) { Rectangle().fill(error.isEmpty ? (focused ? Theme.muted : Theme.border) : Theme.accent).frame(height: 1) }
+                        .overlay(alignment: .bottom) { Rectangle().fill(!error.isEmpty ? Theme.accent : (empty ? Theme.border : Theme.muted)).frame(height: 1) }
                         .frame(width: 180)
-                        .disabled(busy)
+                        .disabled(busy || litAt != nil)
                     Text(busy ? "…" : error)
                         .font(Theme.serif(12.5))
                         .foregroundStyle(Theme.accent)
@@ -43,8 +54,15 @@ struct LoginView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
             if Preview.on, Preview.screen == "loginerr" { error = "口令不对" }
+            if Preview.on, Preview.screen == "loginlit" { litAt = Date() }
         }
         .onChange(of: text) { _ in if !error.isEmpty { error = "" } }   // 再打字就把红线收回去
+    }
+
+    /// 截图班的天：2026-09-15 21:00 东八区
+    private static var previewDate: Date {
+        var c = DateComponents(); c.year = 2026; c.month = 9; c.day = 15; c.hour = 21; c.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+        return Calendar(identifier: .gregorian).date(from: c) ?? Date()
     }
 
     private func submit() {
@@ -56,7 +74,11 @@ struct LoginView: View {
             await MainActor.run {
                 busy = false
                 switch ok {
-                case .ok: onSuccess(t)
+                case .ok:
+                    // 星座线连完（1.4 秒）再进屋；白天没星也等这一拍，别忽快忽慢
+                    focused = false
+                    litAt = Date()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { onSuccess(t) }
                 case .wrong: error = "口令不对"
                 case .tooMany: error = "试得太频繁，歇一会儿"
                 case .offline: error = "连不上"
