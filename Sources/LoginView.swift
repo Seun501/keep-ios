@@ -24,11 +24,12 @@ struct LoginView: View {
                     .padding(.bottom, 38)
 
                 HStack(spacing: 14) {
-                    PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiSys(16), returnKey: .go, secure: true, onSubmit: submit)
-                        .frame(height: 22).padding(.vertical, 6).padding(.horizontal, 2)
+                    // 字体走她的气泡那套（Lora→宋体），占位符也是；「进」同顶上「克」的宋体（寻 09-15：系统字一股本世纪初味）
+                    PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiUser(17), returnKey: .go, secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
+                        .frame(height: 24).padding(.vertical, 6).padding(.horizontal, 2)
                         .overlay(alignment: .bottom) { Rectangle().fill(focused ? Theme.muted : Theme.border).frame(height: 1) }
                     Button(action: submit) {
-                        Text(busy ? "…" : "进").font(Theme.round(13)).tracking(1.8).foregroundColor(.white)
+                        Text(busy ? "…" : "进").font(.custom("Songti SC", size: 14).weight(.semibold)).tracking(1).foregroundColor(.white)
                             .padding(.horizontal, 15).padding(.vertical, 5)
                             .background(Theme.accent, in: Capsule())
                     }
@@ -39,7 +40,7 @@ struct LoginView: View {
                 .frame(maxWidth: 230)
 
                 Text(error)
-                    .font(Theme.round(12.5))
+                    .font(Theme.serif(12.5))
                     .foregroundStyle(Theme.accent)
                     .frame(height: 22)
                     .padding(.top, 10)

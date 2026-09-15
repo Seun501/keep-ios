@@ -90,6 +90,7 @@ struct PlainField: UIViewRepresentable {
     var textColor: UIColor = Theme.uiText          // 定色纸上的输入行传定色墨（锁信口令，夜间模式）
     var selectAllOnFocus = false                   // 搜索框（寻 09-15）：搜过再点进来＝旧词整个选中，直接打新词；点字尾空白处就取消选中接着打
     var secure = false                             // 口令页（09-15）：打点不显字
+    var placeholderFont: UIFont? = nil             // 口令页：占位符同正文字体（默认仍是系统字，寻 09-13）
     var onSubmit: () -> Void = {}
     func makeUIView(context: Context) -> UITextField {
         let tf = UITextField()
@@ -100,7 +101,7 @@ struct PlainField: UIViewRepresentable {
         if secure { tf.textContentType = .password }
         tf.tintColor = Theme.uiScrollTint.withAlphaComponent(0.85)
         // 占位符维持系统字，不走 Cascadia（寻 09-13）
-        tf.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1), .font: UIFont.systemFont(ofSize: font.pointSize)])
+        tf.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1), .font: placeholderFont ?? UIFont.systemFont(ofSize: font.pointSize)])
         tf.returnKeyType = returnKey
         tf.delegate = context.coordinator
         tf.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)
