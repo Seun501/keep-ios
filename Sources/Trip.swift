@@ -22,7 +22,7 @@ struct Trip: Codable, Equatable {
 @MainActor
 final class TripModel: ObservableObject {
     static let shared = TripModel()
-    @Published var current: Trip? = Self.cached() { didSet { Self.cache(current) } }
+    @Published var current: Trip? = TripModel.cached() { didSet { TripModel.cache(current) } }
     @Published var busy = false
 
     private static func cached() -> Trip? {
