@@ -56,13 +56,13 @@ final class WatchChat: ObservableObject {
     private var lastPulse: WPulse? = nil
     private var stream: Task<Void, Never>? = nil
 
-    static func parse(_ s: String) -> Date? {
+    nonisolated static func parse(_ s: String) -> Date? {
         let clean = s.replacingOccurrences(of: "\\.\\d+", with: "", options: .regularExpression)
         return ISO8601DateFormatter().date(from: clean)
     }
 
     // MARK: 网关
-    static func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: Double = 15) -> URLRequest? {
+    nonisolated static func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: Double = 15) -> URLRequest? {
         guard let t = WatchKeychain.token else { return nil }
         var r = URLRequest(url: WatchGateway.home.appendingPathComponent(path))
         r.httpMethod = method
