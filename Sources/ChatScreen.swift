@@ -441,6 +441,7 @@ struct ChatScreen: View {
     @State private var kbUp = false
     @State private var wasAtBottom = true     // 键盘动之前在不在底（动的途中 atBottom 是过程值，不可信）
     @State private var kbAnimating = false
+    @State private var userUp = false         // 克回话时她自己往上翻过：不再跟随到底，直到她回到底
     @State private var holdH: CGFloat = 0     // 录音浮层（小卡＋提示）的高；在底时列表底部垫这么多，把消息流抬到卡上面
     @State private var holdFromBottom = true  // 起录那一刻在不在底
     /// 键盘收着时才真正拨开关；键盘开着就等 keyboardDidHide 再拨
@@ -588,8 +589,13 @@ struct ChatScreen: View {
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
         .background(ScrollObserver(name: "chat") { y, ch, vh in
             let total = max(ch, 1)
-            farFromBottom = (total - y - vh) > 40
+            let gap = total - y - vh
+            farFromBottom = gap > 40
             atBottom = !farFromBottom
+            // 09-15 晚寻：克回话时上滑还是怪——40 点以内松手会被钉回去。改记「她自己往上翻过」：手指在拖着且离底超 12 就记下，
+            // 之后不再跟随，直到她回到底（跳底钮或自己滑回来，离底 < 4）
+            if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
+            if gap < 4 { userUp = false }
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
         })
     }
@@ -609,12 +615,14 @@ struct ChatScreen: View {
                 }
             }
             .background(KeyboardDismisser())
-            .onChange(of: model.items.count) { _ in if atBottom { scrollBottom(proxy) } }
-            .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
+            .onChange(of: model.items.count) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
+            .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
+            .onChange(of: model.sending) { s in if s { userUp = false } }   // 她自己发了一句＝回到底
             // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」
             // 跟随就断、之后再也不接上（寻验 131「等回复时收键盘，信息流卡在原地」）——动的那段按键盘前的 wasAtBottom 算
             // 09-15 寻：克生成期间她上滑会和自动到底打架——手指还在（拖着/惯性滑着）就不钉，松手离底超 40 后 atBottom 自己变假
             .onChange(of: model.live?.events ?? 0) { _ in
+                if userUp { return }   // 她自己往上翻过就不再跟（09-15 晚）
                 if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging || sv.isDecelerating { return }
                 if atBottom || (kbAnimating && wasAtBottom) { DispatchQueue.main.async { pinBottom() } }
             }
@@ -839,7 +847,7 @@ struct ChatScreen: View {
                         if !composerFocused && draft.isEmpty && voiceDraft == nil && !model.sending {
                             Color.clear.contentShape(Rectangle())
                                 .onTapGesture { composerFocused = true }
-                                .gesture(LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                                .gesture(LongPressGesture(minimumDuration: 0.2).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))   // 09-15 寻：0.35 太长
                                     .onChanged { v in
                                         switch v {
                                         case .second(true, let drag):

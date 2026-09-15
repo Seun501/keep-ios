@@ -211,22 +211,20 @@ struct WatchChatView: View {
         }
     }
 
-    /// 输入行：点一下＝系统文本输入（听写/涂鸦/键盘，回车即发）；长按 0.35 秒＝说话，上滑 40 点＝松手取消
+    /// 输入行：点一下＝系统文本输入（听写/涂鸦/键盘，回车即发）；长按 0.2 秒＝说话，上滑 40 点＝松手取消。
+    /// 09-15 晚寻验：TextFieldLink 叠长按手势，点一下起不来键盘——改成普通视图，点一下自己叫 WatchKit 的文本输入控制器
     private var inputRow: some View {
-        TextFieldLink(prompt: Text("说点什么")) {
-            HStack(spacing: 6) {
-                Text(m.sending ? "克在说…" : "说点什么").font(.system(size: 13)).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Image(systemName: "waveform").font(.system(size: 12)).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 10).frame(height: 32)
-            .overlay(alignment: .bottom) { Rectangle().fill(WatchTheme.line).frame(height: 1) }
-            .contentShape(Rectangle())
-        } onSubmit: { t in m.send(t) }
-        .buttonStyle(.plain)
-        .disabled(m.sending)
-        .highPriorityGesture(
-            LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0))
+        HStack(spacing: 6) {
+            Text(m.sending ? "克在说…" : "说点什么").font(.system(size: 13)).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Image(systemName: "waveform").font(.system(size: 12)).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10).frame(height: 32)
+        .overlay(alignment: .bottom) { Rectangle().fill(WatchTheme.line).frame(height: 1) }
+        .contentShape(Rectangle())
+        .onTapGesture { if !m.sending { askText() } }
+        .gesture(
+            LongPressGesture(minimumDuration: 0.2).sequenced(before: DragGesture(minimumDistance: 0))
                 .onChanged { v in
                     guard case .second(true, let drag) = v else { return }
                     if !holdStarted { holdStarted = true; startHold() }
@@ -239,6 +237,15 @@ struct WatchChatView: View {
                 }
         )
         .padding(.horizontal, 4).padding(.bottom, 2)
+    }
+
+    /// 系统文本输入（听写/涂鸦/键盘）：SwiftUI 壳里也能从 WatchKit 拿到当前界面控制器来弹
+    private func askText() {
+        let vc = WKExtension.shared().visibleInterfaceController ?? WKExtension.shared().rootInterfaceController
+        guard let vc else { m.note = "输入起不来"; return }
+        vc.presentTextInputController(withSuggestions: nil, allowedInputMode: .allowEmoji) { res in
+            if let t = res?.first as? String, !t.isEmpty { Task { @MainActor in m.send(t) } }
+        }
     }
 
     private func startHold() {

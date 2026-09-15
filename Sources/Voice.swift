@@ -43,6 +43,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
     private var gotFinal = false
     private var finalWaiter: CheckedContinuation<Void, Never>? = nil
     private var t0 = Date()
+    private var lastLoud = 0.0               // 最后一次有声音的时刻（距 t0 秒）：松手前她在看字，尾巴那段空白要剪掉
     private var ticker: Timer? = nil
     private static let pcmFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
 
@@ -93,13 +94,15 @@ final class VoiceRecorder: NSObject, ObservableObject {
             guard err == nil, out.frameLength > 0, let p = out.int16ChannelData?[0] else { return }
             let data = Data(bytes: p, count: Int(out.frameLength) * 2)
             Task { @MainActor in
-                self.level = self.level * 0.6 + CGFloat(min(1, max(0, (20 * log10(max(rms, 1e-6)) + 50) / 50))) * 0.4
+                let lv = CGFloat(min(1, max(0, (20 * log10(max(rms, 1e-6)) + 50) / 50)))
+                self.level = self.level * 0.6 + lv * 0.4
+                if lv > 0.18 { self.lastLoud = Date().timeIntervalSince(self.t0) }
                 try? self.file?.write(from: out)
                 self.push(data)
             }
         }
         do { engine.prepare(); try engine.start() } catch { PushRegistrar.diag("voice: engine \(error.localizedDescription)"); input.removeTap(onBus: 0); return false }
-        t0 = Date(); seconds = 0; level = 0; cancelHint = false; editHint = false; recording = true
+        t0 = Date(); lastLoud = 0; seconds = 0; level = 0; cancelHint = false; editHint = false; recording = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -190,7 +193,27 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recording = false
         let text = (finished.joined() + partial).trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = fileURL else { return nil }
+        // 09-15 晚寻：松手前要看一眼字对不对，尾巴那段空白被 Gemini 听成「——（拖长，撒娇）」——最后一声之后超过 0.8 秒的空白剪掉
+        // （留 0.35 秒收尾），AAC 直通不重编码
+        let keep = min(dur, lastLoud + 0.35)
+        if dur - keep > 0.8, keep > 1, let cut = await Self.trim(url, to: keep) {
+            PushRegistrar.diag(String(format: "voice: trimmed %.1f→%.1fs", dur, keep))
+            return (cut, keep, text)
+        }
         return (url, dur, text)
+    }
+
+    private static func trim(_ url: URL, to secs: Double) async -> URL? {
+        let asset = AVURLAsset(url: url)
+        guard let ex = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else { return nil }
+        let out = url.deletingPathExtension().appendingPathExtension("cut.m4a")
+        try? FileManager.default.removeItem(at: out)
+        ex.outputURL = out; ex.outputFileType = .m4a
+        ex.timeRange = CMTimeRange(start: .zero, duration: CMTime(seconds: secs, preferredTimescale: 600))
+        await ex.export()
+        guard ex.status == .completed else { return nil }
+        try? FileManager.default.removeItem(at: url)
+        return out
     }
 
     func cancel() {
@@ -380,7 +403,8 @@ struct LiveCard: View {
     }
 }
 
-/// A 版的两侧提示（寻 09-15 定回 A）：卡下方「← 取消」「编辑 →」，选中换淡陶土底＋赤陶字
+/// A 版的两侧提示（寻 09-15 定回 A）：卡下方「← 取消」「编辑 →」，选中换淡陶土底＋赤陶字。
+/// 平时也垫一层输入卡色的胶囊（09-15 晚寻：浮在消息流上时字和底下的字打架）
 struct HoldHints: View {
     @ObservedObject var rec: VoiceRecorder
     var body: some View {
@@ -394,7 +418,7 @@ struct HoldHints: View {
     private func pill(_ t: String, on: Bool) -> some View {
         Text(t).font(Theme.round(13)).foregroundColor(on ? Theme.accent : Theme.muted)
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(on ? Theme.dyn(0xEFE4DC, 0x3A302B) : Color.clear, in: Capsule())
+            .background(on ? Theme.dyn(0xEFE4DC, 0x3A302B) : Theme.composer, in: Capsule())
     }
 }
 
