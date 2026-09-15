@@ -3,10 +3,11 @@ import WatchKit
 
 /// Keep 手表端（09-10 寻定）。第一期＝腕上健康中继：表自己读健康库、自己推给网关——
 /// 昨天档不等她解锁手机，白天隔一阵一份快照。登录票由手机端经 WatchConnectivity 传来，表上不登录。
+/// 二期（09-15）＝腕上看对话、打字、按住说话（WatchChat.swift）；健康状态缩成对话页顶上一行小字。
 @main
 struct KeepWatchApp: App {
     @WKApplicationDelegateAdaptor(WatchDelegate.self) private var delegate
-    var body: some Scene { WindowGroup { WatchHome() } }
+    var body: some Scene { WindowGroup { WatchChatView() } }
 }
 
 final class WatchDelegate: NSObject, WKApplicationDelegate {

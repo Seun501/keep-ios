@@ -101,6 +101,7 @@ targets:
         WKRunsIndependentlyOfCompanionApp: false
         NSHealthShareUsageDescription: Keep 在表上读取你的睡眠、心率、步数等，只推给你自己的网关，不经第三方。
         NSHealthUpdateUsageDescription: Keep 不写入健康数据。
+        NSMicrophoneUsageDescription: 在表上按住说话时用麦克风，语音只发给你自己的网关。
     entitlements:
       path: Watch/KeepWatch.entitlements
       properties:
