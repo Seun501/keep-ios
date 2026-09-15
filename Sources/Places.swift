@@ -176,7 +176,7 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     func apply(_ places: [Place]) {
         guard !Preview.on, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
         let want = Dictionary(uniqueKeysWithValues: places.map { ($0.id, $0) })
-        for r in manager.monitoredRegions where want[r.identifier] == nil { manager.stopMonitoring(for: r) }
+        for r in manager.monitoredRegions where want[r.identifier] == nil && r.identifier != Self.tripRegion { manager.stopMonitoring(for: r) }
         for p in places {
             // 没变的圆不重装（重装一次＝系统再判一次在不在，每记一个地方就把全部地方报一遍，7 个地方 14 条）
             if let old = manager.monitoredRegions.first(where: { $0.identifier == p.id }) as? CLCircularRegion,
@@ -187,6 +187,17 @@ final class Fences: NSObject, CLLocationManagerDelegate {
             manager.startMonitoring(for: region)   // 同名重装＝换掉旧圆
             manager.requestState(for: region)
         }
+    }
+
+    /// 到站围栏（给克的导航，09-15）：目的地周围 80 米一个圆，进了就算到；nil＝撤掉
+    static let tripRegion = "trip"
+    func watchTrip(_ c: CLLocationCoordinate2D?) {
+        guard !Preview.on, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+        for r in manager.monitoredRegions where r.identifier == Self.tripRegion { manager.stopMonitoring(for: r) }
+        guard let c else { return }
+        let region = CLCircularRegion(center: c, radius: 80, identifier: Self.tripRegion)
+        region.notifyOnEntry = true; region.notifyOnExit = false
+        manager.startMonitoring(for: region)
     }
 
     /// 一次定位（快照带地名用 hundredMeters）
@@ -240,13 +251,14 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        if region.identifier == Self.tripRegion { Task { @MainActor in await TripModel.shared.arrived() }; return }
         Task { @MainActor in self.report(region.identifier, "enter") }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         Task { @MainActor in self.report(region.identifier, "exit") }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
-        guard state != .unknown else { return }
+        guard state != .unknown, region.identifier != Self.tripRegion else { return }
         let kind = state == .inside ? "enter" : "exit"
         Task { @MainActor in self.report(region.identifier, kind) }
     }
@@ -452,6 +464,8 @@ struct PlacesScreen: View {
     @State private var qF = false
     @State private var searchTick = 0
     @State private var searchNote = ""
+    @ObservedObject private var trip = TripModel.shared
+    @State private var tripOpen = Preview.on && Preview.screen == "tripsheet"   // 「出发」卡（给克的导航，09-15）
     private static let fieldFont: UIFont = Theme.uiRound(14)   // 09-13：Cascadia → 圆体
 
     var body: some View {
@@ -463,6 +477,12 @@ struct PlacesScreen: View {
                     Text("位置 · \(m.places.count)").font(Theme.round(14)).foregroundColor(Theme.muted)   // 09-12 寻：「常去的地方」太难听，改叫「位置」
                     Spacer()
                     if !m.now.isEmpty { Text("此刻在：" + m.now).font(Theme.round(12)).foregroundColor(Theme.accent) }
+                    // 出发（给克的导航，09-15）：在路上时这颗钮就是那一趟
+                    Button { draft = nil; tripOpen.toggle() } label: {
+                        Text(trip.current.map { "→ \($0.name)" } ?? "出发").font(Theme.round(12, weight: .medium)).foregroundColor(.white)
+                            .padding(.horizontal, 11).frame(height: 26)
+                            .background(Theme.accent, in: Capsule())
+                    }.buttonStyle(.plain).padding(.leading, 10)
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
                 // 搜索框照抽屉那只：远的地方打名字跳过去，不用自己拖（寻 09-10）
@@ -495,6 +515,7 @@ struct PlacesScreen: View {
                     }
                 }
                 .overlay(alignment: .bottom) { if draft != nil { editCard.padding(.horizontal, 14).padding(.bottom, 14) } }
+                .overlay(alignment: .bottom) { if tripOpen && draft == nil { TripCard(m: m, onClose: { tripOpen = false }).padding(.horizontal, 14).padding(.bottom, 14) } }
                 .transaction { $0.animation = nil }   // 小卡瞬间出现/消失（寻定：不滑不淡）
             }
         }

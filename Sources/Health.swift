@@ -222,6 +222,10 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             body["_纬度"] = String(format: "%.5f", l.coordinate.latitude)
             body["_经度"] = String(format: "%.5f", l.coordinate.longitude)
             if let uv = await UVToday.max(at: l) { body["_紫外线最高"] = uv }   // 一天只真问一次，之后是缓存
+            // 在路上（给克的导航，09-15）：顺手算好还剩多远、几分钟，克那句变成「在去学校的路上，还剩 1.2 公里，约 15 分钟」
+            if let t = TripModel.shared.current, let r = await TripModel.shared.remaining(from: l) {
+                body["_路上"] = t.name; body["_剩余米"] = r.m; body["_剩余分"] = r.min
+            }
         }
         guard !body.isEmpty else { PushRegistrar.diag("health: now empty live=\(live)"); return false }
         let code = await post(body, today: true)

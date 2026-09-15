@@ -384,6 +384,7 @@ struct ChatScreen: View {
     @State private var dbg = ""
     @State private var composerFocused = false
     @ObservedObject private var rec = VoiceRecorder.shared   // 语音条录音（09-14）
+    @ObservedObject private var trip = TripModel.shared      // 在路上（给克的导航，09-15）：门楣底下一条细行
     @State private var holdStarted = false
     struct VoiceDraft { let file: URL; let dur: Double; let orig: String }   // 松手后、发出前：音频＋识别原文（字在 draft 里，她可以改）
     @State private var voiceDraft: VoiceDraft? = nil
@@ -397,11 +398,10 @@ struct ChatScreen: View {
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
         case "mem": return [.mem]
-        case "places": return [.places]
+        case "places", "tripsheet": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
         case "archno": return [.arch(day: "2026-09-02", q: nil, no: 1203)]   // #N 直跳的闪
-        case "archhits": return [.arch(day: nil, q: "安静", no: nil)]
         default: return []
         }
     }()
@@ -510,11 +510,14 @@ struct ChatScreen: View {
             if let l = model.live, l.items.contains(where: { if case .seg(let sg) = $0 { return sg.error != nil }; return false }) { clawd.alert() }
         }
         .task { await lintel.refresh() }
+        .task { await trip.sync() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
         .onAppear {
             model.onLogout = onLogout
             guard Preview.on else { return }
             switch Preview.screen {
+            case "trip":   // 在路上：门楣底下那条细行
+                trip.current = Trip(name: "学校", lat: 30.656, lon: 104.085, mode: "步行", startedAt: Date().addingTimeInterval(-300), etaMin: 18, distM: 1400, placeId: "p1")
             case "imgview":   // 看图器：拿预览里她发的那张
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     guard let u = model.msgs.last(where: { $0.role == "user" && !($0.images ?? []).isEmpty })?.images?.first else { return }
@@ -685,8 +688,18 @@ struct ChatScreen: View {
     }
 
 
-    /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。
+    /// 顶栏（照网页 header）：左上角展开钮（42px 圆、发丝圈、三道 16×2 靠左）| 门楣列 | 吃饭钮。在路上时底下多一条细行（09-15）。
     private var header: some View {
+        VStack(spacing: 0) {
+            headerRow
+            if let t = trip.current {
+                TripStrip(trip: t, onTap: { path.append(.places) }).padding(.leading, 54).padding(.trailing, 16).padding(.bottom, 6)
+            }
+        }
+        .background(Theme.bg)
+        .zIndex(30)
+    }
+    private var headerRow: some View {
         HStack(spacing: 0) {
             Button { drawerOn = true } label: {
                 VStack(alignment: .leading, spacing: 4) {   // 照网页：三道 16/16/11 × 2，圆头，八成不透明
@@ -713,8 +726,6 @@ struct ChatScreen: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-        .background(Theme.bg)
-        .zIndex(30)
     }
 
     // 行距/行视图/直播段的画法都在 MessageList.swift 的 MessageListBody 里（09-15 晚拆出）
