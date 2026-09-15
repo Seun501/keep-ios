@@ -40,12 +40,12 @@ struct LiveTurn {
     /// 定格：封段/工具/结束/出错时把已放出的字数拨到底，别让打字机循环盖掉后画的内容
     private mutating func settle() { var s = seg; s.shown = s.text.count; seg = s }
     private mutating func newSegment() { finishThought(); settle(); items.append(.seg(LiveSeg())) }
-    /// 打字机一帧：积压越多每帧放越多（约 0.4s 追平）。放了字返回 true。
+    /// 打字机一帧（30 帧/秒）：积压越多每帧放越多（约 0.4s 追平）。放了字返回 true。
     mutating func advance() -> Bool {
         var s = seg
         let n = s.text.count
         guard s.shown < n else { return false }
-        s.shown = min(n, s.shown + max(1, Int((Double(n - s.shown) / 24).rounded())))
+        s.shown = min(n, s.shown + max(1, Int((Double(n - s.shown) / 12).rounded())))
         seg = s; events += 1
         return true
     }
@@ -327,11 +327,15 @@ final class ChatModel: ObservableObject {
 
     /// 打字机循环（照网页 smoothTick，逐帧放字，追平即停）
     private var smoother: Timer? = nil
+    /// 键盘正在起/收：打字机停一拍（09-15）。每帧重排整段正文和键盘那 0.25 秒的动画抢主线程，就是「克在回的时候收键盘、消息流下降慢」
+    var kbBusy = false
     private func startSmoother() {
         guard smoother == nil else { return }
-        smoother = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
+        // 30 帧/秒：60 帧时每帧都重解析、重排整段 markdown，字一长就掉帧；每帧多放一倍字，观感一样
+        smoother = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] t in
             Task { @MainActor in
                 guard let self, var l = self.live else { t.invalidate(); self?.smoother = nil; return }
+                if self.kbBusy { return }
                 if l.advance() { self.live = l } else { t.invalidate(); self.smoother = nil }
             }
         }
@@ -631,9 +635,10 @@ struct ChatScreen: View {
                 guard wasAtBottom, path.isEmpty, !showMeal, !drawerOn, farFromBottom else { return }
                 pinBottom()
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbAnimating = false }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true; model.kbBusy = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in wasAtBottom = atBottom; kbAnimating = true; model.kbBusy = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbAnimating = false; model.kbBusy = false }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in model.kbBusy = false }
             .onAppear {
                 Task { await model.load() }
                 // 截图场景 chips：工具行在预览对话靠前的位置，滚到顶把它露出来
@@ -764,7 +769,7 @@ struct ChatScreen: View {
                     } else if s.shown > 0 {
                         // 紧跟工具行的正文：顶 0（行距 4 + 宋体 13 顶空≈15，同正史）；其余照网页 .bubble 上下 11
                         // 直播里 [reply: …] 不上屏（半截的先藏、整段的摘掉）；说完落成正史那条再画成选项卡
-                        RichText(attr: MDWhole.make(Replies.split(Replies.hidePartial(s.shownText)).text)).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
+                        RichText(attr: MDWhole.make(Replies.split(Replies.hidePartial(s.shownText)).text), live: true).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
                     }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

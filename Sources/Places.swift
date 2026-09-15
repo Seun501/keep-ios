@@ -467,7 +467,7 @@ struct PlacesScreen: View {
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
                 // 搜索框照抽屉那只：远的地方打名字跳过去，不用自己拖（寻 09-10）
                 HStack(spacing: 0) {
-                    PlainField(text: $q, focused: $qF, placeholder: "搜个地名跳过去…", font: Self.fieldFont, returnKey: .search, onSubmit: search)
+                    PlainField(text: $q, focused: $qF, placeholder: "搜个地名跳过去…", font: Self.fieldFont, returnKey: .search, selectAllOnFocus: true, onSubmit: search)
                         .frame(height: 20).padding(.vertical, 7).padding(.horizontal, 12)
                     Button(action: search) {
                         Image("search").renderingMode(.template).resizable().frame(width: 15, height: 15).foregroundColor(.white)

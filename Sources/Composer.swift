@@ -88,6 +88,7 @@ struct PlainField: UIViewRepresentable {
     var returnKey: UIReturnKeyType = .send
     var keyboard: UIKeyboardType = .default
     var textColor: UIColor = Theme.uiText          // 定色纸上的输入行传定色墨（锁信口令，夜间模式）
+    var selectAllOnFocus = false                   // 搜索框（寻 09-15）：搜过再点进来＝旧词整个选中，直接打新词；点字尾空白处就取消选中接着打
     var onSubmit: () -> Void = {}
     func makeUIView(context: Context) -> UITextField {
         let tf = UITextField()
@@ -116,7 +117,13 @@ struct PlainField: UIViewRepresentable {
         var parent: PlainField
         init(_ p: PlainField) { parent = p }
         @objc func changed(_ tf: UITextField) { if parent.text != tf.text ?? "" { parent.text = tf.text ?? "" } }
-        func textFieldDidBeginEditing(_ tf: UITextField) { if !parent.focused { parent.focused = true } }
+        func textFieldDidBeginEditing(_ tf: UITextField) {
+            if !parent.focused { parent.focused = true }
+            if parent.selectAllOnFocus, !(tf.text ?? "").isEmpty {
+                // 系统把光标落到点的位置是在这之后，所以下一拍再选（用 range 不用 selectAll(nil)：后者会弹复制菜单）
+                DispatchQueue.main.async { tf.selectedTextRange = tf.textRange(from: tf.beginningOfDocument, to: tf.endOfDocument) }
+            }
+        }
         func textFieldDidEndEditing(_ tf: UITextField) { if parent.focused { parent.focused = false } }
         func textFieldShouldReturn(_ tf: UITextField) -> Bool { parent.onSubmit(); return false }
     }

@@ -290,6 +290,9 @@ struct UserTextView: View {
 struct RichText: UIViewRepresentable {
     let attr: NSAttributedString
     var maxLines = 0          // >0＝最多几行、尾部省略（留言卡两行预览）
+    /// 直播段（09-15）：打字机每帧都换一遍文本，链接探测＋按内容量宽这两道每帧各扫一遍全文，字一长主线程就掉帧
+    /// （寻 09-13/09-15 反复报：克在回的时候收键盘、消息流下降慢；kb-hide 仪表最大空帧 450ms）。直播段一律撑满宽、不探链接，落成正史再照常
+    var live = false
     func makeUIView(context: Context) -> UITextView {
         // TextKit 1：*斜体* 靠 .obliqueness 倾斜，TextKit 2 直接无视它（寻验 28「完全不渲染」——星号吃了、字没斜）
         let tv = UITextView(usingTextLayoutManager: false)
@@ -305,7 +308,7 @@ struct RichText: UIViewRepresentable {
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero; tv.textContainer.lineFragmentPadding = 0
         if maxLines > 0 { tv.textContainer.maximumNumberOfLines = maxLines; tv.textContainer.lineBreakMode = .byTruncatingTail; tv.isUserInteractionEnabled = false }
-        tv.dataDetectorTypes = [.link]
+        tv.dataDetectorTypes = live ? [] : [.link]
         tv.linkTextAttributes = [.foregroundColor: Theme.uiScrollTint]
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         tv.setContentHuggingPriority(.required, for: .vertical)
@@ -338,10 +341,13 @@ struct RichText: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         let maxW = proposal.width ?? (UIScreen.main.bounds.width - 32)
         if let c = context.coordinator.cache, abs(c.w - maxW) < 0.5 { return c.size }
-        // 按内容量宽：短句就窄气泡（寻验：全部撑满一样长了）
-        let r = attr.boundingRect(with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
-                                  options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
-        let w = min(maxW, ceil(r.width) + 1)
+        // 按内容量宽：短句就窄气泡（寻验：全部撑满一样长了）；直播段省掉这一遍量宽
+        let w: CGFloat
+        if live { w = maxW } else {
+            let r = attr.boundingRect(with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
+                                      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+            w = min(maxW, ceil(r.width) + 1)
+        }
         let h = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
         let size = CGSize(width: w, height: h)
         context.coordinator.cache = (maxW, size)

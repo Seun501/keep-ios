@@ -44,7 +44,7 @@ struct DrawerView: View {
 
                 // 搜索框：纯 UITextField、定高 34（寻验 09-04：SwiftUI 的 TextField 一聚焦就上下变窄）
                 HStack(spacing: 0) {
-                    PlainField(text: $q, focused: $qFocused, placeholder: "Search…", font: Self.searchFont, returnKey: .search, onSubmit: search)
+                    PlainField(text: $q, focused: $qFocused, placeholder: "Search…", font: Self.searchFont, returnKey: .search, selectAllOnFocus: true, onSubmit: search)
                         .frame(height: 20)
                         .padding(.vertical, 7).padding(.horizontal, 12)
                     Button(action: search) {
@@ -197,7 +197,7 @@ struct DrawerView: View {
     }
 
     private func load() async {
-        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5%"; notesBadge = 1; return }
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5% · Fri"; notesBadge = 1; return }
         guard let token = Keychain.token else { return }
         func get(_ path: String) async -> [String: Any]? {
             var r = URLRequest(url: Gateway.home.appendingPathComponent(path))
@@ -217,7 +217,15 @@ struct DrawerView: View {
             if let last = days.last, let y = Int(last.prefix(4)), let m = Int(last.dropFirst(5).prefix(2)) { ym = (y, m) }
         }
         if let u = await u, let fh = (u["five_hour"] as? [String: Any])?["pct"] as? Double, let sd = (u["seven_day"] as? [String: Any])?["pct"] as? Double {
-            usage = "5h \(Int(fh))% · week \(Int(sd))%"
+            // 周额度哪天重置（寻 09-15 定：「5h 19% · week 5% · Fri」；当天写 today）——网关本来就带着官方表的 resets_at
+            var reset = ""
+            // 官方表给的是 2026-09-18T00:00:00.438976+00:00（六位小数）：ISO8601DateFormatter 只认三位，先把小数抹掉
+            if let iso = (u["seven_day"] as? [String: Any])?["resets_at"] as? String,
+               let d = ISO8601DateFormatter().date(from: iso.replacingOccurrences(of: "\\.\\d+", with: "", options: .regularExpression)) {
+                if Calendar.current.isDateInToday(d) { reset = " · today" }
+                else { let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "EEE"; reset = " · " + f.string(from: d) }
+            }
+            usage = "5h \(Int(fh))% · week \(Int(sd))%" + reset
             UserDefaults.standard.set(usage, forKey: "cache.usage")
         }
         let nb = (await nts)?["unread"] as? Int ?? 0
