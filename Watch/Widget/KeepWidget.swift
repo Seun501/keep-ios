@@ -13,18 +13,19 @@ struct KeepProvider: TimelineProvider {
     }
 }
 
+/// 09-15 寻：就用 App 的图标（icon.imageset＝AppIcon 缩到 240）。彩色表盘上是原色；单色/染色表盘系统会把它染成主题色。
 struct KeepComplicationView: View {
     @Environment(\.widgetFamily) private var family
-    private let ke = Font.system(size: 22, weight: .semibold, design: .serif)
+    private var icon: some View { Image("icon").resizable().scaledToFill().clipShape(Circle()) }
     var body: some View {
         switch family {
         case .accessoryCircular:
-            ZStack { AccessoryWidgetBackground(); Text("克").font(ke) }
+            icon
         case .accessoryCorner:
-            Text("克").font(.system(size: 20, weight: .semibold, design: .serif)).widgetLabel { Text("Keep") }
+            icon.widgetLabel { Text("Keep") }
         case .accessoryRectangular:
             HStack(spacing: 8) {
-                Text("克").font(ke)
+                icon.frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Keep").font(.system(size: 14, weight: .semibold))
                     Text("和克说话").font(.system(size: 12)).foregroundStyle(.secondary)
@@ -32,7 +33,7 @@ struct KeepComplicationView: View {
                 Spacer(minLength: 0)
             }
         default:
-            Text("Keep · 克")
+            Text("Keep")
         }
     }
 }

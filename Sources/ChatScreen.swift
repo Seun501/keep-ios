@@ -569,33 +569,20 @@ struct ChatScreen: View {
 
     /// 非懒 VStack（09-05 定）：懒列表的内容高是估算的，视口一变（键盘起收）它会把行撤掉重估——偏移明明在底、视口却空白（sim-77 截到），
     /// 末行滚不出来、钉底靠猜、起键盘露出中间的行全是它。主页只画最近两天（更早的按天手动加载），全排出来高度就是真的。
+    /// 消息流本体拆成 MessageListBody（09-15 晚，收键盘那一两帧卡）：它只依赖 model 和 lift，键盘起收时 ChatScreen 这层的状态
+    /// 变来变去（kbAnimating/wasAtBottom/kbUp/composerFocused），它不重算。这里只挂锚点和滚动观察。
     private var listContent: some View {
-        // 行距（09-09 寻验「工具+思考+工具+思考」第三四段叠在一起、直播工具行半截在输入框底下）：不再 spacing 22 + 负边距，
-        // 改 spacing 0、每行自带上间距——负边距把版面缩成负数：内容高不含它、钉底钉不到、后一行叠上来
-        VStack(spacing: 0) {
-            if model.renderFrom > 0 {
-                Button { model.loadOlderDay() } label: {
-                    Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
-                }.buttonStyle(.plain).padding(.top, 4)
-            }
-            ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
-                row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item), last: i == model.items.count - 1).padding(.top, gapBefore(i))
-            }
-            if let live = model.live {
-                VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
-            }
-        }
-        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10 + (rec.recording ? holdH : 0))   // 网页 #messages padding-bottom 10；录音时再垫浮层高
+        MessageListBody(model: model, lift: rec.recording ? holdH : 0)
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
         .background(ScrollObserver(name: "chat") { y, ch, vh in
             let total = max(ch, 1)
             let gap = total - y - vh
-            farFromBottom = gap > 40
-            atBottom = !farFromBottom
+            let far = gap > 40
+            if farFromBottom != far { farFromBottom = far; atBottom = !far }   // 值没变就别碰 @State（碰一下＝整页重算一遍）
             // 09-15 晚寻：克回话时上滑还是怪——40 点以内松手会被钉回去。改记「她自己往上翻过」：手指在拖着且离底超 12 就记下，
             // 之后不再跟随，直到她回到底（跳底钮或自己滑回来，离底 < 4）
-            if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
-            if gap < 4 { userUp = false }
+            if !userUp, let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
+            if userUp, gap < 4 { userUp = false }
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
         })
     }
@@ -730,82 +717,7 @@ struct ChatScreen: View {
         .zIndex(30)
     }
 
-    /// 以工具行收尾的 AI 行（只有工具行，或正文后面跟着工具行——09-12 起工具行画在正文后）：下一行的行距要收（thought 打头 8＝视觉 10，正文打头 4-2+13≈15）
-    private static func toolsOnly(_ item: TimelineItem) -> Bool {
-        if case .ai(_, let m, _) = item {
-            return !(m.toolCalls ?? []).isEmpty
-        }
-        return false
-    }
-    private func gapBefore(_ i: Int) -> CGFloat {
-        guard i > 0 else { return model.renderFrom > 0 ? 22 : 0 }
-        guard Self.toolsOnly(model.items[i - 1].item) else { return 22 }
-        // 09-13 寻：夹在文中的工具行上下太窄 → 工具行接正文 4→9、接思考头 8→12（连排工具行之间照旧 4）
-        if case .ai(_, let m, _) = model.items[i].item { return m.cleanThinking.isEmpty ? 9 : 12 }
-        return 22
-    }
-    private func liveTopGap(_ live: LiveTurn) -> CGFloat {
-        guard let last = model.items.last else { return 0 }
-        guard Self.toolsOnly(last.item) else { return 22 }
-        if case .seg(let s)? = live.items.first { return Self.hasThinking(s) ? 12 : 9 }
-        return 9
-    }
-    private static func hasThinking(_ s: LiveSeg) -> Bool { !s.thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    /// 直播段之间的行距：连排工具行 4；工具行→thought 8（+2＝10）；工具行→正文 4（正文顶 0 + 13 顶空≈15）；
-    /// 正文→下一段 22（正文自带底 11）；thought→工具行 8（+2＝10）；空段 0
-    private static func liveGap(prev: LiveItem, thisIsChip: Bool, thinking: Bool) -> CGFloat {
-        switch prev {
-        case .chip: return thisIsChip ? 4 : (thinking ? 12 : 9)
-        case .seg(let p):
-            if p.error != nil || p.shown > 0 { return 22 }
-            return hasThinking(p) ? 8 : 0
-        }
-    }
-
-    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
-        switch item {
-        case .daySep(let d): DaySepView(day: d)
-        case .user(let t, let s, let imgs, let p, let v): UserRowView(text: t, stamp: s, images: imgs, pick: p, voice: v)
-        case .ai(_, let m, let u):
-            AIRowView(msg: m, showUsage: u, afterTools: afterTools)
-        case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
-        case .ping(let m): PingChipView(msg: m)
-        case .wakeChip(let hm): WakeChipView(hm: hm)
-        case .knock(let t, let s): KnockRowView(text: t, stamp: s)
-        }
-    }
-
-    /// 直播段（09-09 重排）：不再有任何负边距（136/138 两版负边距都留了病：工具行只露半截、段落叠在一起），
-    /// 行距全由 liveGap 按前后段给；第一段的上间距由 liveTopGap 按正史末行给
-    @ViewBuilder private func liveView(_ live: LiveTurn) -> some View {
-        let afterHist = model.items.last.map { Self.toolsOnly($0.item) } ?? false
-        ForEach(Array(live.items.enumerated()), id: \.offset) { idx, it in
-            let prev: LiveItem? = idx > 0 ? live.items[idx - 1] : nil
-            switch it {
-            case .chip(let n, let d):
-                ToolChipView(name: n, done: d, inRow: true)
-                    .padding(.top, prev.map { Self.liveGap(prev: $0, thisIsChip: true, thinking: false) } ?? 0)
-            case .seg(let s):
-                let thinking = Self.hasThinking(s)
-                let afterChip = prev.map { if case .chip = $0 { return true } else { return false } } ?? afterHist
-                VStack(alignment: .leading, spacing: 6) {
-                    if thinking {
-                        ThinkView(text: s.thinking.trimmingCharacters(in: .whitespacesAndNewlines),
-                                  label: s.thinkSecs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thinking…")
-                    }
-                    if let e = s.error {
-                        Text(e).font(Theme.serif(15)).foregroundColor(.red)
-                    } else if s.shown > 0 {
-                        // 紧跟工具行的正文：顶 0（行距 4 + 宋体 13 顶空≈15，同正史）；其余照网页 .bubble 上下 11
-                        // 直播里 [reply: …] 不上屏（半截的先藏、整段的摘掉）；说完落成正史那条再画成选项卡
-                        RichText(attr: MDWhole.make(Replies.split(Replies.hidePartial(s.shownText)).text), live: true).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
-                    }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, prev.map { Self.liveGap(prev: $0, thisIsChip: false, thinking: thinking) } ?? 0)
-            }
-        }
-    }
+    // 行距/行视图/直播段的画法都在 MessageList.swift 的 MessageListBody 里（09-15 晚拆出）
 
     /// 克的选项卡：最末一条是他的话且带 [reply: …]、他没在说话 → 摊在输入卡上方（她一回话就自然撤下）
     private var activeReplies: (id: String, options: [String])? {
