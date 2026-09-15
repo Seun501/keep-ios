@@ -20,10 +20,11 @@ struct Msg: Decodable {
     var usage: Usage? = nil
     var interrupted: Bool? = nil
     var voice: Voice? = nil        // 语音条（09-14）：url/秒数/语气/转写；content 是「字＋小注」
+    var via: String? = nil         // "watch"＝从手表上发的（09-15）：正史 content 冠「［手表］」，画气泡时摘掉、时间旁标 Watch
     var localEcho = false          // 吃吃就地回显：本地插进正史的小纸条，正牌纸条到了就撤
 
     enum CodingKeys: String, CodingKey {
-        case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted, voice
+        case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted, voice, via
         case thinkSecs = "think_secs", toolCalls = "tool_calls", sleepNote = "sleep_note"
         case napNote = "nap_note", rainNote = "rain_note", knockText = "knock_text", placeNote = "place_note"
     }
@@ -48,6 +49,7 @@ struct Msg: Decodable {
         usage = try? c.decode(Usage.self, forKey: .usage)
         interrupted = try? c.decode(Bool.self, forKey: .interrupted)
         voice = try? c.decode(Voice.self, forKey: .voice)   // 09-14 漏了这行：本地那条有 voice、服务器拉回来的没有，发下一条后语音气泡变普通气泡（寻验）
+        via = try? c.decode(String.self, forKey: .via)
     }
 
     init(role: String, content: String?, ts: String?, images: [String]? = nil) {
@@ -55,6 +57,8 @@ struct Msg: Decodable {
     }
 
     var isWake: Bool { wake == true }
+    /// 「［手表］」冠头摘掉（正史里给克看的记号，气泡不画）
+    static func stripWatch(_ s: String) -> String { s.hasPrefix("［手表］") ? String(s.dropFirst(4)) : s }
     var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true || placeNote == true }
     var cleanThinking: String { (thinking ?? "").replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
     var date: Date? { ts.flatMap(TimeFmt.parse) }

@@ -277,7 +277,7 @@ struct ArchiveScreen: View {
         } else if e.role == "user" && e.isPing {
             PingChipView(msg: pingMsg(e))
         } else if e.role == "user" {
-            UserRowView(text: e.voice != nil ? (e.voice?.text ?? Voice.stripNote(e.text ?? "")) : (e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick, voice: e.voice)
+            UserRowView(text: e.voice != nil ? (e.voice?.text ?? Voice.stripNote(Msg.stripWatch(e.text ?? ""))) : Msg.stripWatch(e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick, voice: e.voice)
         } else {
             AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, parseReplies: false)   // 档案馆放原文，[reply: …] 照排
         }

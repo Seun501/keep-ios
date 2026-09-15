@@ -24,10 +24,11 @@ struct WMsg: Decodable, Identifiable {
     var id: String { (ts ?? "") + (role ?? "") + String(text.prefix(16)) }
     var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true || placeNote == true }
     var mine: Bool { role == "user" && !isPing }
-    /// 气泡里的字：语音条只要正文；纸条去掉「14:02-寻」那个头
+    /// 气泡里的字：语音条只要正文；纸条去掉「14:02-寻」那个头；「［手表］」冠头摘掉
     var text: String {
         if let t = voice?.text, !t.isEmpty { return t }
         var s = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("［手表］") { s = String(s.dropFirst(4)) }
         if s.hasPrefix("［语音条］") {
             s = String(s.dropFirst(5))
             if let r = s.range(of: #"（\d+秒[^）]*）\s*$"#, options: .regularExpression) { s = String(s[..<r.lowerBound]) }
@@ -103,7 +104,7 @@ final class WatchChat: ObservableObject {
     func send(_ text: String, voice: [String: Any]? = nil) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !sending else { return }
-        var payload: [String: Any] = ["message": t, "images": []]
+        var payload: [String: Any] = ["message": t, "images": [], "via": "watch"]   // 正史冠「［手表］」，克回短一点（寻 09-15）
         if let convId { payload["conversation_id"] = convId }
         if let voice { payload["voice"] = voice }
         guard let body = try? JSONSerialization.data(withJSONObject: payload),
@@ -190,14 +191,14 @@ struct WatchChatView: View {
             Text(x.text).font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
         } else if x.mine {
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 0) {   // 09-15 寻：时间离气泡太远——贴上去
                 HStack(alignment: .top, spacing: 4) {
                     if let d = x.voice?.dur { Text("\(Int(d.rounded()))″").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).padding(.top, 5) }
                     Text(x.text).font(WatchTheme.xun).foregroundStyle(WatchTheme.text)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(WatchTheme.bubble, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
-                Text(x.hm).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                Text(x.hm).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary).padding(.top, 1).padding(.trailing, 2)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.leading, 22)
@@ -236,7 +237,7 @@ struct WatchChatView: View {
                     if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -40) } else { endHold(cancel: true) }
                 }
         )
-        .padding(.horizontal, 4).padding(.bottom, 2)
+        .padding(.horizontal, 4).padding(.bottom, 10)   // 09-15 寻：输入行别贴着表底
     }
 
     /// 系统文本输入（听写/涂鸦/键盘）：SwiftUI 壳里也能从 WatchKit 拿到当前界面控制器来弹
