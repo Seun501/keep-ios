@@ -28,6 +28,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
     @Published var editHint = false          // 手指右滑到编辑区（松手字进输入框、键盘升起）
     @Published var liveText = ""             // 边说边出的字（已定句 + 当前半句）
     @Published var asrState = ""             // 空＝正常；「识别没连上」之类给界面提示
+    var rawText = ""                         // 松手时腾讯识别的原文（纠错字典改之前），学编辑记 orig 用它
     static let maxSeconds = 120.0
 
     private let engine = AVAudioEngine()
@@ -191,7 +192,8 @@ final class VoiceRecorder: NSObject, ObservableObject {
         }
         closeWS()
         recording = false
-        let text = (finished.joined() + partial).trimmingCharacters(in: .whitespacesAndNewlines)
+        rawText = (finished.joined() + partial).trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = VoiceFixes.apply(rawText)   // 学编辑：按她以前改过的字先改一遍
         guard let url = fileURL else { return nil }
         // 09-15 晚寻：松手前要看一眼字对不对，尾巴那段空白被 Gemini 听成「——（拖长，撒娇）」——最后一声之后超过 0.8 秒的空白剪掉
         // （留 0.35 秒收尾），AAC 直通不重编码

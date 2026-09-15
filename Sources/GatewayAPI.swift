@@ -81,6 +81,9 @@ enum GatewayAPI {
         return u
     }
 
+    /// 学编辑的纠错字典（原样字节，VoiceFixes 自己解、自己存）
+    static func voiceFixes() async throws -> Data { try await raw("api/voice/fixes") }
+
     /// 语音条：m4a 整段 POST 上去落盘。transcribe=false（二版）：只存，回 {url, dur}；true（一版）：网关转写＋写语气
     static func uploadVoice(file: URL, dur: Double, transcribe: Bool = true) async throws -> Voice {
         // 秒数走 query（不能拼进 path：appendingPathComponent 会把 ? 转义成 %3F，网关 404——构建 216 寻第一条就撞上）

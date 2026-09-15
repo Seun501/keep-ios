@@ -540,7 +540,7 @@ struct ChatScreen: View {
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
             if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true }
-                                     await alerts.uvOnce(); await HealthSync.shared.syncOnActive(); await alerts.healthOnce() } }   // 「当天首开」也算回前台那次（App 常驻内存时 .task 不会再跑）
+                                     await alerts.uvOnce(); await HealthSync.shared.syncOnActive(); await alerts.healthOnce(); await VoiceFixes.refresh() } }   // 「当天首开」也算回前台那次（App 常驻内存时 .task 不会再跑）
             if p == .background { model.detach() }
         }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.chat") } }
@@ -957,11 +957,11 @@ struct ChatScreen: View {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
-                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: r.2)
+                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
             }
-            voiceDraft = VoiceDraft(file: r.0, dur: r.1, orig: r.2)
+            voiceDraft = VoiceDraft(file: r.0, dur: r.1, orig: rec.rawText)
             draft = r.2
             if r.2.isEmpty { alerts.push(AlertsModel.Strip(icon: "mic", title: "没听出字", en: false, msg: (rec.asrState.isEmpty ? "" : rec.asrState + "，") + "可以直接打字补上，音频还在。", kind: "voice")) }
             composerFocused = true
