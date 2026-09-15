@@ -91,8 +91,9 @@ struct StarSkyView: View {
         Canvas { g, size in
             guard night > 0 else { return }
             let R = Double.pi / 180
-            let horizon = size.width * 1.59              // 地平线半径（屏外）
-            let zenith = CGPoint(x: size.width / 2, y: size.height * 0.40)
+            // sim-255：天顶放大得太厉害，夏季大三角撑满半屏、线压在 Clawd 和输入线上——地平线半径收到 1.2 倍屏宽，多露一圈天、星座小一号
+            let horizon = size.width * 1.2               // 地平线半径（屏外）
+            let zenith = CGPoint(x: size.width / 2, y: size.height * 0.38)
             var pos: [String: (CGPoint, Double, Double)] = [:]
             for (k, s) in StarSky.stars {
                 let (alt, az) = StarSky.altAz(ra: s.ra, dec: s.dec, date: date, lat: lat, lon: lon)
@@ -114,7 +115,7 @@ struct StarSkyView: View {
                 let (p, alt, mag) = v
                 let r = max(0.7, 2.6 - 0.55 * mag)
                 let fade = min(1, (alt - 8) / 22)
-                let a = (0.35 + 0.45 * (1 - min(mag, 3) / 3)) * fade * night
+                let a = (0.45 + 0.45 * (1 - min(mag, 3) / 3)) * fade * night
                 g.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(Theme.dyn(0xB9AE9F, 0xE8DCC8).opacity(a)))
             }
         }
