@@ -28,7 +28,7 @@ struct LoginView: View {
                 Theme.bg.ignoresSafeArea()
                 TimelineView(.animation(paused: litAt == nil)) { ctx in
                     let lit = litAt.map { min(1, ctx.date.timeIntervalSince($0) / 1.4) } ?? 0
-                    let night = Preview.on ? (Preview.screen == "loginday" ? 0 : 1) : StarSky.nightness(date: ctx.date, lat: here.0, lon: here.1)
+                    let night = Preview.on ? 1 : StarSky.nightness(date: ctx.date, lat: here.0, lon: here.1)
                     StarSkyView(date: Preview.on ? Self.previewDate : ctx.date, lat: here.0, lon: here.1, night: night, lit: lit)
                 }
                 .ignoresSafeArea()
@@ -54,7 +54,7 @@ struct LoginView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
             if Preview.on, Preview.screen == "loginerr" { error = "口令不对" }
-            if Preview.on, Preview.screen == "loginlit" || Preview.screen == "loginday" { litAt = Date() }
+            if Preview.on, Preview.screen == "loginlit" { litAt = Date() }
         }
         .onChange(of: text) { _ in if !error.isEmpty { error = "" } }   // 再打字就把红线收回去
     }
@@ -75,8 +75,9 @@ struct LoginView: View {
                 busy = false
                 switch ok {
                 case .ok:
-                    // 星座线连完（1.4 秒）再进屋；白天没星也等这一拍，别忽快忽慢
+                    // 夜里：星座线连完（1.4 秒）再进屋；白天没星，直接进（寻 09-15）
                     focused = false
+                    if StarSky.nightness(date: Date(), lat: here.0, lon: here.1) < 0.05 { onSuccess(t); return }
                     litAt = Date()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { onSuccess(t) }
                 case .wrong: error = "口令不对"

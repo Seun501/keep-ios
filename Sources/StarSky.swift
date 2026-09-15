@@ -89,8 +89,8 @@ struct StarSkyView: View {
     var lit: Double            // 0…1
     var body: some View {
         Canvas { g, size in
-            // 白天纸是空的；口令对了那一瞬，星（此刻真实位置，只是被太阳遮着）随线一起淡淡浮现再进屋（寻 09-15：白天光连线怪）
-            let vis = max(night, lit * 0.9)
+            // 白天纸是空的，什么都不画，口令对了直接进（寻 09-15：白天连线看着像乱线）
+            let vis = night
             guard vis > 0 else { return }
             let R = Double.pi / 180
             // sim-255：天顶放大得太厉害，夏季大三角撑满半屏、线压在 Clawd 和输入线上——地平线半径收到 1.2 倍屏宽，多露一圈天、星座小一号
