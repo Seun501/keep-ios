@@ -516,8 +516,6 @@ struct ChatScreen: View {
             model.onLogout = onLogout
             guard Preview.on else { return }
             switch Preview.screen {
-            case "trip":   // 在路上：门楣底下那条细行
-                trip.current = Trip(name: "学校", lat: 30.656, lon: 104.085, mode: "步行", startedAt: Date().addingTimeInterval(-300), etaMin: 18, distM: 1400, placeId: "p1")
             case "imgview":   // 看图器：拿预览里她发的那张
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     guard let u = model.msgs.last(where: { $0.role == "user" && !($0.images ?? []).isEmpty })?.images?.first else { return }

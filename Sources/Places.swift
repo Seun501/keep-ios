@@ -455,7 +455,7 @@ struct PlaceMap: UIViewRepresentable {
 struct PlacesScreen: View {
     var onBack: () -> Void
     @StateObject private var m = PlacesModel()
-    @State private var draft: PlaceDraft? = Preview.on ? PlaceDraft(id: nil, lat: 30.6560, lon: 104.0850, radius: 150) : nil
+    @State private var draft: PlaceDraft? = Preview.on && Preview.screen != "tripsheet" ? PlaceDraft(id: nil, lat: 30.6560, lon: 104.0850, radius: 150) : nil
     @State private var name = ""
     @State private var nameF = false
     @State private var saving = false

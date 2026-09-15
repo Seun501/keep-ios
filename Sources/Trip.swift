@@ -25,6 +25,13 @@ final class TripModel: ObservableObject {
     @Published var current: Trip? = TripModel.cached() { didSet { TripModel.cache(current) } }
     @Published var busy = false
 
+    private init() {
+        // 截图班 trip：一开始就在路上（别在 onAppear 里改，首帧改状态会把消息流那层挤没——sim-285）
+        if Preview.on, Preview.screen == "trip" {
+            current = Trip(name: "学校", lat: 30.656, lon: 104.085, mode: "步行", startedAt: Date().addingTimeInterval(-300), etaMin: 18, distM: 1400, placeId: "p1")
+        }
+    }
+
     private static func cached() -> Trip? {
         guard !Preview.on, let d = UserDefaults.standard.data(forKey: "trip.current") else { return nil }
         return try? JSONDecoder().decode(Trip.self, from: d)
