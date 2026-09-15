@@ -1,66 +1,58 @@
 import SwiftUI
 
 /// 原生口令页（09-02 寻：网页那张难看）。只登一次，口令进钥匙串，此后开 App 直入。
-/// 配色照网页 :root——纸色底 #F9F9F7 / 夜 #20201F，深暖棕字，赤陶色钮；不描边（寻不喜欢）。
+/// 09-15 寻：灰底圆角输入框和大胶囊「进」太丑——照锁信那张口令行来：一根发丝线托着的输入行、右边一枚小胶囊钮，
+/// 整行 230 宽居中；错误行固定占位不忽高忽低。配色走 Theme（纸色底、深暖棕字、赤陶钮），不描边。
 struct LoginView: View {
     var onSuccess: (String) -> Void
 
     @State private var text = ""
     @State private var busy = false
     @State private var error = ""
-    @FocusState private var focused: Bool
-    @Environment(\.colorScheme) private var scheme
+    @State private var focused = false
 
-    private var bg: Color { scheme == .dark ? Color(hex: 0x20201F) : Color(hex: 0xF9F9F7) }
-    private var fg: Color { scheme == .dark ? Color(hex: 0xE8E2D6) : Color(hex: 0x302D27) }
-    private var muted: Color { scheme == .dark ? Color(hex: 0x98907F) : Color(hex: 0x9B9183) }
-    private var field: Color { scheme == .dark ? Color(hex: 0x2A2A27) : Color(hex: 0xF1EDE7) }
-    private let accent = Color(hex: 0xC96442)
+    private var empty: Bool { text.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         ZStack {
-            bg.ignoresSafeArea()
+            Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 Spacer()
                 Text("克")
                     .font(.custom("Songti SC", size: 44).weight(.bold))
-                    .foregroundStyle(fg)
-                    .padding(.bottom, 34)
+                    .foregroundStyle(Theme.text)
+                    .padding(.bottom, 38)
 
-                SecureField("", text: $text, prompt: Text("口令").foregroundColor(muted.opacity(0.7)))
-                    .font(Theme.ui(17))
-                    .foregroundStyle(fg)
-                    .multilineTextAlignment(.center)
-                    .textContentType(.password)
-                    .submitLabel(.go)
-                    .focused($focused)
-                    .onSubmit(submit)
-                    .padding(.vertical, 14)
-                    .frame(maxWidth: 260)
-                    .background(field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                HStack(spacing: 14) {
+                    PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiSys(16), returnKey: .go, secure: true, onSubmit: submit)
+                        .frame(height: 22).padding(.vertical, 6).padding(.horizontal, 2)
+                        .overlay(alignment: .bottom) { Rectangle().fill(focused ? Theme.muted : Theme.border).frame(height: 1) }
+                    Button(action: submit) {
+                        Text(busy ? "…" : "进").font(Theme.round(13)).tracking(1.8).foregroundColor(.white)
+                            .padding(.horizontal, 15).padding(.vertical, 5)
+                            .background(Theme.accent, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy || empty)
+                    .opacity(empty ? 0.45 : 1)
+                }
+                .frame(maxWidth: 230)
 
                 Text(error)
-                    .font(Theme.ui(13))
-                    .foregroundStyle(accent)
-                    .frame(height: 30)
-
-                Button(action: submit) {
-                    Text(busy ? "…" : "进")
-                        .font(.custom("Songti SC", size: 17).weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 96, height: 44)
-                        .background(accent, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
-                .opacity(text.trimmingCharacters(in: .whitespaces).isEmpty ? 0.55 : 1)
+                    .font(Theme.round(12.5))
+                    .foregroundStyle(Theme.accent)
+                    .frame(height: 22)
+                    .padding(.top, 10)
 
                 Spacer()
                 Spacer()
             }
             .padding(.horizontal, 32)
         }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true } }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
+            if Preview.on, Preview.screen == "loginerr" { error = "口令不对" }
+        }
     }
 
     private func submit() {

@@ -5,7 +5,7 @@ import SwiftUI
 @main
 struct KeepApp: App {
     @UIApplicationDelegateAdaptor(PushRegistrar.self) private var pushDelegate
-    @State private var token: String? = Preview.on ? "preview" : Keychain.token
+    @State private var token: String? = Preview.on ? (Preview.screen.hasPrefix("login") ? nil : "preview") : Keychain.token   // 截图班 login/loginerr：停在口令页
 
     init() {
         // 选中高亮/把手/光标全局同滚动条色（寻 09-02：三者一个色）
