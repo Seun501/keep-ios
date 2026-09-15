@@ -57,8 +57,8 @@ struct Msg: Decodable {
     }
 
     var isWake: Bool { wake == true }
-    /// 「［手表］」冠头摘掉（正史里给克看的记号，气泡不画）
-    static func stripWatch(_ s: String) -> String { s.hasPrefix("［手表］") ? String(s.dropFirst(4)) : s }
+    /// 「⌚」冠头摘掉（正史里给克看的记号，气泡不画；克 09-15 要的就是这个表）
+    static func stripWatch(_ s: String) -> String { s.hasPrefix("⌚") ? String(s.dropFirst()) : s }
     var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true || placeNote == true }
     var cleanThinking: String { (thinking ?? "").replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines) }
     var date: Date? { ts.flatMap(TimeFmt.parse) }

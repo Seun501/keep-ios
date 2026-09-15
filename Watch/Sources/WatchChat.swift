@@ -28,7 +28,7 @@ struct WMsg: Decodable, Identifiable {
     var text: String {
         if let t = voice?.text, !t.isEmpty { return t }
         var s = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("［手表］") { s = String(s.dropFirst(4)) }
+        if s.hasPrefix("⌚") { s = String(s.dropFirst()) }
         if s.hasPrefix("［语音条］") {
             s = String(s.dropFirst(5))
             if let r = s.range(of: #"（\d+秒[^）]*）\s*$"#, options: .regularExpression) { s = String(s[..<r.lowerBound]) }
