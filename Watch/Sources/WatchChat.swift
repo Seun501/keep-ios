@@ -257,7 +257,9 @@ struct WatchChatView: View {
                     if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -40) } else { endHold(cancel: true) }
                 }
         )
-        .padding(.horizontal, 4).padding(.bottom, WatchChat.preview && WatchChat.screen == "wchatlow" ? 2 : 10)   // 09-15 寻：输入行别贴着表底（wchatlow 截图对比贴底的样子）
+        // sim-277：系统在表底留了一大截安全区，输入行悬在半空——不吃这段安全区、自己留 12（wchatlow 截图＝留 4，给寻比）
+        .padding(.horizontal, 4).padding(.bottom, WatchChat.preview && WatchChat.screen == "wchatlow" ? 4 : 12)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     /// 系统文本输入（听写/涂鸦/键盘）：SwiftUI 壳里也能从 WatchKit 拿到当前界面控制器来弹
