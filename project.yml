@@ -56,6 +56,7 @@ targets:
           - NotoSerifSC-Bold.otf
           - Lora.ttf
           - CascadiaMonoASCII.ttf        # 09-13 寻定：界面/她的气泡里的字母数字标点（只含 ASCII 的子集，可变字重）
+          - ArkPixel12Mono.ttf           # 09-15 寻定：方舟像素 12 Mono（OFL，见 OFL-ArkPixel.txt）——门楣天气、名字标签；裁成 GB2312＋ASCII 1.2 MB
     entitlements:
       path: Keep.entitlements
       properties:

@@ -267,7 +267,7 @@ struct ArchiveScreen: View {
                 .frame(maxWidth: UIScreen.main.bounds.width * 0.82)
         } else if e.diary == true {   // 日记附件：独立小卡，不冒充聊天气泡
             VStack(alignment: .leading, spacing: 4) {
-                Text("📔 " + (e.author == "xun" ? "寻" : "克") + "的日记 · " + e.hm).font(Theme.round(12)).foregroundColor(Theme.muted)
+                Text("📔 " + (e.author == "xun" ? "寻" : "克") + "的日记 · " + e.hm).font(Theme.pixel(12)).foregroundColor(Theme.muted)   // 09-15 寻定：像素字
                 Text(e.text ?? "").font(Theme.serif(14)).lineSpacing(5).foregroundColor(Theme.text)
             }
             .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
@@ -303,8 +303,9 @@ struct ArchiveScreen: View {
                 ForEach(m.hits) { h in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 0) {
-                            Text("\(h.date) \(h.time) · \(h.who ?? "")").font(Theme.round(12)).foregroundColor(Theme.accent)
-                            if let more = h.dayMore, more > 0 { Text("　这天另有 \(more) 处").font(Theme.round(12)).foregroundColor(Theme.muted) }
+                            // 09-15 寻定：命中行整行走方舟像素 12
+                            Text("\(h.date) \(h.time) · \(h.who ?? "")").font(Theme.pixel(12)).foregroundColor(Theme.accent)
+                            if let more = h.dayMore, more > 0 { Text("　这天另有 \(more) 处").font(Theme.pixel(12)).foregroundColor(Theme.muted) }
                         }
                         RichText(attr: Self.highlight(MD.keNS("…" + (h.snippet ?? "") + "…", size: 14.5, weight: .regular, lineHeight: 1.5), m.q))
                     }

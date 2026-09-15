@@ -358,10 +358,11 @@ struct NotePop: View {
                         ForEach(Array((note.msgs ?? []).enumerated()), id: \.offset) { idx, mm in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
-                                    Text(mm.from == "xun" ? "寻" : "克").font(Theme.cjk(13, weight: .bold))
+                                    // 09-15 寻定：名字标签和旁边的时间戳走方舟像素 12（预览里她点头的就是这一行）
+                                    Text(mm.from == "xun" ? "寻" : "克").font(Theme.pixel(12))
                                         .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
                                     Spacer()
-                                    Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.round(11)).foregroundColor(Theme.muted)
+                                    Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.pixel(12)).foregroundColor(Theme.muted)
                                 }
                                 RichText(attr: MD.keNS(mm.content ?? "", size: 14.8, weight: .regular, lineHeight: 1.65))
                             }

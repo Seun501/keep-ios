@@ -399,6 +399,7 @@ struct ChatScreen: View {
         case "mem": return [.mem]
         case "places": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
+        case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
         case "archno": return [.arch(day: "2026-09-02", q: nil, no: 1203)]   // #N 直跳的闪
         case "archhits": return [.arch(day: nil, q: "安静", no: nil)]
         default: return []

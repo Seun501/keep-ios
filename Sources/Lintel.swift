@@ -11,6 +11,9 @@ final class LintelModel: ObservableObject {
     @Published var wxDay = true
 
     func refresh() async {
+        if Preview.on {   // 截图班：门楣与天气角用假的（09-15 加，看像素字）
+            text = "今天风大，围巾戴上。"; wxLabel = "多云"; wxCode = 2; wxTemp = 24; wxDay = true; return
+        }
         async let l: [String: Any]? = fetch("api/lintel")
         async let w: [String: Any]? = fetch("api/weather")
         if let l = await l { text = (l["text"] as? String) ?? "" }
@@ -56,7 +59,7 @@ struct LintelColumn: View {
     /// 天气角的尺寸：图标 15 + 间距 5 + 字宽 + 左边留 10
     private var wxBox: CGSize {
         guard !m.wxLabel.isEmpty else { return .zero }
-        let w = (m.wxText as NSString).size(withAttributes: [.font: Theme.uiCJK(13, weight: .semibold), .kern: 0.65]).width
+        let w = (m.wxText as NSString).size(withAttributes: [.font: Theme.uiPixel(12)]).width   // 09-15 寻定：像素字 12（整数倍才清楚）
         return CGSize(width: ceil(w) + 15 + 5 + 10, height: Self.lineH)
     }
     var body: some View {
@@ -65,7 +68,7 @@ struct LintelColumn: View {
             if !m.wxLabel.isEmpty {
                 HStack(spacing: 5) {
                     Image(systemName: m.symbol).font(.system(size: 13, weight: .regular))
-                    Text(m.wxText).font(Theme.cjk(13, weight: .semibold)).tracking(0.65)
+                    Text(m.wxText).font(Theme.pixel(12))
                 }
                 .foregroundColor(Theme.accent.opacity(0.6))
                 .frame(height: Self.lineH)

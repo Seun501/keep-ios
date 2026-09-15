@@ -159,4 +159,15 @@ enum Theme {
     static func round(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         Font(uiRound(size, weight: weight))   // 09-13：圆体前头加 Cascadia（字母数字标点）
     }
+
+    // MARK: 方舟像素 12 Mono（寻 09-15）：门楣天气、名字标签（留言板、档案馆命中行、日记卡）走这只。
+    // 点阵字要在 12 的整数倍下才干净（12pt＝2 倍点阵），别拿 13 用；字母数字半角、汉字全角，本身就是等宽。
+    // 包里是 GB2312＋ASCII 的子集（1.2 MB）；没有的字落回 Noto 宋。字体没打进包就整行退到圆体。
+    static func uiPixel(_ size: CGFloat = 12) -> UIFont {
+        let name = "Ark-Pixel-12px-Mono-zh_cn-Regular"
+        guard UIFont(name: name, size: size) != nil else { return uiRound(size) }
+        let d = UIFontDescriptor(name: name, size: size).addingAttributes([.cascadeList: [uiCJK(size).fontDescriptor]])
+        return UIFont(descriptor: d, size: size)
+    }
+    static func pixel(_ size: CGFloat = 12) -> Font { Font(uiPixel(size)) }
 }
