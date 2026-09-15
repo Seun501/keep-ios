@@ -24,6 +24,10 @@ on:
         description: "截图班要截的页（空格分隔）；macOS 分钟按十倍计费，只截要看的"
         type: string
         default: "chat drawer board boardpop boardreply greet"
+      wscreens:
+        description: "手表截图班要截的页（wchat wchatlow wrec；空＝不截手表）"
+        type: string
+        default: ""
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -78,6 +82,31 @@ jobs:
           done
           # 踩坑册：别信界面，看包。把最终 Info.plist 与授权一并留证。
           plutil -p "$APP/Info.plist" > artifacts/Info.plist.txt
+
+      # 手表截图班（09-15 寻：表端的样子也要先过目）：表端单独编一遍模拟器版，装进手表模拟器，预览模式截图
+      - name: 手表模拟器截图
+        if: ${{ github.event.inputs.wscreens != '' }}
+        run: |
+          set -o pipefail
+          xcodebuild -project Keep.xcodeproj -scheme KeepWatch \
+            -destination "generic/platform=watchOS Simulator" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | grep -E "error:|BUILD|\*\* " | tail -40
+          xcrun simctl list devices available | grep -i "watch" | head -12
+          WUDID=$(xcrun simctl list devices available | grep -E "Apple Watch (Series 11|Series 10|Ultra)" | grep -E "46mm|45mm|49mm|42mm" | head -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          echo "watch sim=$WUDID"
+          xcrun simctl boot "$WUDID" || true
+          xcrun simctl bootstatus "$WUDID" -b
+          WAPP=$(find build/DerivedData -name "KeepWatch.app" -path "*watchsimulator*" | head -1)
+          echo "watch app=$WAPP"
+          xcrun simctl install "$WUDID" "$WAPP"
+          mkdir -p artifacts
+          for SCREEN in ${{ github.event.inputs.wscreens }}; do
+            SIMCTL_CHILD_KEEP_PREVIEW=1 SIMCTL_CHILD_KEEP_SCREEN=$SCREEN xcrun simctl launch --terminate-running-process "$WUDID" cn.seunk.keep.watchkitapp
+            sleep 6
+            xcrun simctl io "$WUDID" screenshot "artifacts/watch-$SCREEN.png"
+          done
 
       - uses: actions/upload-artifact@v4
         with:

@@ -79,7 +79,22 @@ final class WatchChat: ObservableObject {
         return try JSONDecoder().decode(T.self, from: d)
     }
 
+    /// 截图班（09-15）：KEEP_PREVIEW=1 用假对话、不登录不联网；KEEP_SCREEN=wchat / wchatlow（输入行贴底）/ wrec（录音态）
+    static var preview: Bool { ProcessInfo.processInfo.environment["KEEP_PREVIEW"] == "1" }
+    static var screen: String { ProcessInfo.processInfo.environment["KEEP_SCREEN"] ?? "wchat" }
+    private static var fixture: [WMsg] {
+        let j = """
+        [{"role":"user","content":"15:12-寻到了学校","ts":"2026-09-02T15:12:00+08:00","place_note":true},
+         {"role":"user","content":"刚拍的，门口那棵树。","ts":"2026-09-02T15:14:00+08:00"},
+         {"role":"assistant","content":"叶子已经开始黄了。","ts":"2026-09-02T15:14:30+08:00"},
+         {"role":"user","content":"⌚［语音条］雨停了，我去树下坐一会儿。（6秒）","ts":"2026-09-02T15:20:00+08:00","voice":{"text":"雨停了，我去树下坐一会儿。","dur":6.2}},
+         {"role":"assistant","content":"去吧，别坐太久，风大。","ts":"2026-09-02T15:20:40+08:00"}]
+        """
+        return (try? JSONDecoder().decode([WMsg].self, from: Data(j.utf8))) ?? []
+    }
+
     func load() async {
+        if Self.preview { msgs = Self.fixture; note = ""; return }
         guard WatchKeychain.token != nil else { note = "等手机把登录票传过来（打开手机上的 Keep）"; return }
         do {
             if convId == nil { let l: WConvList = try await Self.get("api/conversations"); convId = l.conversations.first?.id }
@@ -156,7 +171,7 @@ struct WatchChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         // 健康中继的状态缩成一行小字（一期的页面），点一下＝现在同步
-                        Text(link.hasToken ? h.status : "等手机把登录票传过来")
+                        Text(link.hasToken || WatchChat.preview ? h.status : "等手机把登录票传过来")
                             .font(.system(size: 11)).foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .onTapGesture { Task { await h.sync(reason: "tap", force: true) } }
@@ -181,7 +196,12 @@ struct WatchChatView: View {
             inputRow
         }
         .overlay { if rec.recording { WatchRecordView(rec: rec) } }
-        .task { await m.load() }
+        .task {
+            await m.load()
+            if WatchChat.preview, WatchChat.screen == "wrec" {   // 截图：假装录着
+                rec.recording = true; rec.liveText = "今天雨停得早，我想去门口那棵树下坐一会儿"; rec.seconds = 6; rec.level = 0.6
+            }
+        }
         .onReceive(pulseTimer) { _ in Task { await m.pulse() } }
         .onChange(of: link.hasToken) { on in if on { Task { await m.load() } } }
     }
@@ -237,7 +257,7 @@ struct WatchChatView: View {
                     if case .second(true, let drag) = v { endHold(cancel: (drag?.translation.height ?? 0) < -40) } else { endHold(cancel: true) }
                 }
         )
-        .padding(.horizontal, 4).padding(.bottom, 10)   // 09-15 寻：输入行别贴着表底
+        .padding(.horizontal, 4).padding(.bottom, WatchChat.preview && WatchChat.screen == "wchatlow" ? 2 : 10)   // 09-15 寻：输入行别贴着表底（wchatlow 截图对比贴底的样子）
     }
 
     /// 系统文本输入（听写/涂鸦/键盘）：SwiftUI 壳里也能从 WatchKit 拿到当前界面控制器来弹
