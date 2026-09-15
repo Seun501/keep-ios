@@ -17,6 +17,8 @@ struct Trip: Codable, Equatable {
     var distM: Int? = nil
     var placeId: String? = nil
     static let modes = ["步行", "骑行", "公交", "打车"]
+    /// 09-15 寻：导航的 UI 还要想，先不进包——入口（位置页出发钮、主页细行）藏着，网关和模型都留着
+    static let enabled = Preview.on
 }
 
 @MainActor

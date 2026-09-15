@@ -690,7 +690,7 @@ struct ChatScreen: View {
     private var header: some View {
         VStack(spacing: 0) {
             headerRow
-            if let t = trip.current {
+            if Trip.enabled, let t = trip.current {
                 TripStrip(trip: t, onTap: { path.append(.places) }).padding(.leading, 54).padding(.trailing, 16).padding(.bottom, 6)
             }
         }

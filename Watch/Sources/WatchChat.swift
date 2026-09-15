@@ -259,7 +259,7 @@ struct WatchChatView: View {
                 }
         )
         // sim-277：系统在表底留了一大截安全区，输入行悬在半空——不吃这段安全区、自己留 12（wchatlow 截图＝留 4，给寻比）
-        .padding(.horizontal, 4).padding(.bottom, WatchChat.preview && WatchChat.screen == "wchatlow" ? 4 : 12)
+        .padding(.horizontal, 4).padding(.bottom, 4)   // 寻 09-15 挑了 low 那版（留 4），真机看
     }
 
     /// 系统文本输入（听写/涂鸦/键盘）：SwiftUI 壳里也能从 WatchKit 拿到当前界面控制器来弹

@@ -478,11 +478,11 @@ struct PlacesScreen: View {
                     Spacer()
                     if !m.now.isEmpty { Text("此刻在：" + m.now).font(Theme.round(12)).foregroundColor(Theme.accent) }
                     // 出发（给克的导航，09-15）：在路上时这颗钮就是那一趟
-                    Button { draft = nil; tripOpen.toggle() } label: {
+                    if Trip.enabled { Button { draft = nil; tripOpen.toggle() } label: {
                         Text(trip.current.map { "→ \($0.name)" } ?? "出发").font(Theme.round(12, weight: .medium)).foregroundColor(.white)
                             .padding(.horizontal, 11).frame(height: 26)
                             .background(Theme.accent, in: Capsule())
-                    }.buttonStyle(.plain).padding(.leading, 10)
+                    }.buttonStyle(.plain).padding(.leading, 10) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6)
                 // 搜索框照抽屉那只：远的地方打名字跳过去，不用自己拖（寻 09-10）
