@@ -441,6 +441,8 @@ struct ChatScreen: View {
     @State private var kbUp = false
     @State private var wasAtBottom = true     // 键盘动之前在不在底（动的途中 atBottom 是过程值，不可信）
     @State private var kbAnimating = false
+    @State private var holdH: CGFloat = 0     // 录音浮层（小卡＋提示）的高；在底时列表底部垫这么多，把消息流抬到卡上面
+    @State private var holdFromBottom = true  // 起录那一刻在不在底
     /// 键盘收着时才真正拨开关；键盘开着就等 keyboardDidHide 再拨
     private func syncAvoid() {
         let want = !(showMeal || drawerOn)
@@ -456,14 +458,23 @@ struct ChatScreen: View {
                     clawdProbe
                     messageList(proxy)
                     ClawdView(m: clawd).zIndex(5)
-                    if farFromBottom && !atBottom && !kbAnimating { jumpButton(proxy) }   // 键盘起收途中量到的「离底」是过程值，别闪钮
+                    if farFromBottom && !atBottom && !kbAnimating && !rec.recording { jumpButton(proxy) }   // 键盘起收途中量到的「离底」是过程值，别闪钮
+                    // A 版（寻 09-15 定回）：边说边出字的小卡浮在输入卡上方，卡下两侧「← 取消」「编辑 →」。
+                    // 09-15 寻：卡和提示盖住后面的字无妨，但后面不能再垫一层底色挡字——所以是浮层不是兄弟行；
+                    // 原本在底的话，消息流整个抬到卡上面（listContent 底部按卡高垫、随字长跟着钉底，见 holdH）
+                    if rec.recording {
+                        VStack(spacing: 0) {
+                            LiveCard(rec: rec).padding(.bottom, 8)
+                            HoldHints(rec: rec).padding(.bottom, 6)
+                        }
+                        .background(GeometryReader { g in
+                            Color.clear.onAppear { holdH = g.size.height }.onChange(of: g.size.height) { holdH = $0 }
+                        })
+                        .zIndex(6)
+                    }
                 }
                 .coordinateSpace(name: "clawdZone")
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
-            }
-            if rec.recording {   // A 版（寻 09-15 定回）：边说边出字的小卡浮在输入卡上方，卡下两侧「← 取消」「编辑 →」
-                LiveCard(rec: rec).padding(.bottom, 8)
-                HoldHints(rec: rec).padding(.bottom, 6)
             }
             composer
         }
@@ -573,7 +584,7 @@ struct ChatScreen: View {
                 VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
             }
         }
-        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10)   // 网页 #messages padding-bottom 10
+        .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10 + (rec.recording ? holdH : 0))   // 网页 #messages padding-bottom 10；录音时再垫浮层高
         .overlay(alignment: .bottom) { Color.clear.frame(height: 1).id("bottom") }   // 「到底」锚点不占行（占行会多出一格 spacing）
         .background(ScrollObserver(name: "chat") { y, ch, vh in
             let total = max(ch, 1)
@@ -602,7 +613,16 @@ struct ChatScreen: View {
             .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom { scrollBottom(proxy) } }
             // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」
             // 跟随就断、之后再也不接上（寻验 131「等回复时收键盘，信息流卡在原地」）——动的那段按键盘前的 wasAtBottom 算
-            .onChange(of: model.live?.events ?? 0) { _ in if atBottom || (kbAnimating && wasAtBottom) { DispatchQueue.main.async { pinBottom() } } }
+            // 09-15 寻：克生成期间她上滑会和自动到底打架——手指还在（拖着/惯性滑着）就不钉，松手离底超 40 后 atBottom 自己变假
+            .onChange(of: model.live?.events ?? 0) { _ in
+                if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging || sv.isDecelerating { return }
+                if atBottom || (kbAnimating && wasAtBottom) { DispatchQueue.main.async { pinBottom() } }
+            }
+            // 录音浮层：起录时在底就记下来，卡长高（字多了）跟着钉底；收录把垫的高度撤掉、原本在底再钉一次
+            .onChange(of: rec.recording) { on in
+                if on { holdFromBottom = atBottom } else { holdH = 0; if holdFromBottom { DispatchQueue.main.async { pinBottom() } } }
+            }
+            .onChange(of: holdH) { _ in if rec.recording, holdFromBottom { DispatchQueue.main.async { pinBottom() } } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
             .onReceive(NotificationCenter.default.publisher(for: .keepThinkToggled)) { _ in

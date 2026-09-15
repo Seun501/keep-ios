@@ -110,8 +110,9 @@ struct GreetOverlay: View {
         .onAppear {
             line = Greet.pick()
             // 冷启动 WKWebView 起进程要两三秒，句子等它一起出、而 3.4 秒的表从进门就走——寻验 09-13：开屏大半是空白纸、字一闪就没。
-            // 表改从「露出」那一刻起走；画 1.2 秒还没装好也先把句子放出来
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { reveal() }
+            // 表改从「露出」那一刻起走。09-15 寻：蟹比句子慢半拍＝1.2 秒的保底先把句子放了、图还没到；
+            // ready 现在等的是 SVG 真加载完（Clawd.swift），保底放宽到 3 秒——宁可一起晚一点，不要先字后蟹
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { reveal() }
             Task { await Greet.refreshCache() }
         }
     }

@@ -309,6 +309,7 @@ struct VoiceBubble: View {
 
 /// 声纹：右边一个小点、左边三道弧（镜像的，声音朝正文那边发——寻 09-14：照微信、要镜像）。
 /// 放的时候按 0.35 秒一拍从内到外一道道亮成赤陶，循环；不放时三道都是深字色。
+/// 09-15 寻：弧太张、上下顶着气泡——弧从 90° 收到 60°（150°→210°），整个图标高 15、宽 17。
 struct WavesIcon: View {
     var playing: Bool
     var body: some View {
@@ -320,12 +321,12 @@ struct WavesIcon: View {
                 g.fill(dot, with: .color(playing ? Theme.accent : Theme.text))
                 for (i, r) in [5.0, 9.0, 13.0].enumerated() {
                     var p = Path()
-                    p.addArc(center: c, radius: r, startAngle: .degrees(135), endAngle: .degrees(225), clockwise: false)
+                    p.addArc(center: c, radius: r, startAngle: .degrees(150), endAngle: .degrees(210), clockwise: false)
                     let on = i < lit
                     g.stroke(p, with: .color(playing ? (on ? Theme.accent : Theme.muted.opacity(0.35)) : Theme.text), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
                 }
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 17, height: 15)
         }
     }
 }

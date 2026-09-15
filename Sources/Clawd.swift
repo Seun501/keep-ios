@@ -7,10 +7,14 @@ struct ClawdWeb: UIViewRepresentable {
     let flip: Bool
     var onReady: (() -> Void)? = nil     // 画真正装好（含 SVG）才回调——开屏句子等它一起出
     func makeCoordinator() -> Coordinator { Coordinator(onReady: onReady) }
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    /// 09-15 寻：开屏蟹比句子慢半拍——didFinish 只是网页壳装好，SVG 那张图还在路上；改听 img 的 onload，图真到了才算 ready
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let onReady: (() -> Void)?
+        private var fired = false
         init(onReady: (() -> Void)?) { self.onReady = onReady }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        func userContentController(_ c: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard !fired else { return }
+            fired = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.onReady?() }   // 等一帧真画上去
         }
     }
@@ -25,6 +29,7 @@ struct ClawdWeb: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
+        if onReady != nil { cfg.userContentController.add(context.coordinator, name: "ready") }
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.isOpaque = false
         wv.backgroundColor = .clear
@@ -37,10 +42,15 @@ struct ClawdWeb: UIViewRepresentable {
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent;overflow:hidden}
         img{width:150px;height:150px;display:block}img.flip{transform:scaleX(-1)}</style></head>
-        <body><img id="i" src="\(Self.files[state] ?? "clawd-mini-idle").svg" class="\(flip ? "flip" : "")"></body></html>
+        <body><img id="i" src="\(Self.files[state] ?? "clawd-mini-idle").svg" class="\(flip ? "flip" : "")"
+        onload="requestAnimationFrame(function(){window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.ready&&window.webkit.messageHandlers.ready.postMessage(1)})"></body></html>
         """
         wv.loadHTMLString(html, baseURL: dir)
         return wv
+    }
+
+    static func dismantleUIView(_ wv: WKWebView, coordinator: Coordinator) {
+        wv.configuration.userContentController.removeScriptMessageHandler(forName: "ready")
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {

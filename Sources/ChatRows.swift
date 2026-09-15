@@ -99,30 +99,53 @@ struct UserRowView: View {
             ForEach(Array(images.enumerated()), id: \.offset) { _, u in
                 StreamImage(src: u, maxW: 200, maxH: 200, radius: 26).padding(.bottom, 2)
             }
-            if let v = voice {
-                VoiceBubble(voice: v, text: text, highlight: highlight)
-            } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
-                RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
-                    .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
-                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .textSelection(.enabled)
-            }
-            if !stamp.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if let t = tagNo { NoTag(t, flash: flash) }
-                    if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted) }
-                    // 语音条的语气（Gemini 听的）：灰字放时间前，不带「语气：」（寻 09-14 定）
-                    if let tone = voice?.tone?.trimmingCharacters(in: .whitespacesAndNewlines), !tone.isEmpty, voice?.pending != true {
-                        Text(tone).font(Theme.round(12)).foregroundColor(Theme.muted).multilineTextAlignment(.trailing)
-                        Text("·").font(Theme.round(12)).foregroundColor(Theme.muted)
+            // 语气行以气泡宽为限（寻 09-15：描述不要超过气泡的长度）：CapToFirst 把第二个子视图的宽度按第一个（气泡）提
+            CapToFirst(spacing: 4) {
+                if let v = voice {
+                    VoiceBubble(voice: v, text: text, highlight: highlight)
+                } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
+                    RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
+                        .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
+                        .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .textSelection(.enabled)
+                }
+                if !stamp.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        if let t = tagNo { NoTag(t, flash: flash) }
+                        if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted) }
+                        // 语音条的语气（Gemini 听的）：灰字放时间前，不带「语气：」，和时间之间只空一格不加「·」（寻 09-14/09-15 定）
+                        if let tone = voice?.tone?.trimmingCharacters(in: .whitespacesAndNewlines), !tone.isEmpty, voice?.pending != true {
+                            Text(tone).font(Theme.round(12)).foregroundColor(Theme.muted).multilineTextAlignment(.trailing)
+                        }
+                        Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted).fixedSize()
                     }
-                    Text(stamp).font(Theme.round(12)).foregroundColor(Theme.muted).fixedSize()
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, UIScreen.main.bounds.width * 0.16)   // max-width 84%
+    }
+}
+
+/// 两个子视图竖排靠右：第一个（气泡）按自然尺寸，第二个（语气＋时间那行）提的宽度以第一个为限——语气长了就在气泡宽度内折行，
+/// 不会把整行撑得比气泡还宽（寻 09-15）。第二个自己带 fixedSize 的部分（时间）照旧不折。
+struct CapToFirst: Layout {
+    var spacing: CGFloat = 4
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let a = subviews.first else { return .zero }
+        let sa = a.sizeThatFits(proposal)
+        guard subviews.count > 1 else { return sa }
+        let sb = subviews[1].sizeThatFits(ProposedViewSize(width: sa.width, height: nil))
+        return CGSize(width: max(sa.width, sb.width), height: sa.height + spacing + sb.height)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let a = subviews.first else { return }
+        let sa = a.sizeThatFits(proposal)
+        a.place(at: CGPoint(x: bounds.maxX, y: bounds.minY), anchor: .topTrailing, proposal: proposal)
+        guard subviews.count > 1 else { return }
+        subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.minY + sa.height + spacing), anchor: .topTrailing,
+                          proposal: ProposedViewSize(width: sa.width, height: nil))
     }
 }
 
