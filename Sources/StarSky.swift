@@ -89,7 +89,9 @@ struct StarSkyView: View {
     var lit: Double            // 0…1
     var body: some View {
         Canvas { g, size in
-            guard night > 0 else { return }
+            // 白天纸是空的；口令对了那一瞬，星（此刻真实位置，只是被太阳遮着）随线一起淡淡浮现再进屋（寻 09-15：白天光连线怪）
+            let vis = max(night, lit * 0.9)
+            guard vis > 0 else { return }
             let R = Double.pi / 180
             // sim-255：天顶放大得太厉害，夏季大三角撑满半屏、线压在 Clawd 和输入线上——地平线半径收到 1.2 倍屏宽，多露一圈天、星座小一号
             let horizon = size.width * 1.2               // 地平线半径（屏外）
@@ -107,7 +109,7 @@ struct StarSkyView: View {
                         guard let a = pos[seg[i]], let b = pos[seg[i + 1]] else { continue }
                         var p = Path(); p.move(to: a.0)
                         p.addLine(to: CGPoint(x: a.0.x + (b.0.x - a.0.x) * lit, y: a.0.y + (b.0.y - a.0.y) * lit))
-                        g.stroke(p, with: .color(Theme.accent.opacity((0.18 + 0.5 * lit) * night)), lineWidth: 0.8)
+                        g.stroke(p, with: .color(Theme.accent.opacity((0.18 + 0.5 * lit) * vis)), lineWidth: 0.8)
                     }
                 }
             }
@@ -115,7 +117,7 @@ struct StarSkyView: View {
                 let (p, alt, mag) = v
                 let r = max(0.7, 2.6 - 0.55 * mag)
                 let fade = min(1, (alt - 8) / 22)
-                let a = (0.45 + 0.45 * (1 - min(mag, 3) / 3)) * fade * night
+                let a = (0.45 + 0.45 * (1 - min(mag, 3) / 3)) * fade * vis
                 g.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)), with: .color(Theme.dyn(0xB9AE9F, 0xE8DCC8).opacity(a)))
             }
         }

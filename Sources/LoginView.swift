@@ -28,7 +28,7 @@ struct LoginView: View {
                 Theme.bg.ignoresSafeArea()
                 TimelineView(.animation(paused: litAt == nil)) { ctx in
                     let lit = litAt.map { min(1, ctx.date.timeIntervalSince($0) / 1.4) } ?? 0
-                    let night = (Preview.on && Preview.screen.hasPrefix("login")) ? 1 : StarSky.nightness(date: ctx.date, lat: here.0, lon: here.1)
+                    let night = Preview.on ? (Preview.screen == "loginday" ? 0 : 1) : StarSky.nightness(date: ctx.date, lat: here.0, lon: here.1)
                     StarSkyView(date: Preview.on ? Self.previewDate : ctx.date, lat: here.0, lon: here.1, night: night, lit: lit)
                 }
                 .ignoresSafeArea()
@@ -37,13 +37,13 @@ struct LoginView: View {
                     .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)
                 VStack(spacing: 8) {
                     PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiUser(17), align: .center, returnKey: .go,
-                               textColor: .clear, secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
+                               textColor: .clear, secure: true, placeholderFont: Theme.uiPixel(12), onSubmit: submit)   // 09-15 寻：文字试像素风（和 Clawd 一族）
                         .frame(height: 24).padding(.vertical, 6)
                         .overlay(alignment: .bottom) { Rectangle().fill(!error.isEmpty ? Theme.accent : (empty ? Theme.border : Theme.muted)).frame(height: 1) }
                         .frame(width: 180)
                         .disabled(busy || litAt != nil)
                     Text(busy ? "…" : error)
-                        .font(Theme.serif(12.5))
+                        .font(Theme.pixel(12))
                         .foregroundStyle(Theme.accent)
                         .frame(height: 18)
                 }
@@ -54,7 +54,7 @@ struct LoginView: View {
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
             if Preview.on, Preview.screen == "loginerr" { error = "口令不对" }
-            if Preview.on, Preview.screen == "loginlit" { litAt = Date() }
+            if Preview.on, Preview.screen == "loginlit" || Preview.screen == "loginday" { litAt = Date() }
         }
         .onChange(of: text) { _ in if !error.isEmpty { error = "" } }   // 再打字就把红线收回去
     }
