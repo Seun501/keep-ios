@@ -13,47 +13,38 @@ struct LoginView: View {
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    /// 09-15 寻定「试试 2」：口令页＝开屏那张的构图——Clawd 站在屏高 45%，欢迎语的位置换成一根输入线（居中打字、回车即进），
+    /// 没有按钮；报错一行赤陶小字在线下固定占位。整块按屏幕坐标钉死、不随键盘挪（键盘起来线还在原处，iPhone 11 上线在键盘上方）。
     var body: some View {
-        ZStack {
-            Theme.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
-                Text("克")
-                    .font(.custom("Songti SC", size: 44).weight(.bold))
-                    .foregroundStyle(Theme.text)
-                    .padding(.bottom, 38)
-
-                HStack(spacing: 14) {
-                    // 字体走她的气泡那套（Lora→宋体），占位符也是；「进」同顶上「克」的宋体（寻 09-15：系统字一股本世纪初味）
-                    PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiUser(17), returnKey: .go, secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
-                        .frame(height: 24).padding(.vertical, 6).padding(.horizontal, 2)
-                        .overlay(alignment: .bottom) { Rectangle().fill(focused ? Theme.muted : Theme.border).frame(height: 1) }
-                    Button(action: submit) {
-                        Text(busy ? "…" : "进").font(.custom("Songti SC", size: 14).weight(.semibold)).tracking(1).foregroundColor(.white)
-                            .padding(.horizontal, 15).padding(.vertical, 5)
-                            .background(Theme.accent, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(busy || empty)
-                    .opacity(empty ? 0.45 : 1)
+        GeometryReader { g in
+            let H = UIScreen.main.bounds.height
+            let top = g.frame(in: .global).minY
+            ZStack(alignment: .top) {
+                Theme.bg.ignoresSafeArea()
+                ClawdWeb(state: "idle", flip: false)
+                    .frame(width: 150, height: 150)
+                    .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)
+                VStack(spacing: 8) {
+                    PlainField(text: $text, focused: $focused, placeholder: "口令", font: Theme.uiUser(17), align: .center, returnKey: .go,
+                               secure: true, placeholderFont: Theme.uiUser(17), onSubmit: submit)
+                        .frame(height: 24).padding(.vertical, 6)
+                        .overlay(alignment: .bottom) { Rectangle().fill(error.isEmpty ? (focused ? Theme.muted : Theme.border) : Theme.accent).frame(height: 1) }
+                        .frame(width: 180)
+                        .disabled(busy)
+                    Text(busy ? "…" : error)
+                        .font(Theme.serif(12.5))
+                        .foregroundStyle(Theme.accent)
+                        .frame(height: 18)
                 }
-                .frame(maxWidth: 230)
-
-                Text(error)
-                    .font(Theme.serif(12.5))
-                    .foregroundStyle(Theme.accent)
-                    .frame(height: 22)
-                    .padding(.top, 10)
-
-                Spacer()
-                Spacer()
+                .offset(y: H * 0.51 - top)
             }
-            .padding(.horizontal, 32)
         }
+        .ignoresSafeArea(.keyboard)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true }
             if Preview.on, Preview.screen == "loginerr" { error = "口令不对" }
         }
+        .onChange(of: text) { _ in if !error.isEmpty { error = "" } }   // 再打字就把红线收回去
     }
 
     private func submit() {
