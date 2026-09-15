@@ -110,6 +110,7 @@ targets:
     dependencies:
       - sdk: HealthKit.framework
       - sdk: WatchConnectivity.framework
+      - target: KeepWatchWidget             # 表盘复杂功能随表端一起装（09-15）
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep.watchkitapp
@@ -118,3 +119,29 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SKIP_INSTALL: YES
         PROVISIONING_PROFILE_SPECIFIER: "Keep Watch AppStore"
+
+  # 表盘复杂功能（09-15 寻定）：WidgetKit 扩展，表盘/智能叠放上一个「克」，点一下进对话。
+  # App ID cn.seunk.keep.watchkitapp.widget 与描述文件由 密钥与登录\ios-signing\加表盘小组件.py 登记，secret WATCH_WIDGET_PROFILE_BASE64。
+  KeepWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: Watch/Widget
+    info:
+      path: Watch/Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Keep
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep.watchkitapp.widget
+        SDKROOT: watchos
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: YES
+        PROVISIONING_PROFILE_SPECIFIER: "Keep Watch Widget AppStore"

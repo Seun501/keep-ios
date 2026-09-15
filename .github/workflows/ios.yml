@@ -133,7 +133,8 @@ jobs:
           # 描述文件：Xcode 16+ 与旧路径各放一份，按 UUID 命名（手机一份、手表一份，09-10 起）
           echo "${{ secrets.APPSTORE_PROFILE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/keep.mobileprovision"
           echo "${{ secrets.WATCH_PROFILE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/watch.mobileprovision"
-          for f in keep watch; do
+          echo "${{ secrets.WATCH_WIDGET_PROFILE_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/widget.mobileprovision"   # 表盘复杂功能（09-15）
+          for f in keep watch widget; do
             UUID=$(security cms -D -i "$RUNNER_TEMP/$f.mobileprovision" | plutil -extract UUID raw -o - -)
             echo "profile $f uuid=$UUID"
             for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
@@ -182,5 +183,5 @@ jobs:
       - name: 抹密钥
         if: always()
         run: |
-          rm -rf "$HOME/private_keys" "$RUNNER_TEMP/keep.mobileprovision" "$RUNNER_TEMP/watch.mobileprovision"
+          rm -rf "$HOME/private_keys" "$RUNNER_TEMP/keep.mobileprovision" "$RUNNER_TEMP/watch.mobileprovision" "$RUNNER_TEMP/widget.mobileprovision"
           security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true

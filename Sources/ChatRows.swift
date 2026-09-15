@@ -63,10 +63,10 @@ extension TimelineItem {
                     out.append(.user(text: m.knockText ?? m.content ?? "", stamp: TimeFmt.stamp(m.ts) + " · Knock", images: []))
                 } else if let v = m.voice {
                     // 语音条：气泡画转写的字（正史 content 是「字＋小注」，小注摘掉）；手表发的时间旁标 Watch（09-15）
-                    let stamp = TimeFmt.stamp(m.ts) + (m.via == "watch" ? " · Watch" : "")
+                    let stamp = (m.via == "watch" ? "Watch · " : "") + TimeFmt.stamp(m.ts)   // 寻 09-15：「Watch · 15:14」
                     out.append(.user(text: v.text ?? Voice.stripNote(Msg.stripWatch(m.content ?? "")), stamp: stamp, images: [], voice: v))
                 } else {
-                    let stamp = TimeFmt.stamp(m.ts) + (m.via == "watch" ? " · Watch" : "")
+                    let stamp = (m.via == "watch" ? "Watch · " : "") + TimeFmt.stamp(m.ts)
                     out.append(.user(text: Msg.stripWatch(m.content ?? ""), stamp: stamp, images: m.images ?? [], pick: Replies.pick(of: m.content, options: options)))
                 }
             }
