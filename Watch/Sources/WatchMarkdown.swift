@@ -3,7 +3,7 @@ import UIKit
 
 /// 表端字体链（09-21 寻定：和 App 一致，「基本就是克的消息和我的气泡」）。
 /// 克＝Lora（wght 轴 400/500）→ 思源宋 GB2312 子集（Regular/Medium，各 2.1 MB）→ 系统衬线；
-/// 她＝Cascadia（只含 ASCII，wght 360，同手机）→ 思源宋 Regular。表上没有手机那套「Songti SC」系统宋，末尾退系统衬线。
+/// 她＝Cascadia（只含 ASCII，wght 360，同手机）→ 系统宋体（STSongti-SC，同手机；表上有没有看 launch diag 的 fonts 行）→ 思源宋 Regular → 系统衬线。
 enum WatchFonts {
     private static let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
     private static func desc(_ name: String, _ size: CGFloat) -> UIFontDescriptor? {
@@ -22,10 +22,17 @@ enum WatchFonts {
     }
     static func xun(_ size: CGFloat) -> Font {
         let sys = sysSerif(size, medium: false)
-        let cjk = desc("NotoSerifCJKsc-Regular", size) ?? sys
-        guard let cas = desc("CascadiaMono-Regular", size) else { return Font(UIFont(descriptor: cjk, size: size)) }
-        let d = cas.addingAttributes([variation: [2003265652: 360], .cascadeList: [cjk, sys]])
+        let noto = desc("NotoSerifCJKsc-Regular", size) ?? sys
+        let song = desc("STSongti-SC-Regular", size) ?? desc("Songti SC", size)   // 寻的气泡是宋体不是思源宋（09-21 她提醒）
+        let chain = [song, noto, sys].compactMap { $0 }
+        guard let cas = desc("CascadiaMono-Regular", size) else { return Font(UIFont(descriptor: chain[0], size: size)) }
+        let d = cas.addingAttributes([variation: [2003265652: 360], .cascadeList: chain])
         return Font(UIFont(descriptor: d, size: size))
+    }
+    /// 启动时记一行：表上有没有这几个字体（盲调试）
+    static var report: String {
+        ["STSongti-SC-Regular", "Songti SC", "NotoSerifCJKsc-Regular", "Lora-Regular", "CascadiaMono-Regular"]
+            .map { "\($0.split(separator: "-").first ?? "?")=\(UIFont(name: $0, size: 12) != nil ? 1 : 0)" }.joined(separator: " ")
     }
     static func mono(_ size: CGFloat) -> Font {
         let m = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
