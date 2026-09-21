@@ -529,9 +529,10 @@ struct ChatScreen: View {
                     let r = g[a]
                     ZStack(alignment: .topLeading) {
                         Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+                        // 系统款是从按钮上长出来、盖住按钮的：底边压到「+」下沿上 4 点，左边比「+」进 2 点
                         plusMenu
-                            .frame(width: 168, height: max(0, r.minY - 6), alignment: .bottomLeading)
-                            .offset(x: r.minX)
+                            .frame(width: 176, height: max(0, r.maxY - 4), alignment: .bottomLeading)
+                            .offset(x: r.minX + 2)
                             .transition(.scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
                     }
                 }
@@ -933,25 +934,29 @@ struct ChatScreen: View {
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
     enum PlusAction { case camera, album }
-    /// 「+」菜单（照系统 UIMenu 的样子）：一行 44 高，字 17 号在左、SF 图标在右，行间 1/3 点细线；整块圆角 13、毛玻璃底、淡投影
+    /// 「+」菜单（照寻 09-21 发来的 iOS 26 系统菜单截图）：赤陶色图标在左、字跟在后、一行 56 高、没有分隔线、
+    /// 整块圆角 28、近白的毛玻璃底、软投影；「相册」在上「拍照」在下（系统把离按钮近的排下面）。只把宽收到内容宽（176）。
     private var plusMenu: some View {
         VStack(spacing: 0) {
-            plusRow("拍照", "camera") { pick(.camera) }
-            Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1 / UIScreen.main.scale)
             plusRow("相册", "photo.on.rectangle") { pick(.album) }
+            plusRow("拍照", "camera") { pick(.camera) }
         }
-        .frame(width: 168)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: .black.opacity(0.14), radius: 18, y: 6)
+        .padding(.vertical, 4)
+        .frame(width: 176)
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.regularMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.bg.opacity(0.6)))
+        }
+        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
     }
     private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            HStack(spacing: 8) {
+            HStack(spacing: 14) {
+                Image(systemName: sys).font(.system(size: 20)).foregroundColor(Color(uiColor: Theme.uiScrollTint)).frame(width: 26)
                 Text(title).font(.system(size: 17)).foregroundColor(Theme.text)
                 Spacer(minLength: 0)
-                Image(systemName: sys).font(.system(size: 17)).foregroundColor(Theme.text)
             }
-            .padding(.horizontal, 16).frame(height: 44)
+            .padding(.leading, 22).padding(.trailing, 16).frame(height: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
