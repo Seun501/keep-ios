@@ -130,7 +130,8 @@ struct ArchiveScreen: View {
         }
         .background(EdgeSwipe(onBack: back))
         .task {
-            if let q = query { await m.search(q) }
+            if Preview.on, let q = query, let day { await m.search(q); await m.openDay(day) }   // 截图 archq：带关键词进天页
+            else if let q = query { await m.search(q) }
             else if let day { await m.openDay(day, no: focusNo) }
             else if Preview.on { await m.openDay("2026-09-02") }
             await m.loadDays()
