@@ -667,7 +667,7 @@ struct ChatScreen: View {
                         let idx = model.items.firstIndex { if case .ai(_, let m, _) = $0.item {
                             return Preview.screen == "md" ? (m.content ?? "").contains("preview.json") : !(m.toolCalls ?? []).isEmpty
                         } else { return false } } ?? 0
-                        let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - (Preview.screen == "md" ? 60 : 240))
+                        let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - (Preview.screen == "md" ? 200 : 240))
                         sv.setContentOffset(CGPoint(x: 0, y: y), animated: false)
                     } }
                 }

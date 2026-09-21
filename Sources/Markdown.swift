@@ -163,20 +163,21 @@ enum MD {
             guard n >= 1, n <= 6, idx < line.endIndex, line[idx] == " " || line[idx] == "\t" else { return nil }
             return (n, String(line[idx...]).trimmingCharacters(in: .whitespaces))
         }
-        func afterMarker(_ line: String, _ end: String.Index) -> String? {   // 记号后至少一个空白，取其后的正文
+        // 全程用 Substring：下标是共用原串的，一转成 String 下标就错位（sim-295：缩进的子项没认出来）
+        func afterMarker(_ line: Substring, _ end: Substring.Index) -> String? {   // 记号后至少一个空白，取其后的正文
             guard end < line.endIndex, line[end] == " " || line[end] == "\t" else { return nil }
             var s = line[end...]; while let f = s.first, f == " " || f == "\t" { s = s.dropFirst() }
             return String(s)
         }
         func olItem(_ line: String) -> (Int, String)? {
             let l = line.drop { $0 == " " || $0 == "\t" }
-            guard let dot = l.firstIndex(of: "."), let n = Int(l[..<dot]), let s = afterMarker(String(l), l.index(after: dot)) else { return nil }
+            guard let dot = l.firstIndex(of: "."), let n = Int(l[..<dot]), let s = afterMarker(l, l.index(after: dot)) else { return nil }
             return (n, s)
         }
         func ulItem(_ line: String) -> String? {
             let l = line.drop { $0 == " " || $0 == "\t" }
             guard let f = l.first, f == "-" || f == "*" else { return nil }
-            return afterMarker(String(l), l.index(after: l.startIndex))
+            return afterMarker(l, l.index(after: l.startIndex))
         }
         func quoteLine(_ line: String) -> String? {
             guard line.hasPrefix(">") else { return nil }
