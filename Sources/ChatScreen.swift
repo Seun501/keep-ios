@@ -564,7 +564,7 @@ struct ChatScreen: View {
                 }
             case "plusmenu":   // 「+」弹窗开着（拍照/相册）
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { plusOpen = true }
-            case "album":      // 相册半屏抽屉升起来（模拟器自带几张样片）
+            case "picker":     // 选图半屏抽屉升起来（模拟器自带几张样片；「album」这个名已归相册页）
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { PhotoPickerBridge.shared.present(max: 4) { _ in } }
             case "kbup", "kbhide":   // 键盘：打几个字唤起；kbhide 再在 4 秒时收起（截图在 7 秒）
                 draft = "试试看"
