@@ -94,7 +94,7 @@ struct MessageListBody: View {
                     } else if s.shown > 0 {
                         // 紧跟工具行的正文：顶 0（行距 4 + 宋体 13 顶空≈15，同正史）；其余照网页 .bubble 上下 11
                         // 直播里 [reply: …] 不上屏（半截的先藏、整段的摘掉）；说完落成正史那条再画成选项卡
-                        RichText(attr: MDWhole.make(Replies.split(Replies.hidePartial(s.shownText)).text), live: true).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
+                        KeMarkdown(text: Replies.split(Replies.hidePartial(s.shownText)).text, live: true).padding(.top, (afterChip && !thinking) ? 0 : 11).padding(.bottom, 11)
                     }   // 还没吐字：什么都不画（照网页；寻：没有 thinking 就别显示 thought）
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

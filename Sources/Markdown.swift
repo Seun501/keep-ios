@@ -387,6 +387,74 @@ struct RichText: UIViewRepresentable {
 }
 
 
+/// 克的正文（09-21 寻：表格要像平时看到的 md 表格）：没有表格＝整条一份富文本（MDWhole，能跨段选字）；
+/// 有表格＝表格前后各一份富文本、表格本身画成格子（MDTable）。直播段也走这里。
+struct KeMarkdown: View {
+    let text: String
+    var highlight = ""
+    var live = false
+    var body: some View {
+        let blocks = MD.parse(text)
+        if !blocks.contains(where: { if case .table = $0 { return true }; return false }) {
+            rich(MDWhole.make(text))
+        } else {
+            VStack(alignment: .leading, spacing: 10) {   // 网页 table margin 10
+                ForEach(Array(MDWhole.groups(blocks).enumerated()), id: \.offset) { gi, g in
+                    switch g {
+                    case .text(let bs): rich(MDWhole.make(blocks: bs, key: "\(text)|\(gi)"))
+                    case .table(let h, let r): MDTable(head: h, rows: r)
+                    }
+                }
+            }
+        }
+    }
+    private func rich(_ a: NSAttributedString) -> some View {
+        RichText(attr: highlight.isEmpty ? a : ArchiveScreen.highlight(a, highlight), live: live)
+    }
+}
+
+/// md 表格（照网页 .ai .bubble table：14px、格线 1px --border、格内 6/10、表头 --think-bg 底 600 字重；宽了横向滚）
+struct MDTable: View {
+    let head: [String]
+    let rows: [[String]]
+    private var cols: Int { max(head.count, rows.map(\.count).max() ?? 0) }
+    private var widths: [CGFloat] {
+        let all = [head] + rows
+        return (0..<cols).map { c in
+            var w: CGFloat = 0
+            for r in all where c < r.count { w = max(w, MD.keNS(r[c], size: 15, weight: .semibold, lineHeight: 1.4).size().width) }
+            return min(220, ceil(w) + 20)   // 超过 220 的格子在格内折行
+        }
+    }
+    var body: some View {
+        let ws = widths
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(spacing: 0) {
+                row(head, ws, header: true)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                    row(r, ws, header: false)
+                }
+            }
+            .overlay(Rectangle().stroke(Theme.border, lineWidth: 1))
+            .padding(1)
+        }
+    }
+    private func row(_ r: [String], _ ws: [CGFloat], header: Bool) -> some View {
+        HStack(spacing: 0) {
+            ForEach(0..<cols, id: \.self) { c in
+                if c > 0 { Rectangle().fill(Theme.border).frame(width: 1) }
+                Text(MD.ke(c < r.count ? r[c] : "", size: 15, weight: header ? .semibold : .regular))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6).padding(.horizontal, 10)
+                    .frame(width: ws[c], alignment: .topLeading)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(header ? Theme.text.opacity(0.05) : Color.clear)   // 网页 --think-bg: rgba(48,45,39,.05)
+    }
+}
+
 /// 克的整条正文合成一个 NSAttributedString：段落/标题/引用/列表/代码块全在一个文本视图里 → 能跨段精确选字复制。
 /// 块级规则与间距照网页：p 间 16、li 间 3、ul/ol 左缩 2em、引用左线 3px 灰、代码块等宽淡底、标题加大加粗。
 enum MDWhole {
@@ -395,13 +463,33 @@ enum MDWhole {
     static func make(_ text: String, size: CGFloat = 18) -> NSAttributedString {
         let key = "\(size)|\(text)" as NSString
         if let c = cache.object(forKey: key) { return c }
-        let r = build(text, size: size)
+        let r = build(MD.parse(text), size: size)
         cache.setObject(r, forKey: key)
         return r
     }
-    private static func build(_ text: String, size: CGFloat) -> NSAttributedString {
+    /// 一段不含表格的块（KeMarkdown 把表格前后的块各合成一份）；key 由调用方给（原文＋段序），同样走缓存
+    static func make(blocks: [MD.Block], key: String, size: CGFloat = 18) -> NSAttributedString {
+        let k = "\(size)|g|\(key)" as NSString
+        if let c = cache.object(forKey: k) { return c }
+        let r = build(blocks, size: size)
+        cache.setObject(r, forKey: k)
+        return r
+    }
+    /// 表格前后拆段：表格自己是一张 SwiftUI 格子（画线、表头底色），其余块照旧合成一份富文本
+    enum Group { case text([MD.Block]); case table(head: [String], rows: [[String]]) }
+    static func groups(_ blocks: [MD.Block]) -> [Group] {
+        var out: [Group] = []; var run: [MD.Block] = []
+        for b in blocks {
+            if case .table(let h, let r) = b {
+                if !run.isEmpty { out.append(.text(run)); run = [] }
+                out.append(.table(head: h, rows: r))
+            } else { run.append(b) }
+        }
+        if !run.isEmpty { out.append(.text(run)) }
+        return out
+    }
+    private static func build(_ blocks: [MD.Block], size: CGFloat) -> NSAttributedString {
         let out = NSMutableAttributedString()
-        let blocks = MD.parse(text)
         func para(_ ns: NSAttributedString, before: CGFloat, after: CGFloat, indent: CGFloat = 0, head: CGFloat = 0) {
             let m = NSMutableAttributedString(attributedString: ns)
             m.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: m.length)) { v, r, _ in
@@ -449,20 +537,14 @@ enum MDWhole {
                     .font: Theme.uiMono(13.5, weight: .regular), .foregroundColor: Theme.uiText,
                     .backgroundColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27), .paragraphStyle: p]))
             case .table(let head, let rows):
-                // 09-21 寻：克画的表格之前拼成「a  |  b」一串字。iOS 的 UITextView 没有表格，用制表位把列对齐：
-                // 每列宽＝该列最宽的格（15pt）+ 18 间距；总宽装不下就整体降到 13pt。表头半粗、下空 4，行间 2，格内认行内 markdown。
+                // 表格正常由 KeMarkdown 拆出去画成格子（MDTable）；这里只是兜底（直接拿 make(text) 的调用方）：制表位对齐
                 let cols = max(head.count, rows.map(\.count).max() ?? 0)
                 let all = [head] + rows
-                var pt: CGFloat = 15
-                var widths: [CGFloat] = []
-                for _ in 0..<2 {
-                    widths = (0..<cols).map { c in
-                        var w: CGFloat = 0
-                        for r in all where c < r.count { w = max(w, MD.keNS(r[c], size: pt, weight: .semibold, lineHeight: 1.4).size().width) }
-                        return ceil(w) + 18
-                    }
-                    if widths.reduce(0, +) <= UIScreen.main.bounds.width - 40 || pt <= 13 { break }
-                    pt = 13
+                let pt: CGFloat = 14
+                let widths: [CGFloat] = (0..<cols).map { c in
+                    var w: CGFloat = 0
+                    for r in all where c < r.count { w = max(w, MD.keNS(r[c], size: pt, weight: .semibold, lineHeight: 1.4).size().width) }
+                    return ceil(w) + 18
                 }
                 var stops: [NSTextTab] = []; var x: CGFloat = 0
                 for w in widths.dropLast() { x += w; stops.append(NSTextTab(textAlignment: .left, location: x)) }

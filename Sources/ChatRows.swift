@@ -246,7 +246,7 @@ struct AIRowView: View {
                     }
                     if !parsed.text.isEmpty {
                         let c = parsed.text
-                        RichText(attr: highlight.isEmpty ? MDWhole.make(c) : ArchiveScreen.highlight(MDWhole.make(c), highlight))
+                        KeMarkdown(text: c, highlight: highlight)   // 有表格时拆成 富文本＋格子＋富文本（09-21）
                     }
                 }
                 // 上一行以工具行收尾：正文宋体行高+1.6 行距自带 ~13 顶空，行距 9-2+13≈20；正文后面还有工具行时下沿 9（寻 09-13：夹在文中的工具行上下太窄）

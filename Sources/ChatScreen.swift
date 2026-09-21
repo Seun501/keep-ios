@@ -377,7 +377,6 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
-    @State private var plusMenu = Preview.on && Preview.screen == "plus"   // 「+」点开的两枚小签：拍照 / 相册（09-21 寻：直接弹相册常误触，也想直接拍）
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
@@ -813,24 +812,22 @@ struct ChatScreen: View {
             .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
-                // 09-21 寻：「+」不再直接弹相册（常误触）——点开两枚小签「拍照」「相册」，再点一下或点别处收回
-                Button { withAnimation(.easeOut(duration: 0.15)) { plusMenu.toggle() } } label: {
+                // 09-21 寻：「+」不再直接弹相册（常误触）——系统菜单弹「拍照」「相册」两项（寻要苹果自带的那种小弹窗）
+                Menu {
+                    Button {
+                        composerFocused = false
+                        CameraBridge.shared.present { img in Task { await addImages([img]) } }
+                    } label: { Label("拍照", systemImage: "camera") }
+                    Button {
+                        composerFocused = false
+                        PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
+                    } label: { Label("相册", systemImage: "photo.on.rectangle") }
+                } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
-                        .rotationEffect(.degrees(plusMenu ? 45 : 0))
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .menuStyle(.button).buttonStyle(.plain)
                 .padding(.leading, -4)
-                if plusMenu {
-                    plusPill("拍照") {
-                        plusMenu = false; composerFocused = false
-                        CameraBridge.shared.present { img in Task { await addImages([img]) } }
-                    }
-                    plusPill("相册") {
-                        plusMenu = false; composerFocused = false
-                        PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
-                    }
-                }
                 // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
                 if let vd = voiceDraft {
                     HStack(spacing: 6) {
@@ -873,8 +870,6 @@ struct ChatScreen: View {
         // 整张卡都算输入框（寻验 85）：点卡上文字以外的空白不收键盘，反而把焦点给输入框——选字时误触上沿不再退出
         .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .onTapGesture { if !composerFocused { composerFocused = true } }
-        .onChange(of: composerFocused) { f in if f { plusMenu = false } }   // 开始打字＝小签收回
-        .onChange(of: model.sending) { s in if s { plusMenu = false } }
         .background(GeometryReader { g in
             Color.clear.onAppear { KeyboardDismisser.keep["composer"] = g.frame(in: .global) }
                 .onChange(of: g.frame(in: .global)) { r in KeyboardDismisser.keep["composer"] = r }
@@ -883,16 +878,6 @@ struct ChatScreen: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
-
-    /// 「+」点开的小签：同语音小签的胶囊（她的气泡底、深字）
-    private func plusPill(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(Theme.round(13)).foregroundColor(Theme.text)
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(Theme.userBubble, in: Capsule())
-        }.buttonStyle(.plain)
-    }
-
     /// 长按输入行：问一次权限（只第一次会弹），起录
     private func startHold() {
         guard !model.sending, !model.transcribing, !rec.recording else { return }
