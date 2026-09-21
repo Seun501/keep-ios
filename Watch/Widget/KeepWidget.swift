@@ -33,7 +33,9 @@ struct KeepComplicationView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
-            icon
+            // 09-21 四回（第六包仍纯灰饼）：二分法——圆的那格只画一个「克」字不画图。真机上圆格出「克」而角格仍灰＝图的问题；
+            // 圆格也灰＝小组件进程根本没交过画面（系统画的占位灰饼），那就是签名/嵌入层面的事
+            Text("克").font(.system(size: 24, weight: .semibold)).minimumScaleFactor(0.5)
         case .accessoryCorner:
             icon.widgetLabel { Text("Keep") }
         case .accessoryRectangular:

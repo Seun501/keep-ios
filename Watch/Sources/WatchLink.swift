@@ -73,9 +73,10 @@ enum WatchKeychain {
 /// 盲调试：一句话送到服务器日志（同手机端 PushRegistrar.diag；服务器按 device 名分行）
 enum WatchDiag {
     static func send(_ note: String) {
+        guard let t = WatchKeychain.token else { return }   // 没票发了也是 401（09-21 一天 70 条噪音），不发
         var req = URLRequest(url: WatchGateway.home.appendingPathComponent("api/push/apns"))
         req.httpMethod = "POST"
-        if let t = WatchKeychain.token { req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
+        req.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["note": note, "device": "Watch·" + WKInterfaceDevice.current().name])
         URLSession.shared.dataTask(with: req).resume()

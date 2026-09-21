@@ -89,8 +89,8 @@ final class WatchChat: ObservableObject {
          {"role":"assistant","content":"叶子已经开始黄了。","ts":"2026-09-02T15:14:30+08:00"},
          {"role":"user","content":"⌚［语音条］雨停了，我去树下坐一会儿。（6秒）","ts":"2026-09-02T15:20:00+08:00","voice":{"text":"雨停了，我去树下坐一会儿。","dur":6.2}},
          {"role":"assistant","content":"去吧，别坐太久，风大。","ts":"2026-09-02T15:20:40+08:00"},
-         {"role":"user","content":"回来了，Keep 里记一下今天的事？","ts":"2026-09-02T16:02:00+08:00"},
-         {"role":"assistant","content":"## 今天\\n1. 雨停得早\\n   - 树下坐了 20 分钟\\n2. 叶子**开始黄了**\\n\\n> 明天带伞。","ts":"2026-09-02T16:02:30+08:00"}]
+         {"role":"user","content":"## 今天的三件事\\n**记一下**，*别忘了* `Keep`","ts":"2026-09-02T16:02:00+08:00"},
+         {"role":"assistant","content":"## 今天\\n1. 雨停得早\\n   - 树下坐了 20 分钟\\n2. 叶子**开始黄了**，*风也小了*\\n\\n第二段：普通一段字，看段间。\\n\\n> 明天带伞。","ts":"2026-09-02T16:02:30+08:00"}]
         """
         return (try? JSONDecoder().decode([WMsg].self, from: Data(j.utf8))) ?? []
     }
@@ -217,7 +217,8 @@ struct WatchChatView: View {
             VStack(alignment: .trailing, spacing: 0) {   // 09-15 寻：时间离气泡太远——贴上去
                 HStack(alignment: .top, spacing: 4) {
                     if let d = x.voice?.dur { Text("\(Int(d.rounded()))″").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).padding(.top, 5) }
-                    Text(x.text).font(WatchTheme.xun).foregroundStyle(WatchTheme.text)
+                    WatchMarkdown(text: x.text, mine: true)   // 09-21 寻：她的气泡在表上也认 md（# 标题、粗斜代码）
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(WatchTheme.bubble, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
@@ -348,5 +349,5 @@ enum WatchTheme {
     static let accent = Color(red: 0xC9/255, green: 0x64/255, blue: 0x42/255)    // 赤陶
     // 09-21 寻定：和 App 一致——克 Lora→思源宋，她 Cascadia→思源宋（WatchFonts）
     static var ke: Font { WatchFonts.ke(14) }
-    static var xun: Font { WatchFonts.xun(14) }
+    static var xun: Font { WatchFonts.xun(14) }   // 录音态实时字用；气泡走 WatchMarkdown
 }
