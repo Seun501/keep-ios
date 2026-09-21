@@ -13,10 +13,19 @@ struct KeepProvider: TimelineProvider {
     }
 }
 
-/// 09-15 寻：就用 App 的图标（icon.imageset＝AppIcon 缩到 240）。彩色表盘上是原色；单色/染色表盘系统会把它染成主题色。
+/// 09-15 寻：就用 App 的图标。09-21 修「表盘上是个灰饼」：
+/// 1. 表上复杂功能的图片超过 120px 真机就整张变灰（模拟器/编辑态正常，苹果论坛 740381）→ icon.imageset 改 120px；
+/// 2. 染色表盘把图片当 alpha 蒙版用，白底方图＝实心饼 → 图改成透明底的剪影，眼睛镂空，单色下也认得出是克；
+/// 3. watchOS 11 起可声明「这张图保持原色」，彩色表盘上不再被染成主题色。
 struct KeepComplicationView: View {
     @Environment(\.widgetFamily) private var family
-    private var icon: some View { Image("icon").resizable().scaledToFill().clipShape(Circle()) }
+    private var icon: some View {
+        let img = Image("icon").resizable().scaledToFit()
+        if #available(watchOS 11, *) {
+            return AnyView(img.widgetAccentedRenderingMode(.fullColor))
+        }
+        return AnyView(img)
+    }
     var body: some View {
         switch family {
         case .accessoryCircular:
