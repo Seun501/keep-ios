@@ -90,7 +90,7 @@ enum MD {
            mono: Theme.uiMono(size * 0.86, weight: .regular), color: color, lineHeight: lineHeight,
            cjkLineHeight: Theme.uiCJK(size, weight: weight).lineHeight)
     }
-    /// 寻的气泡与输入框：网页 body 那套字（Lora → 宋体 Songti SC，常规），18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
+    /// 寻的气泡与输入框：Cascadia → 苹方（09-21 查明手机上从没有过宋体），18/1.5，段间 8（照网页 .user .bubble p{margin:8px 0}）
     private static let xunCache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 400; return c }()
     static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
         let key = "\(size)|\(s)" as NSString
@@ -105,11 +105,11 @@ enum MD {
                 out.append(ns(t, base: Theme.uiUser(hs, bold: true), bold: Theme.uiUser(hs, bold: true),
                               mono: Theme.uiMono(hs * 0.86, weight: .semibold),
                               color: lv == 6 ? Theme.uiMuted : Theme.uiText, lineHeight: 1.35, paraSpacing: 6,
-                              cjkLineHeight: Theme.uiSongti(hs, bold: true).lineHeight))
+                              cjkLineHeight: Theme.uiUserCJK(hs, bold: true).lineHeight))
             } else {
                 out.append(ns(line, base: Theme.uiUser(size), bold: Theme.uiUser(size, bold: true),
                               mono: Theme.uiMono(size * 0.86, weight: .regular),
-                              color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiSongti(size).lineHeight))
+                              color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiUserCJK(size).lineHeight))
             }
         }
         xunCache.setObject(out, forKey: key)

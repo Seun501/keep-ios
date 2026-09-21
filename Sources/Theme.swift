@@ -76,8 +76,9 @@ enum Theme {
     static func uiCJK(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
         UIFont(name: cjkName(weight), size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
     }
-    static func uiSongti(_ size: CGFloat, bold: Bool = false) -> UIFont {
-        UIFont(name: bold ? "STSongti-SC-Bold" : "STSongti-SC-Regular", size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
+    /// 寻的汉字＝系统字（苹方）。09-21 查明：之前写的 STSongti-SC 在 iPhone 上根本没有，一直落到这里——她看惯的就是苹方，明写。
+    static func uiUserCJK(_ size: CGFloat, bold: Bool = false) -> UIFont {
+        UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
     // MARK: Cascadia Mono（寻 09-13）：界面和她的气泡里的字母、数字、英文标点走 Cascadia Mono。
     // 打包的是只含 ASCII（U+0020–007E）的子集（38 KB，可变字重 200–700）——其余字符它根本没有，
@@ -135,11 +136,11 @@ enum Theme {
     }
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiMono(size, weight: weight)) }
 
-    /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia 400 → 汉字系统宋体；粗体 Cascadia 600 → 宋体粗
+    /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia → 汉字苹方；粗体 Cascadia 600 → 苹方半粗
     static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
-        let song = uiSongti(size, bold: bold).fontDescriptor
-        // 寻 09-13 晚：400 档挨着宋体显粗、320 又太细 → 360（可变字重 200–700 之间随调）
-        guard let d = casDescriptor(size, wght: bold ? 600 : 360, cascade: [song]) else { return UIFont(descriptor: song, size: size) }
+        let cjk = uiUserCJK(size, bold: bold).fontDescriptor
+        // 寻 09-13 晚：400 档挨着汉字显粗、320 又太细 → 360（可变字重 200–700 之间随调）
+        guard let d = casDescriptor(size, wght: bold ? 600 : 360, cascade: [cjk]) else { return UIFont(descriptor: cjk, size: size) }
         return UIFont(descriptor: d, size: size)
     }
     /// 纯中文场合（门楣、题）：Noto 打头。

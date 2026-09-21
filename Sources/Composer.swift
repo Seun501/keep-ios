@@ -13,7 +13,7 @@ struct Composer: UIViewRepresentable {
     static var attrs: [NSAttributedString.Key: Any] {
         let f = Theme.uiUser(size)
         let p = NSMutableParagraphStyle()
-        p.lineSpacing = max(0, size * 1.5 - max(f.lineHeight, Theme.uiSongti(size).lineHeight))
+        p.lineSpacing = max(0, size * 1.5 - max(f.lineHeight, Theme.uiUserCJK(size).lineHeight))
         return [.font: f, .foregroundColor: Theme.uiText, .paragraphStyle: p]
     }
 
