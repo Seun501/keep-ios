@@ -132,12 +132,28 @@ final class ChatModel: ObservableObject {
         }
     }
 
+    private var staged = false   // 冷启动分两段排过了没
     private func apply(_ conv: ConversationPayload) {
         conversationId = conv.id
         msgs = conv.messages
-        renderFrom = Self.startOfLastDays(msgs, days: 2)
-        rebuild()
+        let full = Self.startOfLastDays(msgs, days: 2)
         lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
+        // 09-21 寻「开屏大半白纸」：两天有七百多条（09-20/21 各三四百），一次排完第一帧要等好几秒。
+        // 冷启动先只排最近 40 条把屏画出来，0.6 秒后再把两天补齐（内容往上长、开屏落定窗会钉回底）。「主页画两天」不变。
+        if !staged, msgs.count - full > 40 {
+            staged = true
+            renderFrom = msgs.count - 40
+            rebuild(); loadTick += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self else { return }
+                let f = Self.startOfLastDays(self.msgs, days: 2)
+                if self.renderFrom > f { self.renderFrom = f; self.rebuild(); self.loadTick += 1 }
+            }
+            return
+        }
+        staged = true
+        renderFrom = full
+        rebuild()
         loadTick += 1
     }
 

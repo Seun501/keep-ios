@@ -92,7 +92,9 @@ struct GreetOverlay: View {
             let top = g.frame(in: .global).minY
             ZStack(alignment: .top) {
                 Theme.bg.ignoresSafeArea()
-                ClawdWeb(state: "idle", flip: false, onReady: { reveal() })
+                // 09-21 寻「开屏大半是白纸」：WKWebView 冷启动起进程两三秒，句子等它一起出。开屏这只改原生画（ClawdPixel，
+                // 照 clawd-mini-idle.svg 的方块坐标一比一，呼吸/眨眼保留），秒出；聊天页里的蟹照旧走网页
+                ClawdPixel()
                     .frame(width: 150, height: 150)
                     .position(x: g.size.width / 2, y: ClawdModel.splashBoxTop(H) + 75 - top)   // 与聊天页开场站位同一个点
                 HangingText(text: line)
@@ -109,10 +111,9 @@ struct GreetOverlay: View {
         .onTapGesture { bye() }
         .onAppear {
             line = Greet.pick()
-            // 冷启动 WKWebView 起进程要两三秒，句子等它一起出、而 3.4 秒的表从进门就走——寻验 09-13：开屏大半是空白纸、字一闪就没。
-            // 表改从「露出」那一刻起走。09-15 寻：蟹比句子慢半拍＝1.2 秒的保底先把句子放了、图还没到；
-            // ready 现在等的是 SVG 真加载完（Clawd.swift），保底放宽到 3 秒——宁可一起晚一点，不要先字后蟹
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { reveal() }
+            // 蟹是原生画的、句子池在本地缓存（Greet.pick），两样都是当场有——进门那一帧就露，3.4 秒的表从此刻起走
+            // （之前等 WKWebView 的 SVG 装好才露，冷启动两三秒白纸——寻 09-13/09-21）
+            reveal()
             Task { await Greet.refreshCache() }
         }
     }
@@ -123,6 +124,42 @@ struct GreetOverlay: View {
         if !(Preview.on && Preview.screen == "greet") { DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) { bye() } }
     }
     private func bye() { shown = false }   // 寻定：不淡出，直接走
+}
+
+/// 开屏用的原生小 Clawd：照 clawd-mini-idle.svg 一比一（viewBox -15 -25 45 45，150 点见方＝每格 3.33 点）——
+/// 四条腿、躯干、两只手、两只眼，#DE886D 与黑；呼吸（3.2 秒 1.02/0.98）和眨眼（每 4 秒眯 0.2 秒）也照 SVG 的节奏。
+struct ClawdPixel: View {
+    @State private var breathe = false
+    @State private var blink = false
+    private let body_ = Color(red: 0xDE / 255, green: 0x88 / 255, blue: 0x6D / 255)
+    var body: some View {
+        GeometryReader { g in
+            let s = g.size.width / 45   // 一格
+            func R(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: Color) -> some View {
+                c.frame(width: w * s, height: h * s).position(x: (x + 15 + w / 2) * s, y: (y + 25 + h / 2) * s)
+            }
+            ZStack {
+                // 腿（不呼吸）
+                R(3, 11, 1, 4, body_); R(5, 11, 1, 4, body_); R(9, 11, 1, 4, body_); R(11, 11, 1, 4, body_)
+                // 上身：躯干＋两手＋眼，一起呼吸（transform-origin 7.5,13）
+                ZStack {
+                    R(2, 6, 11, 7, body_)
+                    R(0, 9, 2, 2, body_); R(13, 9, 2, 2, body_)
+                    ZStack { R(4, 8, 1, 2, .black); R(10, 8, 1, 2, .black) }
+                        .scaleEffect(y: blink ? 0.1 : 1, anchor: UnitPoint(x: 0.5, y: (9 + 25) / 45))
+                }
+                .scaleEffect(x: breathe ? 1.02 : 1, y: breathe ? 0.98 : 1, anchor: UnitPoint(x: (7.5 + 15) / 45, y: (13 + 25) / 45))
+                .offset(y: breathe ? 0.5 * s : 0)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { breathe = true }
+            Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
+                withAnimation(.easeInOut(duration: 0.1)) { blink = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { withAnimation(.easeInOut(duration: 0.1)) { blink = false } }
+            }
+        }
+    }
 }
 
 /// 句尾全角标点悬挂（照网页 hanging-punctuation: force-end）：居中按没有它算——整块右移半个标点宽即等效。
