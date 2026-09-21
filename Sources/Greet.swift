@@ -132,20 +132,21 @@ struct ClawdPixel: View {
     @State private var breathe = false
     @State private var blink = false
     private let body_ = Color(red: 0xDE / 255, green: 0x88 / 255, blue: 0x6D / 255)
+    /// 一个方块：SVG 坐标 (x,y,w,h) → 150 点画布
+    private func R(_ s: CGFloat, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: Color) -> some View {
+        c.frame(width: w * s, height: h * s).position(x: (x + 15 + w / 2) * s, y: (y + 25 + h / 2) * s)
+    }
     var body: some View {
         GeometryReader { g in
             let s = g.size.width / 45   // 一格
-            func R(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: Color) -> some View {
-                c.frame(width: w * s, height: h * s).position(x: (x + 15 + w / 2) * s, y: (y + 25 + h / 2) * s)
-            }
             ZStack {
                 // 腿（不呼吸）
-                R(3, 11, 1, 4, body_); R(5, 11, 1, 4, body_); R(9, 11, 1, 4, body_); R(11, 11, 1, 4, body_)
+                R(s, 3, 11, 1, 4, body_); R(s, 5, 11, 1, 4, body_); R(s, 9, 11, 1, 4, body_); R(s, 11, 11, 1, 4, body_)
                 // 上身：躯干＋两手＋眼，一起呼吸（transform-origin 7.5,13）
                 ZStack {
-                    R(2, 6, 11, 7, body_)
-                    R(0, 9, 2, 2, body_); R(13, 9, 2, 2, body_)
-                    ZStack { R(4, 8, 1, 2, .black); R(10, 8, 1, 2, .black) }
+                    R(s, 2, 6, 11, 7, body_)
+                    R(s, 0, 9, 2, 2, body_); R(s, 13, 9, 2, 2, body_)
+                    ZStack { R(s, 4, 8, 1, 2, .black); R(s, 10, 8, 1, 2, .black) }
                         .scaleEffect(y: blink ? 0.1 : 1, anchor: UnitPoint(x: 0.5, y: (9 + 25) / 45))
                 }
                 .scaleEffect(x: breathe ? 1.02 : 1, y: breathe ? 0.98 : 1, anchor: UnitPoint(x: (7.5 + 15) / 45, y: (13 + 25) / 45))
