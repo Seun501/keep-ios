@@ -387,6 +387,11 @@ struct ChatScreen: View {
     @StateObject private var clawd = ClawdModel()
     @State private var atBottom = true
     @State private var farFromBottom = false
+    // 开屏落定窗（09-21 寻：305 包冷启动还是不在底）：正史排上来后 6 秒内，只要内容长高、她没碰屏、没起键盘，就按真实内容高钉回底，
+    // 不再猜是谁把内容撑高的（图片/语音条/字体……）；头几次钉底记一笔 diag 到服务器，方便查是谁长高的
+    @State private var settleUntil = Date.distantPast
+    @State private var settleLogs = 0
+    @State private var loadAt = Date()
     @State private var dbg = ""
     @State private var composerFocused = false
     @ObservedObject private var rec = VoiceRecorder.shared   // 语音条录音（09-14）
@@ -592,6 +597,15 @@ struct ChatScreen: View {
             if !userUp, let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
             if userUp, gap < 4 { userUp = false }
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
+            // 开屏落定窗：内容长高就钉回底（见 settleUntil）
+            if Date() < settleUntil, gap > 1, !userUp, !kbAnimating, !composerFocused, path.isEmpty,
+               let sv = ScrollObserver.view("chat"), !(sv.isTracking || sv.isDragging || sv.isDecelerating) {
+                if settleLogs < 6 {
+                    settleLogs += 1
+                    PushRegistrar.diag(String(format: "cold: gap=%.0f y=%.0f ch=%.0f vh=%.0f t=+%.1fs", gap, y, ch, vh, Date().timeIntervalSince(loadAt)))
+                }
+                DispatchQueue.main.async { pinBottom() }
+            }
         })
     }
 
@@ -627,7 +641,10 @@ struct ChatScreen: View {
             }
             .onChange(of: holdH) { _ in if rec.recording, holdFromBottom { DispatchQueue.main.async { pinBottom() } } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
-            .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+            .onChange(of: model.loadTick) { _ in
+                scrollBottom(proxy)
+                loadAt = Date(); settleUntil = loadAt.addingTimeInterval(6); settleLogs = 0
+            }
             // 图片从占位块换成真图（09-21 寻「进 Keep 不在最底」）：通知在改状态那刻发出、布局还没跑，atBottom 还是长高前的值；
             // 原本在底、她没在翻就等这一帧排完再按真实内容高钉底
             .onReceive(NotificationCenter.default.publisher(for: .keepImageLoaded)) { _ in
