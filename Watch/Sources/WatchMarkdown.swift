@@ -3,7 +3,7 @@ import UIKit
 
 /// 表端字体链（09-21 寻定：和 App 一致，「基本就是克的消息和我的气泡」）。
 /// 克＝Lora（wght 轴 400/500）→ 思源宋 GB2312 子集（Regular/Medium，各 2.1 MB）→ 系统衬线；
-/// 她＝Cascadia（只含 ASCII，wght 360，同手机）→ 系统宋体（STSongti-SC，同手机；表上有没有看 launch diag 的 fonts 行）→ 思源宋 Regular → 系统衬线。
+/// 她＝Cascadia（只含 ASCII，wght 360，同手机）→ 系统字（苹方）。
 enum WatchFonts {
     private static let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
     private static func desc(_ name: String, _ size: CGFloat) -> UIFontDescriptor? {
@@ -20,14 +20,12 @@ enum WatchFonts {
         let d = lora.addingAttributes([variation: [2003265652: medium ? 500 : 400], .cascadeList: [cjk, sys]])
         return Font(UIFont(descriptor: d, size: size))
     }
+    /// 她的气泡：手机端代码写的是 Cascadia→Songti SC，可 iPhone 上根本没这个字体名，一直落在系统字（苹方）——她看惯的就是这个
+    /// （09-21 她说「我的气泡是苹方那一块的」）。表上照实际的来：Cascadia（ASCII）→ 系统字（汉字＝苹方）。
     static func xun(_ size: CGFloat) -> Font {
-        let sys = sysSerif(size, medium: false)
-        let noto = desc("NotoSerifCJKsc-Regular", size) ?? sys
-        let song = desc("STSongti-SC-Regular", size) ?? desc("Songti SC", size)   // 寻的气泡是宋体不是思源宋（09-21 她提醒）
-        let chain = [song, noto, sys].compactMap { $0 }
-        guard let cas = desc("CascadiaMono-Regular", size) else { return Font(UIFont(descriptor: chain[0], size: size)) }
-        let d = cas.addingAttributes([variation: [2003265652: 360], .cascadeList: chain])
-        return Font(UIFont(descriptor: d, size: size))
+        let sys = UIFont.systemFont(ofSize: size).fontDescriptor
+        guard let cas = desc("CascadiaMono-Regular", size) else { return Font(UIFont(descriptor: sys, size: size)) }
+        return Font(UIFont(descriptor: cas.addingAttributes([variation: [2003265652: 360], .cascadeList: [sys]]), size: size))
     }
     /// 启动时记一行：表上有没有这几个字体（盲调试）
     static var report: String {
