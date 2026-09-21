@@ -95,11 +95,32 @@ enum MD {
     static func xunNS(_ s: String, size: CGFloat = 18) -> NSAttributedString {
         let key = "\(size)|\(s)" as NSString
         if let c = xunCache.object(forKey: key) { return c }
-        let r = ns(s, base: Theme.uiUser(size), bold: Theme.uiUser(size, bold: true),
-           mono: Theme.uiMono(size * 0.86, weight: .regular),
-           color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiSongti(size).lineHeight)
-        xunCache.setObject(r, forKey: key)
-        return r
+        // 09-21 寻报「我的气泡不认标题」：照网页 renderUserText——每行独立，`# 标题` 那行加大加粗
+        // （.user .bubble h1 1.3em / h2 1.18 / h3 1.06 / h4 1 / h5 .92 / h6 .85 灰，650 字重，下空 6）
+        let out = NSMutableAttributedString()
+        for (i, line) in s.components(separatedBy: "\n").enumerated() {
+            if i > 0 { out.append(NSAttributedString(string: "\n")) }
+            if let (lv, t) = userHeading(line) {
+                let hs = size * [1.3, 1.18, 1.06, 1.0, 0.92, 0.85][lv - 1]
+                out.append(ns(t, base: Theme.uiUser(hs, bold: true), bold: Theme.uiUser(hs, bold: true),
+                              mono: Theme.uiMono(hs * 0.86, weight: .semibold),
+                              color: lv == 6 ? Theme.uiMuted : Theme.uiText, lineHeight: 1.35, paraSpacing: 6,
+                              cjkLineHeight: Theme.uiSongti(hs, bold: true).lineHeight))
+            } else {
+                out.append(ns(line, base: Theme.uiUser(size), bold: Theme.uiUser(size, bold: true),
+                              mono: Theme.uiMono(size * 0.86, weight: .regular),
+                              color: Theme.uiText, lineHeight: 1.5, paraSpacing: 8, cjkLineHeight: Theme.uiSongti(size).lineHeight))
+            }
+        }
+        xunCache.setObject(out, forKey: key)
+        return out
+    }
+    private static func userHeading(_ line: String) -> (Int, String)? {
+        var n = 0; var idx = line.startIndex
+        while idx < line.endIndex, line[idx] == "#" { n += 1; idx = line.index(after: idx) }
+        guard n >= 1, n <= 6, idx < line.endIndex, line[idx] == " " || line[idx] == "\t" else { return nil }
+        let t = String(line[idx...]).trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : (n, t)
     }
     static func ke(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium) -> AttributedString {
         styled(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
@@ -134,19 +155,28 @@ enum MD {
             guard line.hasPrefix("\u{0}"), line.hasSuffix("\u{0}"), line.count >= 3 else { return nil }
             return Int(line.dropFirst().dropLast())
         }
+        // 09-21 寻报「克发列表渲染不出」：之前只认「- 」「1. 」顶格＋单个空格；照网页 `^[-*]\s+`/`^\d+\.\s+` 放宽成任意空白，
+        // 另外多认前头带缩进的子项（克常在「1. 」底下缩两格写「- 」，网页也不认、App 至少要把它当列表画出来）。
         func heading(_ line: String) -> (Int, String)? {
             var n = 0; var idx = line.startIndex
             while idx < line.endIndex, line[idx] == "#" { n += 1; idx = line.index(after: idx) }
-            guard n >= 1, n <= 6, idx < line.endIndex, line[idx] == " " else { return nil }
+            guard n >= 1, n <= 6, idx < line.endIndex, line[idx] == " " || line[idx] == "\t" else { return nil }
             return (n, String(line[idx...]).trimmingCharacters(in: .whitespaces))
         }
+        func afterMarker(_ line: String, _ end: String.Index) -> String? {   // 记号后至少一个空白，取其后的正文
+            guard end < line.endIndex, line[end] == " " || line[end] == "\t" else { return nil }
+            var s = line[end...]; while let f = s.first, f == " " || f == "\t" { s = s.dropFirst() }
+            return String(s)
+        }
         func olItem(_ line: String) -> (Int, String)? {
-            guard let dot = line.firstIndex(of: "."), let n = Int(line[..<dot]),
-                  line.index(after: dot) < line.endIndex, line[line.index(after: dot)] == " " else { return nil }
-            return (n, String(line[line.index(dot, offsetBy: 2)...]))
+            let l = line.drop { $0 == " " || $0 == "\t" }
+            guard let dot = l.firstIndex(of: "."), let n = Int(l[..<dot]), let s = afterMarker(String(l), l.index(after: dot)) else { return nil }
+            return (n, s)
         }
         func ulItem(_ line: String) -> String? {
-            (line.hasPrefix("- ") || line.hasPrefix("* ")) ? String(line.dropFirst(2)) : nil
+            let l = line.drop { $0 == " " || $0 == "\t" }
+            guard let f = l.first, f == "-" || f == "*" else { return nil }
+            return afterMarker(String(l), l.index(after: l.startIndex))
         }
         func quoteLine(_ line: String) -> String? {
             guard line.hasPrefix(">") else { return nil }
