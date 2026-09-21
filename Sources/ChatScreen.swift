@@ -394,8 +394,7 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
-    @State private var plusOpen = false                 // 「+」弹窗（拍照/相册）
-    @State private var plusAction: PlusAction? = nil    // 弹窗里点了哪项，弹窗收完再起
+    @State private var plusOpen = false                 // 「+」菜单（拍照/相册）开着
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
@@ -523,6 +522,23 @@ struct ChatScreen: View {
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
+        // 「+」菜单：按「+」的锚点画在它正上方、左边对齐；点菜单外任何地方收起
+        .overlayPreferenceValue(PlusAnchorKey.self) { a in
+            if plusOpen, let a {
+                GeometryReader { g in
+                    let r = g[a]
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+                        plusMenu
+                            .frame(width: 168, height: max(0, r.minY - 6), alignment: .bottomLeading)
+                            .offset(x: r.minX)
+                            .transition(.scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
+                    }
+                }
+                .zIndex(50)
+            }
+        }
+        .onChange(of: composerFocused) { on in if on { plusOpen = false } }
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { line in
             model.addLocalPing(line)
             mealOk = true; DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { mealOk = false }
@@ -853,30 +869,18 @@ struct ChatScreen: View {
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
                 // 09-21 寻：「+」不再直接弹相册（常误触）——弹「拍照」「相册」两项。
-                // 二回：系统菜单（Menu）宽度是定死的 250，两个短词右边空一大截、改不了——换成系统气泡弹窗（popover，同 iPad 上的小弹窗），
-                // 宽度按内容定；点了项等弹窗收完再起相机/相册（弹窗自己也是个 presented 页，同时起会互相踩）
-                Button { composerFocused = false; plusOpen = true } label: {
+                // 二回：系统菜单（Menu）宽度定死 250，两个短词右边空一大截、改不了；popover 气泡寻嫌不好看——
+                // 照系统菜单的样子自己画一块（圆角 13、毛玻璃、44 高一行、字左图标右、细线分隔、无箭头），只把宽收到内容宽，
+                // 挂在「+」正上方（锚点走 anchorPreference，overlay 画在最外层，不被输入卡裁）
+                Button {
+                    composerFocused = false
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen = true }
+                } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .popover(isPresented: $plusOpen, arrowEdge: .bottom) {
-                    VStack(spacing: 0) {
-                        plusRow("拍照", "camera") { plusAction = .camera; plusOpen = false }
-                        Divider()
-                        plusRow("相册", "photo.on.rectangle") { plusAction = .album; plusOpen = false }
-                    }
-                    .frame(width: 148)
-                    .presentationCompactAdaptation(.popover)
-                    .onDisappear {
-                        guard let a = plusAction else { return }
-                        plusAction = nil
-                        switch a {
-                        case .camera: CameraBridge.shared.present { img in Task { await addImages([img]) } }
-                        case .album: PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
-                        }
-                    }
-                }
+                .anchorPreference(key: PlusAnchorKey.self, value: .bounds) { $0 }
                 .padding(.leading, -4)
                 // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
                 if let vd = voiceDraft {
@@ -929,18 +933,35 @@ struct ChatScreen: View {
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
     enum PlusAction { case camera, album }
-    /// 「+」弹窗里的一行：图标＋两个字，整行可点
+    /// 「+」菜单（照系统 UIMenu 的样子）：一行 44 高，字 17 号在左、SF 图标在右，行间 1/3 点细线；整块圆角 13、毛玻璃底、淡投影
+    private var plusMenu: some View {
+        VStack(spacing: 0) {
+            plusRow("拍照", "camera") { pick(.camera) }
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1 / UIScreen.main.scale)
+            plusRow("相册", "photo.on.rectangle") { pick(.album) }
+        }
+        .frame(width: 168)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: .black.opacity(0.14), radius: 18, y: 6)
+    }
     private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            HStack(spacing: 10) {
-                Image(systemName: sys).font(.system(size: 15)).foregroundColor(Theme.text).frame(width: 20)
-                Text(title).font(Theme.round(15)).foregroundColor(Theme.text)
+            HStack(spacing: 8) {
+                Text(title).font(.system(size: 17)).foregroundColor(Theme.text)
                 Spacer(minLength: 0)
+                Image(systemName: sys).font(.system(size: 17)).foregroundColor(Theme.text)
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(.horizontal, 16).frame(height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+    private func pick(_ a: PlusAction) {
+        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+        switch a {
+        case .camera: CameraBridge.shared.present { img in Task { await addImages([img]) } }
+        case .album: PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
+        }
     }
     /// 长按输入行：问一次权限（只第一次会弹），起录
     private func startHold() {
@@ -1033,6 +1054,12 @@ struct ChatScreen: View {
             }
         }
     }
+}
+
+/// 「+」按钮在屏上的位置（给自画菜单定位用）
+struct PlusAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
 }
 
 /// 视口尺寸一变就把底边锚住（iOS 18 起有这个开关）：键盘起/收时最后一行跟着键盘走，和系统同一条曲线
