@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import WidgetKit
 
 /// Keep 手表端（09-10 寻定）。第一期＝腕上健康中继：表自己读健康库、自己推给网关——
 /// 昨天档不等她解锁手机，白天隔一阵一份快照。登录票由手机端经 WatchConnectivity 传来，表上不登录。
@@ -14,6 +15,10 @@ final class WatchDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
         WatchLink.shared.activate()
         WatchHealth.shared.scheduleRefresh()
+        // 09-21 寻「表盘图标还是灰的」：装了新包表盘可能还挂着旧渲染——每次启动叫小组件重画；顺手把 watchOS 版本记进 diag
+        WidgetCenter.shared.reloadAllTimelines()
+        let dev = WKInterfaceDevice.current()
+        WatchDiag.send("launch: watchOS \(dev.systemVersion) \(dev.model) screen=\(Int(dev.screenBounds.width))x\(Int(dev.screenBounds.height))")
     }
 
     func applicationDidBecomeActive() {

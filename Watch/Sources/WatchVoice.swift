@@ -31,7 +31,7 @@ final class WatchRecorder: NSObject, ObservableObject {
     private var ticker: Timer? = nil
     private static let pcmFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
 
-    struct Uploaded: Decodable { var url: String; var dur: Double }
+    struct Uploaded: Decodable { var url: String; var dur: Double; var text: String?; var tone: String? }   // text/tone 只在 transcribe=1 时有
     struct Result { var file: URL; var dur: Double; var text: String }
 
     func requestPermission() async -> Bool {
@@ -128,7 +128,7 @@ final class WatchRecorder: NSObject, ObservableObject {
                 guard let self, self.ws === task else { return }
                 switch res {
                 case .failure(let e):
-                    if self.recording && !self.gotFinal { WatchDiag.send("voice: ws \(e.localizedDescription)"); self.asrState = "识别断了" }
+                    if self.recording && !self.gotFinal { WatchDiag.send("voice: ws \((e as NSError).code) \(e.localizedDescription)"); self.asrState = "实时识别断了，松手后再听" }
                     self.finalWaiter?.resume(); self.finalWaiter = nil
                     return
                 case .success(let m):
@@ -193,17 +193,18 @@ final class WatchRecorder: NSObject, ObservableObject {
     private func discardFile() { if let u = fileURL { try? FileManager.default.removeItem(at: u) }; fileURL = nil }
     private func closeWS() { ws?.cancel(with: .normalClosure, reason: nil); ws = nil; wsOpen = false; pendingFrames = [] }
 
-    /// m4a 整段 POST 给网关落盘（只存不转写，同手机二版）
-    static func upload(file: URL, dur: Double) async throws -> Uploaded {
+    /// m4a 整段 POST 给网关落盘（transcribe=false：只存，同手机二版；true：网关转写＋写语气，回 text/tone——
+    /// 09-21 寻「表上无法语音转文字」：表上直连腾讯的 WebSocket 一开就断（diag：ws 似乎已断开与互联网的连接），没出字就走这条）
+    static func upload(file: URL, dur: Double, transcribe: Bool = false) async throws -> Uploaded {
         guard let token = WatchKeychain.token else { throw URLError(.userAuthenticationRequired) }
         var comps = URLComponents(url: WatchGateway.home.appendingPathComponent("api/voice"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [URLQueryItem(name: "dur", value: String(format: "%.1f", dur)), URLQueryItem(name: "transcribe", value: "0")]
+        comps.queryItems = [URLQueryItem(name: "dur", value: String(format: "%.1f", dur)), URLQueryItem(name: "transcribe", value: transcribe ? "1" : "0")]
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
         req.httpBody = try Data(contentsOf: file)
-        req.timeoutInterval = 60
+        req.timeoutInterval = transcribe ? 90 : 60   // 转写要等 Gemini（网关那头 45 秒顶）
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { throw URLError(.badServerResponse) }
         return try JSONDecoder().decode(Uploaded.self, from: data)

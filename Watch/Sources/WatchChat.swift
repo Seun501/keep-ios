@@ -287,13 +287,22 @@ struct WatchChatView: View {
         if cancel { rec.cancel(); WKInterfaceDevice.current().play(.click); return }
         Task {
             guard let r = await rec.finish() else { return }
-            if r.text.isEmpty { m.note = "没听出字"; try? FileManager.default.removeItem(at: r.file); return }
             WKInterfaceDevice.current().play(.stop)
+            // 09-21 寻「表上无法语音转文字」：表上直连腾讯的 WebSocket 一开就断（diag 10:40 三回「ws 似乎已断开与互联网的连接」），
+            // 实时没出字就把音频交给网关转写（Gemini，同手机一版），字和语气一起回来再发——不让她白说一遍
+            let live = !r.text.isEmpty
+            if !live { m.note = "在听…" }
             do {
-                let v = try await WatchRecorder.upload(file: r.file, dur: r.dur)
+                let v = try await WatchRecorder.upload(file: r.file, dur: r.dur, transcribe: !live)
                 try? FileManager.default.removeItem(at: r.file)
-                m.send(r.text, voice: ["url": v.url, "dur": v.dur, "tone": "", "text": r.text, "annotate": 1, "orig": r.text])
-            } catch { m.note = "音频没传上去" }
+                let text = live ? r.text : (v.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.isEmpty { m.note = "没听出字"; return }
+                m.note = ""
+                m.send(text, voice: ["url": v.url, "dur": v.dur, "tone": live ? "" : (v.tone ?? ""), "text": text, "annotate": live ? 1 : 0, "orig": text])
+            } catch {
+                m.note = live ? "音频没传上去" : "没听出字（网关转写没成）"
+                WatchDiag.send("voice: upload(transcribe=\(live ? 0 : 1)) \((error as NSError).code) \(error.localizedDescription)")
+            }
         }
     }
 }

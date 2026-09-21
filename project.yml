@@ -112,6 +112,7 @@ targets:
     dependencies:
       - sdk: HealthKit.framework
       - sdk: WatchConnectivity.framework
+      - sdk: WidgetKit.framework            # 09-21：启动时叫表盘小组件重画
       - target: KeepWatchWidget             # 表盘复杂功能随表端一起装（09-15）
     settings:
       base:

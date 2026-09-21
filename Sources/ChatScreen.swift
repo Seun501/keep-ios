@@ -242,12 +242,13 @@ final class ChatModel: ObservableObject {
     /// 语音条（09-14 夜二版）：字已经在手机上出好（腾讯实时识别）、她定稿了；这里传音频、再当普通消息发（带 voice：定稿＋识别原文＋annotate），
     /// 网关让 Gemini 照定稿标记号写语气。先画一个转圈的小气泡＋字，传好就换成真的。失败就把小气泡下面改成一句灰字。
     @Published var transcribing = false
-    func sendVoice(file: URL, dur: Double, text: String, orig: String) {
+    /// images（09-21 寻）：输入框里已选的图随语音条一起发——之前带图就把音频丢了当普通消息发
+    func sendVoice(file: URL, dur: Double, text: String, orig: String, images: [String] = []) {
         guard !sending, !transcribing, !text.isEmpty else { return }
         transcribing = true
-        var echo = Msg(role: "user", content: text, ts: TimeFmt.nowIso()); echo.voice = Voice(url: "", dur: dur, text: text, pending: true)
+        var echo = Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images); echo.voice = Voice(url: "", dur: dur, text: text, pending: true)
         msgs.append(echo); rebuild()
-        PushRegistrar.diag(String(format: "voice: send %.1fs chars=%d edited=%d", dur, text.count, text != orig ? 1 : 0))
+        PushRegistrar.diag(String(format: "voice: send %.1fs chars=%d edited=%d imgs=%d", dur, text.count, text != orig ? 1 : 0, images.count))
         Task {
             defer { transcribing = false }
             do {
@@ -255,7 +256,7 @@ final class ChatModel: ObservableObject {
                 try? FileManager.default.removeItem(at: file)
                 v.text = text; v.orig = orig; v.annotate = true
                 msgs.removeAll { $0.voice?.pending == true }
-                send(text: text, images: [], voice: v)
+                send(text: text, images: images, voice: v)
             } catch {
                 PushRegistrar.diag("voice: upload failed \(error.localizedDescription)")
                 voiceFailed("音频没传上去，再说一次？")
@@ -393,6 +394,8 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
+    @State private var plusOpen = false                 // 「+」弹窗（拍照/相册）
+    @State private var plusAction: PlusAction? = nil    // 弹窗里点了哪项，弹窗收完再起
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
@@ -559,6 +562,10 @@ struct ChatScreen: View {
                     draft = "今天雨停得早，我想去门口那棵树下坐一会儿"
                     voiceDraft = VoiceDraft(file: FileManager.default.temporaryDirectory.appendingPathComponent("x.m4a"), dur: 6, orig: draft)
                 }
+            case "plusmenu":   // 「+」弹窗开着（拍照/相册）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { plusOpen = true }
+            case "album":      // 相册半屏抽屉升起来（模拟器自带几张样片）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { PhotoPickerBridge.shared.present(max: 4) { _ in } }
             case "kbup", "kbhide":   // 键盘：打几个字唤起；kbhide 再在 4 秒时收起（截图在 7 秒）
                 draft = "试试看"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { composerFocused = true }
@@ -845,21 +852,31 @@ struct ChatScreen: View {
             .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
-                // 09-21 寻：「+」不再直接弹相册（常误触）——系统菜单弹「拍照」「相册」两项（寻要苹果自带的那种小弹窗）
-                Menu {
-                    Button {
-                        composerFocused = false
-                        CameraBridge.shared.present { img in Task { await addImages([img]) } }
-                    } label: { Label("拍照", systemImage: "camera") }
-                    Button {
-                        composerFocused = false
-                        PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
-                    } label: { Label("相册", systemImage: "photo.on.rectangle") }
-                } label: {
+                // 09-21 寻：「+」不再直接弹相册（常误触）——弹「拍照」「相册」两项。
+                // 二回：系统菜单（Menu）宽度是定死的 250，两个短词右边空一大截、改不了——换成系统气泡弹窗（popover，同 iPad 上的小弹窗），
+                // 宽度按内容定；点了项等弹窗收完再起相机/相册（弹窗自己也是个 presented 页，同时起会互相踩）
+                Button { composerFocused = false; plusOpen = true } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
-                .menuStyle(.button).buttonStyle(.plain)
+                .buttonStyle(.plain)
+                .popover(isPresented: $plusOpen, arrowEdge: .bottom) {
+                    VStack(spacing: 0) {
+                        plusRow("拍照", "camera") { plusAction = .camera; plusOpen = false }
+                        Divider()
+                        plusRow("相册", "photo.on.rectangle") { plusAction = .album; plusOpen = false }
+                    }
+                    .frame(width: 148)
+                    .presentationCompactAdaptation(.popover)
+                    .onDisappear {
+                        guard let a = plusAction else { return }
+                        plusAction = nil
+                        switch a {
+                        case .camera: CameraBridge.shared.present { img in Task { await addImages([img]) } }
+                        case .album: PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
+                        }
+                    }
+                }
                 .padding(.leading, -4)
                 // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
                 if let vd = voiceDraft {
@@ -911,6 +928,20 @@ struct ChatScreen: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
+    enum PlusAction { case camera, album }
+    /// 「+」弹窗里的一行：图标＋两个字，整行可点
+    private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 10) {
+                Image(systemName: sys).font(.system(size: 15)).foregroundColor(Theme.text).frame(width: 20)
+                Text(title).font(Theme.round(15)).foregroundColor(Theme.text)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
     /// 长按输入行：问一次权限（只第一次会弹），起录
     private func startHold() {
         guard !model.sending, !model.transcribing, !rec.recording else { return }
@@ -936,7 +967,8 @@ struct ChatScreen: View {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
-                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText)   // orig＝识别原文（字典改之前），学编辑用
+                let imgs = pending; pending = []   // 09-21 寻：已选的图随语音一起走
+                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
             }
@@ -957,12 +989,12 @@ struct ChatScreen: View {
         let imgs = pending
         draft = ""; pending = []
         composerFocused = false
-        if let vd = voiceDraft, imgs.isEmpty {
+        if let vd = voiceDraft, !t.isEmpty {
             voiceDraft = nil
-            model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig)
+            model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig, images: imgs)   // 09-21 寻：带图也是语音条，图一起走
             return
         }
-        if let vd = voiceDraft { try? FileManager.default.removeItem(at: vd.file); voiceDraft = nil }   // 带图就当普通消息发，音频不要了
+        if let vd = voiceDraft { try? FileManager.default.removeItem(at: vd.file); voiceDraft = nil }   // 字全删了只剩图：当普通消息发，音频不要了
         model.send(text: t, images: imgs)
     }
 
@@ -1046,6 +1078,12 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
         top.view.window?.tintColor = Theme.uiScrollTint
         p.view.tintColor = Theme.uiScrollTint
         self.done = done
+        // 09-21 寻：选图页整页升起来又慢又重——改成半屏抽屉（同网页里那种），往上拖到全屏；相册的格子照旧
+        if let sp = p.sheetPresentationController {
+            sp.detents = [.medium(), .large()]
+            sp.selectedDetentIdentifier = .medium
+            sp.prefersGrabberVisible = true
+        }
         top.present(p, animated: true) {
             p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
             p.view.tintColor = Theme.uiScrollTint

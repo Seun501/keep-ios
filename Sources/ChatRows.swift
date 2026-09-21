@@ -64,7 +64,8 @@ extension TimelineItem {
                 } else if let v = m.voice {
                     // 语音条：气泡画转写的字（正史 content 是「字＋小注」，小注摘掉）；手表发的时间旁标 Watch（09-15）
                     let stamp = (m.via == "watch" ? "Watch · " : "") + TimeFmt.stamp(m.ts)   // 寻 09-15：「Watch · 15:14」
-                    out.append(.user(text: v.text ?? Voice.stripNote(Msg.stripWatch(m.content ?? "")), stamp: stamp, images: [], voice: v))
+                    // 09-21 寻：输入框里有图时发语音，图随语音条一起走——图照旧站在气泡外上方
+                    out.append(.user(text: v.text ?? Voice.stripNote(Msg.stripWatch(m.content ?? "")), stamp: stamp, images: m.images ?? [], voice: v))
                 } else {
                     let stamp = (m.via == "watch" ? "Watch · " : "") + TimeFmt.stamp(m.ts)
                     out.append(.user(text: Msg.stripWatch(m.content ?? ""), stamp: stamp, images: m.images ?? [], pick: Replies.pick(of: m.content, options: options)))
