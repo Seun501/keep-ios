@@ -20,11 +20,11 @@ struct KeepProvider: TimelineProvider {
 struct KeepComplicationView: View {
     @Environment(\.widgetFamily) private var family
     private var icon: some View {
-        let img = Image("icon").resizable().scaledToFit()
-        if #available(watchOS 11, *) {
-            return AnyView(img.widgetAccentedRenderingMode(.fullColor))
+        let img = Image("icon").resizable()
+        if #available(watchOS 11, *) {   // 接口挂在 Image 上，得先于 scaledToFit 调
+            return AnyView(img.widgetAccentedRenderingMode(.fullColor).scaledToFit())
         }
-        return AnyView(img)
+        return AnyView(img.scaledToFit())
     }
     var body: some View {
         switch family {
