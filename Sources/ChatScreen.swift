@@ -659,12 +659,15 @@ struct ChatScreen: View {
             .onAppear {
                 Task { await model.load() }
                 // 截图场景 chips：工具行在预览对话靠前的位置，滚到顶把它露出来
-                if Preview.on, Preview.screen == "chips" {
+                // 截图场景 md（09-21）：列表/标题样张在预览对话中段，滚到克那条「preview.json」处
+                if Preview.on, Preview.screen == "chips" || Preview.screen == "md" {
                     for d in [3.0, 4.5] { DispatchQueue.main.asyncAfter(deadline: .now() + d) {
                         guard let sv = ScrollObserver.view("chat"), !model.items.isEmpty else { return }
-                        // 按工具行在列表里的位次粗估偏移（滚顶后它在视口外，sim-104）
-                        let idx = model.items.firstIndex { if case .ai(_, let m, _) = $0.item { return !(m.toolCalls ?? []).isEmpty } else { return false } } ?? 0
-                        let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - 240)
+                        // 按目标行在列表里的位次粗估偏移（滚顶后它在视口外，sim-104）
+                        let idx = model.items.firstIndex { if case .ai(_, let m, _) = $0.item {
+                            return Preview.screen == "md" ? (m.content ?? "").contains("preview.json") : !(m.toolCalls ?? []).isEmpty
+                        } else { return false } } ?? 0
+                        let y = max(0, sv.contentSize.height * CGFloat(idx) / CGFloat(model.items.count) - (Preview.screen == "md" ? 60 : 240))
                         sv.setContentOffset(CGPoint(x: 0, y: y), animated: false)
                     } }
                 }
