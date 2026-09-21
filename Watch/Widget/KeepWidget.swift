@@ -54,7 +54,9 @@ struct KeepComplicationView: View {
 struct KeepComplication: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "KeepComplication", provider: KeepProvider()) { _ in
-            KeepComplicationView().containerBackground(for: .widget) { Color.clear }
+            // 09-21 三回（寻：watchOS 26.6、第五包装上还是灰饼）：系统拿不到时间线时画的是「占位态」——图被打成灰块，正是灰饼的样子。
+            // unredacted＝占位态也照画真图；要是这样还灰，就是小组件进程根本没起来（签名/描述文件），看下一包打包机打印的 PlugIns/entitlements
+            KeepComplicationView().unredacted().containerBackground(for: .widget) { Color.clear }
         }
         .configurationDisplayName("Keep")
         .description("点一下和克说话")

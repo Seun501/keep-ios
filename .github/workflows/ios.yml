@@ -20,6 +20,10 @@ on:
         description: "归档并上传 TestFlight"
         type: boolean
         default: false
+      inspect:
+        description: "只归档＋查包，不上传（配合 testflight=true；09-21 查表盘小组件用）"
+        type: boolean
+        default: false
       screens:
         description: "截图班要截的页（空格分隔）；macOS 分钟按十倍计费，只截要看的"
         type: string
@@ -196,8 +200,19 @@ jobs:
           WAPP=$(find "$APP/Watch" -maxdepth 1 -name "*.app" | head -1)
           echo "watch app=$WAPP"
           [ -n "$WAPP" ] && plutil -p "$WAPP/Info.plist" | grep -E "Bundle(Identifier|Version)|WK" && codesign -d --entitlements - "$WAPP" 2>&1 | head -20
+          # 表盘小组件（09-21 寻验三回还是灰饼）：appex 真在 PlugIns 里、Info 有 NSExtension、签名与描述文件对、图在 Assets.car 里
+          WX=$(find "$WAPP/PlugIns" -maxdepth 1 -name "*.appex" 2>/dev/null | head -1)
+          echo "watch widget appex=$WX"
+          if [ -n "$WX" ]; then
+            plutil -p "$WX/Info.plist"
+            codesign -dvv --entitlements - "$WX" 2>&1 | head -30
+            ls -la "$WX"
+            [ -f "$WX/embedded.mobileprovision" ] && security cms -D -i "$WX/embedded.mobileprovision" | plutil -p - | grep -E "application-identifier|Name|ExpirationDate|get-task-allow"
+            [ -f "$WX/Assets.car" ] && xcrun assetutil --info "$WX/Assets.car" 2>/dev/null | grep -E '"Name"|PixelWidth|Scale' | head -12
+          fi
 
       - name: 导出并上传 TestFlight
+        if: ${{ github.event.inputs.inspect != 'true' }}
         run: |
           set -o pipefail
           xcodebuild -exportArchive \
