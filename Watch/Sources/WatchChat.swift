@@ -88,7 +88,9 @@ final class WatchChat: ObservableObject {
          {"role":"user","content":"刚拍的，门口那棵树。","ts":"2026-09-02T15:14:00+08:00"},
          {"role":"assistant","content":"叶子已经开始黄了。","ts":"2026-09-02T15:14:30+08:00"},
          {"role":"user","content":"⌚［语音条］雨停了，我去树下坐一会儿。（6秒）","ts":"2026-09-02T15:20:00+08:00","voice":{"text":"雨停了，我去树下坐一会儿。","dur":6.2}},
-         {"role":"assistant","content":"去吧，别坐太久，风大。","ts":"2026-09-02T15:20:40+08:00"}]
+         {"role":"assistant","content":"去吧，别坐太久，风大。","ts":"2026-09-02T15:20:40+08:00"},
+         {"role":"user","content":"回来了，Keep 里记一下今天的事？","ts":"2026-09-02T16:02:00+08:00"},
+         {"role":"assistant","content":"## 今天\\n1. 雨停得早\\n   - 树下坐了 20 分钟\\n2. 叶子**开始黄了**\\n\\n> 明天带伞。","ts":"2026-09-02T16:02:30+08:00"}]
         """
         return (try? JSONDecoder().decode([WMsg].self, from: Data(j.utf8))) ?? []
     }
@@ -225,7 +227,7 @@ struct WatchChatView: View {
             .padding(.leading, 22)
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                Text(x.text).font(WatchTheme.ke).foregroundStyle(WatchTheme.text)
+                WatchMarkdown(text: x.text)   // 09-21 寻：克的 md 在表上也画（列表/标题/引用/代码）
                 Text(x.hm).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -344,6 +346,7 @@ enum WatchTheme {
     static let bubble = Color(red: 0x2A/255, green: 0x27/255, blue: 0x23/255)    // 她的气泡：深暖灰
     static let line = Color(red: 0x3A/255, green: 0x36/255, blue: 0x30/255)      // 输入行的发丝线
     static let accent = Color(red: 0xC9/255, green: 0x64/255, blue: 0x42/255)    // 赤陶
-    static let ke = Font.system(size: 14, design: .serif)
-    static let xun = Font.system(size: 14, design: .rounded)
+    // 09-21 寻定：和 App 一致——克 Lora→思源宋，她 Cascadia→思源宋（WatchFonts）
+    static var ke: Font { WatchFonts.ke(14) }
+    static var xun: Font { WatchFonts.xun(14) }
 }
