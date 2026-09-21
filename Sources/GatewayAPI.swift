@@ -64,6 +64,7 @@ enum GatewayAPI {
 
     enum Event {
         case start(conversationId: String)
+        case voice(tone: String, text: String)   // 语音条的语气（网关在克开口前先推，09-21）
         case thinking(String)
         case tool(String)
         case toolDone
@@ -141,6 +142,7 @@ enum GatewayAPI {
                               let type = d["type"] as? String else { continue }
                         switch type {
                         case "start": continuation.yield(.start(conversationId: d["conversation_id"] as? String ?? ""))
+                        case "voice": continuation.yield(.voice(tone: d["tone"] as? String ?? "", text: d["text"] as? String ?? ""))
                         case "thinking": continuation.yield(.thinking(d["text"] as? String ?? ""))
                         case "tool": continuation.yield(.tool(d["name"] as? String ?? "?"))
                         case "tool_done": continuation.yield(.toolDone)

@@ -53,7 +53,7 @@ struct LiveTurn {
     mutating func apply(_ ev: GatewayAPI.Event) {
         events += 1
         switch ev {
-        case .start: break
+        case .start, .voice: break   // voice 由 ChatModel 直接写进她那条气泡
         case .thinking(let t):
             if !seg.text.isEmpty { newSegment() }
             var s = seg
@@ -264,6 +264,12 @@ final class ChatModel: ObservableObject {
                 for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice) {
                     lastEventAt = Date()
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
+                    // 语气到了（09-21）：立刻写进刚发的那条语音气泡，不等克说完重拉正史
+                    if case .voice(let tone, let vt) = ev, let i = msgs.lastIndex(where: { $0.role == "user" && $0.voice != nil }) {
+                        if !tone.isEmpty { msgs[i].voice?.tone = tone }
+                        if !vt.isEmpty { msgs[i].voice?.text = vt }
+                        rebuild()
+                    }
                     live?.apply(ev)
                     if case .delta = ev { startSmoother() }
                 }
@@ -371,6 +377,7 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
+    @State private var plusMenu = Preview.on && Preview.screen == "plus"   // 「+」点开的两枚小签：拍照 / 相册（09-21 寻：直接弹相册常误触，也想直接拍）
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
     @State private var showMeal = false
@@ -401,6 +408,7 @@ struct ChatScreen: View {
         case "places", "tripsheet": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
+        case "archq": return [.arch(day: "2026-09-02", q: "安静", no: nil)]   // 带关键词进天页：右下角命中跳转胶囊（09-21）
         case "archno": return [.arch(day: "2026-09-02", q: nil, no: 1203)]   // #N 直跳的闪
         default: return []
         }
@@ -621,6 +629,13 @@ struct ChatScreen: View {
             .onChange(of: holdH) { _ in if rec.recording, holdFromBottom { DispatchQueue.main.async { pinBottom() } } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in scrollBottom(proxy) }
+            // 图片从占位块换成真图（09-21 寻「进 Keep 不在最底」）：通知在改状态那刻发出、布局还没跑，atBottom 还是长高前的值；
+            // 原本在底、她没在翻就等这一帧排完再按真实内容高钉底
+            .onReceive(NotificationCenter.default.publisher(for: .keepImageLoaded)) { _ in
+                guard atBottom, !userUp, path.isEmpty else { return }
+                if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging || sv.isDecelerating { return }
+                DispatchQueue.main.async { pinBottom() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .keepThinkToggled)) { _ in
                 // 末条的 thought 展开/折回改了内容高：原本在底就重新钉底，别留一截空（寻验 44）
                 guard atBottom, let id = lastId else { return }
@@ -752,6 +767,7 @@ struct ChatScreen: View {
                         ForEach(Array(pending.enumerated()), id: \.offset) { i, u in
                             ZStack(alignment: .topTrailing) {
                                 DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
+                                    .onTapGesture { Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图
                                 Button { pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
@@ -796,15 +812,24 @@ struct ChatScreen: View {
             .padding(.top, 2).padding(.bottom, 4)
             HStack(spacing: 8) {
                 // 选图走自己弹的 PHPicker：弹出前把 tint 钉成赤陶（寻验 09-04：SwiftUI 的 PhotosPicker 头一回弹出来右上角是系统蓝）
-                Button {
-                    composerFocused = false
-                    PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
-                } label: {
+                // 09-21 寻：「+」不再直接弹相册（常误触）——点开两枚小签「拍照」「相册」，再点一下或点别处收回
+                Button { withAnimation(.easeOut(duration: 0.15)) { plusMenu.toggle() } } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
+                        .rotationEffect(.degrees(plusMenu ? 45 : 0))
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, -4)
+                if plusMenu {
+                    plusPill("拍照") {
+                        plusMenu = false; composerFocused = false
+                        CameraBridge.shared.present { img in Task { await addImages([img]) } }
+                    }
+                    plusPill("相册") {
+                        plusMenu = false; composerFocused = false
+                        PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
+                    }
+                }
                 // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
                 if let vd = voiceDraft {
                     HStack(spacing: 6) {
@@ -847,6 +872,8 @@ struct ChatScreen: View {
         // 整张卡都算输入框（寻验 85）：点卡上文字以外的空白不收键盘，反而把焦点给输入框——选字时误触上沿不再退出
         .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .onTapGesture { if !composerFocused { composerFocused = true } }
+        .onChange(of: composerFocused) { f in if f { plusMenu = false } }   // 开始打字＝小签收回
+        .onChange(of: model.sending) { s in if s { plusMenu = false } }
         .background(GeometryReader { g in
             Color.clear.onAppear { KeyboardDismisser.keep["composer"] = g.frame(in: .global) }
                 .onChange(of: g.frame(in: .global)) { r in KeyboardDismisser.keep["composer"] = r }
@@ -855,6 +882,15 @@ struct ChatScreen: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
+
+    /// 「+」点开的小签：同语音小签的胶囊（她的气泡底、深字）
+    private func plusPill(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(Theme.round(13)).foregroundColor(Theme.text)
+                .padding(.horizontal, 12).frame(height: 28)
+                .background(Theme.userBubble, in: Capsule())
+        }.buttonStyle(.plain)
+    }
 
     /// 长按输入行：问一次权限（只第一次会弹），起录
     private func startHold() {
@@ -957,6 +993,26 @@ struct BottomAnchor: ViewModifier {
 
 /// 系统选图器自己弹（PHPicker 是别的进程画的远程视图，只认弹出前钉在它 view 上的 tintColor）
 @MainActor
+/// 相机（09-21 寻：在 Keep 里直接拍一张给克）：系统相机整页弹出，拍完回一张 UIImage；模拟器没相机就什么都不做
+final class CameraBridge: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    static let shared = CameraBridge()
+    private var done: ((UIImage) -> Void)? = nil
+    func present(done: @escaping (UIImage) -> Void) {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera), let top = PhotoPickerBridge.topVC() else { return }
+        let p = UIImagePickerController()
+        p.sourceType = .camera; p.cameraCaptureMode = .photo; p.delegate = self
+        p.view.tintColor = Theme.uiScrollTint
+        self.done = done
+        top.present(p, animated: true)
+    }
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+        picker.dismiss(animated: true)
+        let cb = done; done = nil
+        if let ui = (info[.editedImage] ?? info[.originalImage]) as? UIImage { cb?(ui) }
+    }
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { done = nil; picker.dismiss(animated: true) }
+}
+
 final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
     static let shared = PhotoPickerBridge()
     private var done: (([UIImage]) -> Void)? = nil
@@ -995,7 +1051,7 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             ip.loadObject(ofClass: UIImage.self) { o, _ in c.resume(returning: o as? UIImage) }
         }
     }
-    private static func topVC() -> UIViewController? {
+    static func topVC() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         var vc = (scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first)?.rootViewController

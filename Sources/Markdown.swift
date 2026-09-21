@@ -449,9 +449,35 @@ enum MDWhole {
                     .font: Theme.uiMono(13.5, weight: .regular), .foregroundColor: Theme.uiText,
                     .backgroundColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27), .paragraphStyle: p]))
             case .table(let head, let rows):
-                var lines = [head.joined(separator: "  |  ")]
-                for r in rows { lines.append(r.joined(separator: "  |  ")) }
-                para(MD.keNS(lines.joined(separator: "\n"), size: 15), before: 0, after: last ? 0 : 16)
+                // 09-21 寻：克画的表格之前拼成「a  |  b」一串字。iOS 的 UITextView 没有表格，用制表位把列对齐：
+                // 每列宽＝该列最宽的格（15pt）+ 18 间距；总宽装不下就整体降到 13pt。表头半粗、下空 4，行间 2，格内认行内 markdown。
+                let cols = max(head.count, rows.map(\.count).max() ?? 0)
+                let all = [head] + rows
+                var pt: CGFloat = 15
+                var widths: [CGFloat] = []
+                for _ in 0..<2 {
+                    widths = (0..<cols).map { c in
+                        var w: CGFloat = 0
+                        for r in all where c < r.count { w = max(w, MD.keNS(r[c], size: pt, weight: .semibold, lineHeight: 1.4).size().width) }
+                        return ceil(w) + 18
+                    }
+                    if widths.reduce(0, +) <= UIScreen.main.bounds.width - 40 || pt <= 13 { break }
+                    pt = 13
+                }
+                var stops: [NSTextTab] = []; var x: CGFloat = 0
+                for w in widths.dropLast() { x += w; stops.append(NSTextTab(textAlignment: .left, location: x)) }
+                for (k, r) in all.enumerated() {
+                    let line = NSMutableAttributedString()
+                    for c in 0..<cols {
+                        if c > 0 { line.append(NSAttributedString(string: "\t", attributes: [.font: Theme.uiSerif(pt)])) }
+                        line.append(MD.keNS(c < r.count ? r[c] : "", size: pt, weight: k == 0 ? .semibold : .regular, lineHeight: 1.4))
+                    }
+                    let p = NSMutableParagraphStyle(); p.tabStops = stops; p.defaultTabInterval = 0
+                    p.minimumLineHeight = pt * 1.4; p.maximumLineHeight = pt * 1.4
+                    p.paragraphSpacing = k == all.count - 1 ? (last ? 0 : 16) : (k == 0 ? 4 : 2)
+                    line.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: line.length))
+                    out.append(line); if k < all.count - 1 { out.append(NSAttributedString(string: "\n")) }
+                }
             }
         }
         return out

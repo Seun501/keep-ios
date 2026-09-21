@@ -166,13 +166,7 @@ struct ArchiveScreen: View {
                     Text("搜「\(m.q)」· \(m.hits.count)\(m.truncated ? "+" : "") 处").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
                 }
                 Spacer()
-                if m.view == "day", !m.q.isEmpty, markCount > 0 {   // 命中逐处跳转（▲▼）：计数居中
-                    HStack(spacing: 2) {
-                        Button { jump(-1) } label: { Text("▲").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
-                        Text("\(markIdx + 1)/\(markCount)").font(Theme.round(12)).foregroundColor(Theme.muted).frame(minWidth: 26)
-                        Button { jump(1) } label: { Text("▼").font(Theme.ui(13)).foregroundColor(Theme.muted).frame(width: 26, height: 30) }.buttonStyle(.plain)
-                    }
-                }
+                // 命中逐处跳转原来是顶栏里的「▲ 2/5 ▼」（寻 09-21：挤在日期旁边不好看）→ 挪到天页右下角的小胶囊（hitPill）
                 if m.view == "day" {   // 条数开关（08-31 寻定）：点亮＝每条尾巴挂全局编号
                     Button { m.showNums.toggle() } label: {
                         Text("#").font(.custom("Georgia", size: 15)).foregroundColor(m.showNums ? Theme.accent : Theme.muted).frame(width: 30, height: 30)
@@ -212,7 +206,28 @@ struct ArchiveScreen: View {
             }
             .onChange(of: markIdx) { i in if i >= 0, i < markEntries.count { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(markEntries[i], anchor: .center) } } }
         }
+        .overlay(alignment: .bottomTrailing) { if !m.q.isEmpty, markCount > 0 { hitPill } }
         .id(d.date)   // 翻到另一天＝整页重来（滚回顶、命中定位重跑），不带着上一天的滚动位置
+    }
+    /// 命中逐处跳转（09-21 寻定挪位）：天页右下角一枚小胶囊，和主页「跳到底」那枚同款（同底同圈同影），
+    /// 左右各一枚细箭头、中间「2/5」；顶栏只剩日期和 #
+    private var hitPill: some View {
+        HStack(spacing: 0) {
+            Button { jump(-1) } label: {
+                Image("chev").renderingMode(.template).resizable().frame(width: 14, height: 14).rotationEffect(.degrees(180))
+                    .foregroundColor(Theme.jumpArrow).frame(width: 34, height: 38)
+            }.buttonStyle(.plain)
+            Text("\(markIdx + 1)/\(markCount)").font(Theme.round(12.5)).foregroundColor(Theme.jumpArrow).frame(minWidth: 30)
+            Button { jump(1) } label: {
+                Image("chev").renderingMode(.template).resizable().frame(width: 14, height: 14)
+                    .foregroundColor(Theme.jumpArrow).frame(width: 34, height: 38)
+            }.buttonStyle(.plain)
+        }
+        .background(Theme.jumpBg, in: Capsule())
+        .overlay(Capsule().stroke(Theme.jumpRing, lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.10), radius: 9, y: 6)
+        .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+        .padding(.trailing, 16).padding(.bottom, 14)
     }
     /// 命中的条（按出现顺序；同一条多处算多次，跳转按条）
     private var markEntries: [String] {

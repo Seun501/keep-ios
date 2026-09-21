@@ -76,7 +76,10 @@ extension TimelineItem {
     }
 }
 
-extension Notification.Name { static let keepThinkToggled = Notification.Name("keep.thinkToggled") }
+extension Notification.Name {
+    static let keepThinkToggled = Notification.Name("keep.thinkToggled")
+    static let keepImageLoaded = Notification.Name("keep.imageLoaded")   // 消息里的图从占位块换成真图（内容长高了）
+}
 
 struct DaySepView: View {
     let day: String
@@ -474,6 +477,9 @@ struct StreamImage: View {
         .task(id: src) {
             if let c = StreamImageCache.peek(src: src) { ui = c; return }
             ui = await StreamImageCache.load(src)
+            // 09-21 寻：「进 Keep 界面不在最底」——占位块 120×90、真图最大 200×200，冷启动图片最后才到、内容长高偏移不动。
+            // 通知主页：原本在底就再钉一次
+            if ui != nil { NotificationCenter.default.post(name: .keepImageLoaded, object: nil) }
         }
     }
 }
