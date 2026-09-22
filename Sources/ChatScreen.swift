@@ -1211,6 +1211,7 @@ final class EmbeddedPickerVC: UIViewController {
         view.addSubview(bar)
         // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
         // 两只都是 iOS 26+ 的玻璃圆钮（寻 09-22 二回：「注意看，叉叉勾勾都是玻璃UI」）；老系统兜底平圆
+        let cancel = UIButton(type: .system)
         Self.style(cancel, symbol: "xmark", prominent: false, fg: Theme.uiText)
         cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
         doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
