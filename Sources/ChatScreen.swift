@@ -1240,8 +1240,10 @@ final class EmbeddedPickerVC: UIViewController {
         ])
     }
     /// 没勾：灰玻璃上白勾；勾了：赤陶实玻璃白勾（参考图两态）
+    private var count = 0
     func setCount(_ n: Int) {
-        doneBtn.isEnabled = n > 0
+        count = n
+        // 不走 isEnabled（系统会把禁用态的勾压暗，寻要的是纯白勾），没勾时点了不做事
         Self.style(doneBtn, symbol: "checkmark", prominent: n > 0, fg: .white)
     }
     private static func style(_ b: UIButton, symbol: String, prominent: Bool, fg: UIColor) {
@@ -1263,7 +1265,7 @@ final class EmbeddedPickerVC: UIViewController {
     }
     private var settled = false
     private func cancelTap() { settled = true; onCancel(); dismiss(animated: true) }
-    private func doneTap() { settled = true; onDone(); dismiss(animated: true) }
+    private func doneTap() { guard count > 0 else { return }; settled = true; onDone(); dismiss(animated: true) }
     /// 手指把抽屉拖下去关掉＝取消
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
