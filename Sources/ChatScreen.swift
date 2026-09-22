@@ -1218,13 +1218,20 @@ final class EmbeddedPickerVC: UIViewController {
         // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
         // 两只都是 iOS 26+ 的玻璃圆钮（寻 09-22 二回：「注意看，叉叉勾勾都是玻璃UI」）；老系统兜底平圆
         let cancel = UIButton(type: .system)
-        Self.style(cancel, symbol: "xmark", size: 16, weight: .regular, fill: nil, fg: Theme.uiText)   // 09-22 寻：叉太大→缩
+        Self.style(cancel, symbol: "xmark", size: 17, weight: .regular, fill: nil, fg: Theme.uiText)   // 09-22 寻：叉 18 太大→16 又小了一点→17
         cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
         doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
         setCount(0)
         for b in [cancel, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
         addChild(picker)
         picker.view.translatesAutoresizingMaskIntoConstraints = false
+        // 09-22 寻二回：格子四周出了一圈灰边像张卡片——嵌入式选择器除了 edgesWithoutContentMargins 还会照宿主的布局边距缩进
+        // （两侧那 8 正好是系统最小边距），全部清零；它自己的底色是灰的，盖成和容器一色，圆钮下那 16 就不会露灰
+        picker.viewRespectsSystemMinimumLayoutMargins = false
+        picker.view.directionalLayoutMargins = .zero
+        picker.view.insetsLayoutMarginsFromSafeArea = false
+        picker.view.preservesSuperviewLayoutMargins = false
+        picker.view.backgroundColor = UIColor(Theme.bg)
         view.addSubview(picker.view)
         picker.didMove(toParent: self)
         NSLayoutConstraint.activate([
@@ -1254,7 +1261,7 @@ final class EmbeddedPickerVC: UIViewController {
     func setCount(_ n: Int) {
         count = n
         // 不走 isEnabled（系统会把禁用态的勾压暗，寻要的是纯白勾），没勾时点了不做事
-        Self.style(doneBtn, symbol: "checkmark", size: 20, weight: .medium, fill: n > 0 ? Theme.uiScrollTint : Self.grayGlass, fg: .white)
+        Self.style(doneBtn, symbol: "checkmark", size: 18, weight: .medium, fill: n > 0 ? Theme.uiScrollTint : Self.grayGlass, fg: .white)   // 09-22 寻：20 稍大→18
     }
     /// fill 为 nil＝素玻璃（✕ 用）；给了颜色＝实色玻璃
     private static func style(_ b: UIButton, symbol: String, size: CGFloat, weight: UIImage.SymbolWeight, fill: UIColor?, fg: UIColor) {
