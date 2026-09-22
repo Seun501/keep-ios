@@ -1250,6 +1250,7 @@ final class EmbeddedPickerVC: UIViewController, UIGestureRecognizerDelegate {
         cover.backgroundColor = UIColor(Theme.bg)
         cover.translatesAutoresizingMaskIntoConstraints = false
         panel.addSubview(cover)
+        panel.bringSubviewToFront(bar)   // 09-22 寻：圆钮的玻璃阴影伸到栏底下被盖条一刀切平——栏放最上层，阴影能落到格子上
         let h = panel.heightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.75)
         panelHeight = h
         NSLayoutConstraint.activate([
