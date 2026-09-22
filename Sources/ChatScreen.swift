@@ -1209,32 +1209,31 @@ final class EmbeddedPickerVC: UIViewController {
         let bar = UIView()
         bar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bar)
+        // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
         let cancel = UIButton(type: .system)
-        cancel.setTitle("取消", for: .normal)
-        cancel.titleLabel?.font = Theme.uiSys(17)
-        cancel.setTitleColor(Theme.uiText, for: .normal)
+        cancel.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)), for: .normal)
+        cancel.tintColor = Theme.uiText
+        cancel.backgroundColor = UIColor(Theme.menuFill)
+        cancel.layer.cornerRadius = 21
         cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
-        let title = UILabel()
-        title.text = "相册"; title.font = Theme.uiSys(17, weight: .semibold); title.textColor = Theme.uiText
-        doneBtn.titleLabel?.font = Theme.uiSys(17, weight: .semibold)
-        doneBtn.setTitleColor(Theme.uiScrollTint, for: .normal)
-        doneBtn.setTitleColor(Theme.uiMuted, for: .disabled)
+        doneBtn.setImage(UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)), for: .normal)
+        doneBtn.layer.cornerRadius = 21
         doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
         setCount(0)
-        for b in [cancel, title, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
+        for b in [cancel, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
         addChild(picker)
         picker.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(picker.view)
         picker.didMove(toParent: self)
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 48),
+            bar.heightAnchor.constraint(equalToConstant: 56),
+            cancel.widthAnchor.constraint(equalToConstant: 42), cancel.heightAnchor.constraint(equalToConstant: 42),
             cancel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 18),
             cancel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            title.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
-            title.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            doneBtn.widthAnchor.constraint(equalToConstant: 42), doneBtn.heightAnchor.constraint(equalToConstant: 42),
             doneBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -18),
             doneBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor),
@@ -1244,8 +1243,9 @@ final class EmbeddedPickerVC: UIViewController {
         ])
     }
     func setCount(_ n: Int) {
-        doneBtn.setTitle(n > 0 ? "完成 (\(n))" : "完成", for: .normal)
         doneBtn.isEnabled = n > 0
+        doneBtn.backgroundColor = n > 0 ? Theme.uiScrollTint : UIColor(Theme.menuFill)
+        doneBtn.tintColor = n > 0 ? .white : Theme.uiMuted
     }
     private var settled = false
     private func cancelTap() { settled = true; onCancel(); dismiss(animated: true) }
