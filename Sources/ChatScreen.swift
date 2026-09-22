@@ -1130,7 +1130,8 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             if let sp = host.sheetPresentationController {
                 // 09-22 寻：格子＋勾选栏一共占屏幕四分之三左右，只这一档，不再拉到全屏
                 sp.detents = [.custom(identifier: .init("three-quarter")) { ctx in ctx.maximumDetentValue * 0.75 }]
-                sp.prefersGrabberVisible = true
+                sp.prefersGrabberVisible = false   // 09-22 寻：只一档高度，不要横线；下拉照样能关
+
             }
             top.present(host, animated: true) {
                 p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
@@ -1212,7 +1213,7 @@ final class EmbeddedPickerVC: UIViewController {
         // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
         // 两只都是 iOS 26+ 的玻璃圆钮（寻 09-22 二回：「注意看，叉叉勾勾都是玻璃UI」）；老系统兜底平圆
         let cancel = UIButton(type: .system)
-        Self.style(cancel, symbol: "xmark", prominent: false, fg: Theme.uiText)
+        Self.style(cancel, symbol: "xmark", size: 16, weight: .regular, fill: nil, fg: Theme.uiText)   // 09-22 寻：叉太大→缩
         cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
         doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
         setCount(0)
@@ -1239,27 +1240,29 @@ final class EmbeddedPickerVC: UIViewController {
             picker.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
-    /// 没勾：灰玻璃上白勾；勾了：赤陶实玻璃白勾（参考图两态）
+    /// 没勾：灰底玻璃白勾；勾了：赤陶玻璃白勾（参考图两态，寻 09-22 三回：「参考图是灰底白勾哦」）
+    private static let grayGlass = Theme.uiDyn(0xCFCFCF, 0x4A4A47)
     private var count = 0
     func setCount(_ n: Int) {
         count = n
         // 不走 isEnabled（系统会把禁用态的勾压暗，寻要的是纯白勾），没勾时点了不做事
-        Self.style(doneBtn, symbol: "checkmark", prominent: n > 0, fg: .white)
+        Self.style(doneBtn, symbol: "checkmark", size: 20, weight: .medium, fill: n > 0 ? Theme.uiScrollTint : Self.grayGlass, fg: .white)
     }
-    private static func style(_ b: UIButton, symbol: String, prominent: Bool, fg: UIColor) {
-        let img = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .medium))
+    /// fill 为 nil＝素玻璃（✕ 用）；给了颜色＝实色玻璃
+    private static func style(_ b: UIButton, symbol: String, size: CGFloat, weight: UIImage.SymbolWeight, fill: UIColor?, fg: UIColor) {
+        let img = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: weight))
         if #available(iOS 26, *) {
-            var c: UIButton.Configuration = prominent ? .prominentGlass() : .glass()
+            var c: UIButton.Configuration = fill == nil ? .glass() : .prominentGlass()
             c.cornerStyle = .capsule
             c.image = img
             c.baseForegroundColor = fg
-            if prominent { c.baseBackgroundColor = Theme.uiScrollTint }
+            if let fill { c.baseBackgroundColor = fill }
             b.configuration = c
-            b.tintColor = prominent ? Theme.uiScrollTint : fg
+            b.tintColor = fill ?? fg
         } else {
             b.setImage(img, for: .normal)
             b.tintColor = fg
-            b.backgroundColor = prominent ? Theme.uiScrollTint : UIColor(Theme.menuFill)
+            b.backgroundColor = fill ?? UIColor(Theme.menuFill)
             b.layer.cornerRadius = 21
         }
     }
