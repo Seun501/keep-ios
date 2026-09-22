@@ -1103,6 +1103,41 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
         guard max > 0, let top = Self.topVC() else { return }
         var cfg = PHPickerConfiguration(photoLibrary: .shared())
         cfg.selectionLimit = max; cfg.filter = .images
+        // 09-22 寻：半屏时系统把「添加」藏在顶栏里，非拉到全屏才能确定——改成嵌入式：选择器塞进我们自己的容器，
+        // 每勾一张就回调（continuous），顶上自己画「取消 / 完成(n)」，半屏就能确定。iOS 17 起才有嵌入式，老系统照旧整页弹
+        if #available(iOS 17, *) {
+            cfg.selection = .continuousAndOrdered
+            cfg.disabledCapabilities = [.selectionActions]
+            cfg.edgesWithoutContentMargins = .all
+            let p = PHPickerViewController(configuration: cfg)
+            p.delegate = self
+            top.view.window?.tintColor = Theme.uiScrollTint
+            p.view.tintColor = Theme.uiScrollTint
+            self.done = done
+            self.current = []
+            let host = EmbeddedPickerVC(picker: p, onCancel: { [weak self] in
+                self?.done = nil; self?.current = []
+            }, onDone: { [weak self] in
+                guard let self else { return }
+                let cb = self.done; self.done = nil
+                let results = self.current; self.current = []
+                Task { @MainActor in
+                    var imgs: [UIImage] = []
+                    for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(ui) } }
+                    cb?(imgs)
+                }
+            })
+            if let sp = host.sheetPresentationController {
+                // 09-22 寻：格子＋勾选栏一共占屏幕四分之三左右，只这一档，不再拉到全屏
+                sp.detents = [.custom(identifier: .init("three-quarter")) { ctx in ctx.maximumDetentValue * 0.75 }]
+                sp.prefersGrabberVisible = true
+            }
+            top.present(host, animated: true) {
+                p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
+                p.view.tintColor = Theme.uiScrollTint
+            }
+            return
+        }
         let p = PHPickerViewController(configuration: cfg)
         p.delegate = self
         // 勾勾、右上角「完成」都用赤陶（寻：橙色好看，不要系统蓝）。远程视图连上来有先有后：
@@ -1125,8 +1160,15 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             }
         }
     }
+    /// 嵌入式下每勾一张系统就回调一次，这里只记住当前勾了什么，等她点「完成」再取
+    private var current: [PHPickerResult] = []
     nonisolated func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         Task { @MainActor in
+            if #available(iOS 17, *), let host = picker.parent as? EmbeddedPickerVC {
+                self.current = results
+                host.setCount(results.count)
+                return
+            }
             picker.dismiss(animated: true)
             let cb = self.done; self.done = nil
             var imgs: [UIImage] = []
@@ -1146,6 +1188,72 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
         var vc = (scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first)?.rootViewController
         while let p = vc?.presentedViewController { vc = p }
         return vc
+    }
+}
+
+/// 嵌入式选图容器：顶栏「取消 ｜ 相册 ｜ 完成」自己画，下面整块是系统选择器（勾选格子照旧系统的）
+@available(iOS 17, *)
+final class EmbeddedPickerVC: UIViewController {
+    private let picker: PHPickerViewController
+    private let onCancel: () -> Void
+    private let onDone: () -> Void
+    private let doneBtn = UIButton(type: .system)
+    init(picker: PHPickerViewController, onCancel: @escaping () -> Void, onDone: @escaping () -> Void) {
+        self.picker = picker; self.onCancel = onCancel; self.onDone = onDone
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(Theme.bg)
+        let bar = UIView()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bar)
+        let cancel = UIButton(type: .system)
+        cancel.setTitle("取消", for: .normal)
+        cancel.titleLabel?.font = Theme.uiSys(17)
+        cancel.setTitleColor(Theme.uiText, for: .normal)
+        cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
+        let title = UILabel()
+        title.text = "相册"; title.font = Theme.uiSys(17, weight: .semibold); title.textColor = Theme.uiText
+        doneBtn.titleLabel?.font = Theme.uiSys(17, weight: .semibold)
+        doneBtn.setTitleColor(Theme.uiScrollTint, for: .normal)
+        doneBtn.setTitleColor(Theme.uiMuted, for: .disabled)
+        doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
+        setCount(0)
+        for b in [cancel, title, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
+        addChild(picker)
+        picker.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(picker.view)
+        picker.didMove(toParent: self)
+        NSLayoutConstraint.activate([
+            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 48),
+            cancel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 18),
+            cancel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            title.centerXAnchor.constraint(equalTo: bar.centerXAnchor),
+            title.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            doneBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -18),
+            doneBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            picker.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            picker.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            picker.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+    func setCount(_ n: Int) {
+        doneBtn.setTitle(n > 0 ? "完成 (\(n))" : "完成", for: .normal)
+        doneBtn.isEnabled = n > 0
+    }
+    private var settled = false
+    private func cancelTap() { settled = true; onCancel(); dismiss(animated: true) }
+    private func doneTap() { settled = true; onDone(); dismiss(animated: true) }
+    /// 手指把抽屉拖下去关掉＝取消
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if !settled { settled = true; onCancel() }
     }
 }
 

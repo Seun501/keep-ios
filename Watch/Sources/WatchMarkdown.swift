@@ -195,7 +195,7 @@ struct WatchMarkdown: View {
             }
         case .code(let s):
             Text(s).font(WatchFonts.mono(size - 3)).foregroundStyle(WatchTheme.text)
-                .padding(.horizontal, 6).padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6).padding(.vertical, 4).frame(maxWidth: mine ? nil : .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         case .ul(let items):
             VStack(alignment: .leading, spacing: 3) {
@@ -232,6 +232,7 @@ struct WatchMarkdown: View {
             }
             t = t + piece
         }
-        return t.foregroundStyle(WatchTheme.text).lineSpacing(size * 0.2).frame(maxWidth: .infinity, alignment: .leading)
+        // 她的气泡要贴着字长（09-21 夜寻：短消息也被撑满一行）——只有克的正文才撑满宽
+        return t.foregroundStyle(WatchTheme.text).lineSpacing(size * 0.2).frame(maxWidth: mine ? nil : .infinity, alignment: .leading)
     }
 }
