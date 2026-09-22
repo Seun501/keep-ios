@@ -1130,8 +1130,7 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             if let sp = host.sheetPresentationController {
                 // 09-22 寻：格子＋勾选栏一共占屏幕四分之三左右，只这一档，不再拉到全屏
                 sp.detents = [.custom(identifier: .init("three-quarter")) { ctx in ctx.maximumDetentValue * 0.75 }]
-                sp.prefersGrabberVisible = false   // 09-22 寻：只一档高度，不要横线；下拉照样能关
-
+                sp.prefersGrabberVisible = false   // 系统那根 36×5 又短又粗，横线由容器自己画（照参考图 58×3）
             }
             top.present(host, animated: true) {
                 p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
@@ -1207,6 +1206,12 @@ final class EmbeddedPickerVC: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(Theme.bg)
+        // 横线：寻 09-22 定留（选 2），但要照参考图的粗细长度——约 58×3、离顶 8，浅灰
+        let grab = UIView()
+        grab.backgroundColor = Theme.uiDyn(0xC9C9CD, 0x5A5A5E)
+        grab.layer.cornerRadius = 1.5
+        grab.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(grab)
         let bar = UIView()
         bar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bar)
@@ -1223,6 +1228,9 @@ final class EmbeddedPickerVC: UIViewController {
         view.addSubview(picker.view)
         picker.didMove(toParent: self)
         NSLayoutConstraint.activate([
+            grab.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            grab.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            grab.widthAnchor.constraint(equalToConstant: 58), grab.heightAnchor.constraint(equalToConstant: 3),
             bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 26),
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
