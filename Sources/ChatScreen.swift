@@ -1210,14 +1210,9 @@ final class EmbeddedPickerVC: UIViewController {
         bar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bar)
         // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
-        let cancel = UIButton(type: .system)
-        cancel.setImage(UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)), for: .normal)
-        cancel.tintColor = Theme.uiText
-        cancel.backgroundColor = UIColor(Theme.menuFill)
-        cancel.layer.cornerRadius = 21
+        // 两只都是 iOS 26+ 的玻璃圆钮（寻 09-22 二回：「注意看，叉叉勾勾都是玻璃UI」）；老系统兜底平圆
+        Self.style(cancel, symbol: "xmark", prominent: false, fg: Theme.uiText)
         cancel.addAction(UIAction { [weak self] _ in self?.cancelTap() }, for: .touchUpInside)
-        doneBtn.setImage(UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)), for: .normal)
-        doneBtn.layer.cornerRadius = 21
         doneBtn.addAction(UIAction { [weak self] _ in self?.doneTap() }, for: .touchUpInside)
         setCount(0)
         for b in [cancel, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
@@ -1226,26 +1221,44 @@ final class EmbeddedPickerVC: UIViewController {
         view.addSubview(picker.view)
         picker.didMove(toParent: self)
         NSLayoutConstraint.activate([
-            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 18),
+            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 26),
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 56),
+            bar.heightAnchor.constraint(equalToConstant: 42),
             cancel.widthAnchor.constraint(equalToConstant: 42), cancel.heightAnchor.constraint(equalToConstant: 42),
             cancel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 18),
             cancel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             doneBtn.widthAnchor.constraint(equalToConstant: 42), doneBtn.heightAnchor.constraint(equalToConstant: 42),
             doneBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -18),
             doneBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            // 圆钮到格子留 16（照参考图量的）
+            picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 16),
             picker.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             picker.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             picker.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
+    /// 没勾：灰玻璃上白勾；勾了：赤陶实玻璃白勾（参考图两态）
     func setCount(_ n: Int) {
         doneBtn.isEnabled = n > 0
-        doneBtn.backgroundColor = n > 0 ? Theme.uiScrollTint : UIColor(Theme.menuFill)
-        doneBtn.tintColor = n > 0 ? .white : Theme.uiMuted
+        Self.style(doneBtn, symbol: "checkmark", prominent: n > 0, fg: .white)
+    }
+    private static func style(_ b: UIButton, symbol: String, prominent: Bool, fg: UIColor) {
+        let img = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .medium))
+        if #available(iOS 26, *) {
+            var c: UIButton.Configuration = prominent ? .prominentGlass() : .glass()
+            c.cornerStyle = .capsule
+            c.image = img
+            c.baseForegroundColor = fg
+            if prominent { c.baseBackgroundColor = Theme.uiScrollTint }
+            b.configuration = c
+            b.tintColor = prominent ? Theme.uiScrollTint : fg
+        } else {
+            b.setImage(img, for: .normal)
+            b.tintColor = fg
+            b.backgroundColor = prominent ? Theme.uiScrollTint : UIColor(Theme.menuFill)
+            b.layer.cornerRadius = 21
+        }
     }
     private var settled = false
     private func cancelTap() { settled = true; onCancel(); dismiss(animated: true) }
