@@ -84,6 +84,11 @@ jobs:
             sleep 7
             xcrun simctl io "$UDID" screenshot "artifacts/$SCREEN.png"
           done
+          # 崩溃取证（09-22）：App 在模拟器里崩了截图只剩空页看不出所以然，把崩溃报告和 App 的系统日志一并带回
+          mkdir -p artifacts/crash
+          cp ~/Library/Logs/DiagnosticReports/Keep* artifacts/crash/ 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --last 4m --predicate 'process == "Keep"' --style compact 2>/dev/null | tail -300 > artifacts/crash/keep-log.txt || true
+          ls -la artifacts/crash
           # 踩坑册：别信界面，看包。把最终 Info.plist 与授权一并留证。
           plutil -p "$APP/Info.plist" > artifacts/Info.plist.txt
 
