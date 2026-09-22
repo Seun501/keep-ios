@@ -1127,12 +1127,10 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
                     cb?(imgs)
                 }
             })
-            if let sp = host.sheetPresentationController {
-                // 09-22 寻：格子＋勾选栏一共占屏幕四分之三左右，只这一档，不再拉到全屏
-                sp.detents = [.custom(identifier: .init("three-quarter")) { ctx in ctx.maximumDetentValue * 0.75 }]
-                sp.prefersGrabberVisible = false   // 系统那根 36×5 又短又粗，横线由容器自己画（照参考图 58×3）
-            }
-            top.present(host, animated: true) {
+            // 09-22 寻二回：系统 sheet 不满屏时（iOS 26 起）自带浮起卡片样——两侧、底部都离开屏幕边还带描边，
+            // 从外面改不掉；改成自己画贴边抽屉（四分之三高、只圆上角、升降/下拉自己动画）
+            host.modalPresentationStyle = .overFullScreen
+            top.present(host, animated: false) {
                 p.view.tintColor = Theme.uiScrollTint.withAlphaComponent(0.99)
                 p.view.tintColor = Theme.uiScrollTint
             }
@@ -1193,7 +1191,7 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
 
 /// 嵌入式选图容器：顶栏「取消 ｜ 相册 ｜ 完成」自己画，下面整块是系统选择器（勾选格子照旧系统的）
 @available(iOS 17, *)
-final class EmbeddedPickerVC: UIViewController {
+final class EmbeddedPickerVC: UIViewController, UIGestureRecognizerDelegate {
     private let picker: PHPickerViewController
     private let onCancel: () -> Void
     private let onDone: () -> Void
@@ -1203,18 +1201,37 @@ final class EmbeddedPickerVC: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
+    /// 自己画的抽屉：dim 是后面那层暗、panel 是贴边的四分之三高面板（只圆上角）
+    private let dim = UIView()
+    private let panel = UIView()
+    private var panelHeight: NSLayoutConstraint?
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(Theme.bg)
+        view.backgroundColor = .clear
+        dim.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        dim.alpha = 0
+        dim.translatesAutoresizingMaskIntoConstraints = false
+        dim.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(dimTap)))
+        view.addSubview(dim)
+        panel.backgroundColor = UIColor(Theme.bg)
+        panel.layer.cornerRadius = 36
+        panel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        panel.clipsToBounds = true
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(panel)
         // 横线：寻 09-22 定留（选 2），但要照参考图的粗细长度——约 58×3、离顶 8，浅灰
         let grab = UIView()
         grab.backgroundColor = Theme.uiDyn(0xC9C9CD, 0x5A5A5E)
         grab.layer.cornerRadius = 1.5
         grab.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(grab)
+        panel.addSubview(grab)
         let bar = UIView()
         bar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bar)
+        panel.addSubview(bar)
+        // 下拉关（＝取消）：手势挂面板上，但只认从头部（横线＋圆钮那 84）起手的，格子区留给选择器自己滚
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.delegate = self
+        panel.addGestureRecognizer(pan)
         // 09-22 寻发来系统全屏态的头做参考：左圆圈 ✕、右圆圈 ✓（勾了赤陶、没勾灰），中间那些字和「照片／精选集」她说没用，不画
         // 两只都是 iOS 26+ 的玻璃圆钮（寻 09-22 二回：「注意看，叉叉勾勾都是玻璃UI」）；老系统兜底平圆
         let cancel = UIButton(type: .system)
@@ -1225,22 +1242,30 @@ final class EmbeddedPickerVC: UIViewController {
         for b in [cancel, doneBtn] { b.translatesAutoresizingMaskIntoConstraints = false; bar.addSubview(b) }
         addChild(picker)
         picker.view.translatesAutoresizingMaskIntoConstraints = false
-        // 09-22 寻二回：格子四周出了一圈灰边像张卡片——嵌入式选择器除了 edgesWithoutContentMargins 还会照宿主的布局边距缩进
-        // （两侧那 8 正好是系统最小边距），全部清零；它自己的底色是灰的，盖成和容器一色，圆钮下那 16 就不会露灰
-        picker.viewRespectsSystemMinimumLayoutMargins = false
-        picker.view.directionalLayoutMargins = .zero
-        picker.view.insetsLayoutMarginsFromSafeArea = false
-        picker.view.preservesSuperviewLayoutMargins = false
-        picker.view.backgroundColor = UIColor(Theme.bg)
-        view.addSubview(picker.view)
+        panel.addSubview(picker.view)
         picker.didMove(toParent: self)
+        // 09-22 寻二回：系统选择器自己顶上有 16 的灰内距（edgesWithoutContentMargins 关不掉）——把它顶到圆钮底下，
+        // 再用一条和面板同色的 16 高盖条压住：圆钮到格子正好留 16，而且是面板色不是灰
+        let cover = UIView()
+        cover.backgroundColor = UIColor(Theme.bg)
+        cover.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(cover)
+        let h = panel.heightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.75)
+        panelHeight = h
         NSLayoutConstraint.activate([
-            grab.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            grab.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            dim.topAnchor.constraint(equalTo: view.topAnchor), dim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            dim.leadingAnchor.constraint(equalTo: view.leadingAnchor), dim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            // 面板：贴两侧贴底，可见部分（底部安全区以上）占安全区高的四分之三
+            panel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            panel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            h,
+            grab.topAnchor.constraint(equalTo: panel.topAnchor, constant: 8),
+            grab.centerXAnchor.constraint(equalTo: panel.centerXAnchor),
             grab.widthAnchor.constraint(equalToConstant: 58), grab.heightAnchor.constraint(equalToConstant: 3),
-            bar.topAnchor.constraint(equalTo: view.topAnchor, constant: 26),
-            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: panel.topAnchor, constant: 26),
+            bar.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
             bar.heightAnchor.constraint(equalToConstant: 42),
             cancel.widthAnchor.constraint(equalToConstant: 42), cancel.heightAnchor.constraint(equalToConstant: 42),
             cancel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 18),
@@ -1248,12 +1273,57 @@ final class EmbeddedPickerVC: UIViewController {
             doneBtn.widthAnchor.constraint(equalToConstant: 42), doneBtn.heightAnchor.constraint(equalToConstant: 42),
             doneBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -18),
             doneBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            // 圆钮到格子留 16（照参考图量的）
-            picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 16),
-            picker.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            picker.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            picker.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            picker.view.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            picker.view.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            picker.view.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            picker.view.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
+            cover.topAnchor.constraint(equalTo: bar.bottomAnchor),
+            cover.heightAnchor.constraint(equalToConstant: 16),
+            cover.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            cover.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
         ])
+    }
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        panelHeight?.constant = view.safeAreaInsets.bottom   // 面板延到屏幕底，底部安全区那截算额外的
+    }
+    /// 升起：面板先藏在屏幕底下，出现后弹上来；暗层同步淡入
+    private var shown = false
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        view.layoutIfNeeded()
+        panel.transform = CGAffineTransform(translationX: 0, y: panel.bounds.height)
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !shown else { return }
+        shown = true
+        UIView.animate(withDuration: 0.42, delay: 0, usingSpringWithDamping: 0.88, initialSpringVelocity: 0.4) {
+            self.panel.transform = .identity
+            self.dim.alpha = 1
+        }
+    }
+    /// 落下：面板滑回屏幕底，暗层淡出，然后不带动画地撤掉这个 VC
+    private func slideOut() {
+        UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseIn]) {
+            self.panel.transform = CGAffineTransform(translationX: 0, y: self.panel.bounds.height)
+            self.dim.alpha = 0
+        } completion: { _ in self.dismiss(animated: false) }
+    }
+    @objc private func dimTap() { cancelTap() }
+    @objc private func handlePan(_ g: UIPanGestureRecognizer) {
+        let dy = g.translation(in: view).y
+        switch g.state {
+        case .changed:
+            panel.transform = CGAffineTransform(translationX: 0, y: max(0, dy))
+        case .ended, .cancelled:
+            if dy > panel.bounds.height / 3 || g.velocity(in: view).y > 900 {
+                cancelTap()
+            } else {
+                UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0) { self.panel.transform = .identity }
+            }
+        default: break
+        }
     }
     /// 没勾：灰底玻璃白勾；勾了：赤陶玻璃白勾（参考图两态，寻 09-22 三回：「参考图是灰底白勾哦」）
     private static let grayGlass = Theme.uiDyn(0xCFCFCF, 0x4A4A47)
@@ -1282,8 +1352,13 @@ final class EmbeddedPickerVC: UIViewController {
         }
     }
     private var settled = false
-    private func cancelTap() { settled = true; onCancel(); dismiss(animated: true) }
-    private func doneTap() { guard count > 0 else { return }; settled = true; onDone(); dismiss(animated: true) }
+    private func cancelTap() { guard !settled else { return }; settled = true; onCancel(); slideOut() }
+    private func doneTap() { guard count > 0, !settled else { return }; settled = true; onDone(); slideOut() }
+    /// 只认从头部（横线＋圆钮区，顶上 84）起手的下拉；格子区的手势归选择器
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard let p = g as? UIPanGestureRecognizer else { return true }
+        return p.location(in: panel).y < 84 && p.velocity(in: panel).y > 0
+    }
     /// 手指把抽屉拖下去关掉＝取消
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
