@@ -84,9 +84,9 @@ enum MD {
         }
         return m
     }
-    /// 粗体用 600：网页自托管的思源宋体只有 400/500/600，**粗** 在网页上落到 600（寻验 36 对比图：App 的 700 太重）
+    /// 粗体用 700（09-24 寻：600 「加重不太明显」，要再重一点；09-03 构建 36 时她嫌 700 重、退到网页的 600，现在往回拨）
     static func keNS(_ s: String, size: CGFloat = 18, weight: Font.Weight = .medium, color: UIColor = Theme.uiText, lineHeight: CGFloat = 1.6) -> NSAttributedString {
-        ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .semibold),
+        ns(s, base: Theme.uiSerif(size, weight: weight), bold: Theme.uiSerif(size, weight: .bold),
            mono: Theme.uiMono(size * 0.86, weight: .regular), color: color, lineHeight: lineHeight,
            cjkLineHeight: Theme.uiCJK(size, weight: weight).lineHeight)
     }

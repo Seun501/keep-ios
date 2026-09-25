@@ -57,7 +57,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
             let oq = HKObserverQuery(sampleType: t, predicate: nil) { [weak self] _, done, _ in
                 Task { @MainActor in
                     guard let self else { done(); return }
-                    if t == self.sleepType { await self.pushMorning(fromSleep: true) } else { await self.pushNow(minGap: 15 * 60) }
+                    if t == self.sleepType { await self.pushMorning(fromSleep: true); await self.pushNap() } else { await self.pushNow(minGap: 15 * 60) }
                     done()
                 }
             }
@@ -70,6 +70,7 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         PushRegistrar.diag("health: syncOnActive available=\(Self.available) token=\(Keychain.token != nil)")
         guard !Preview.on, Self.available, Keychain.token != nil else { return }
         await pushMorning()
+        await pushNap()
         await pushNow(minGap: 60)
         Task { await self.backfill() }   // 历史回填：一次性，慢慢推，不挡上面两份
     }
@@ -158,6 +159,43 @@ final class HealthSync: NSObject, CLLocationManagerDelegate {
         let w = await workouts(from: day0, to: next0)
         if !w.isEmpty { body["运动"] = Self.workoutText(w); body["运动分钟"] = Int((w.reduce(0) { $0 + $1.duration } / 60).rounded()) }
         return body
+    }
+
+    // MARK: 午睡（09-25 寻：「白天补觉好像没有对克推送」）
+
+    /// 午睡纸条自 09-03 起就断了：快捷指令时代每次开 App 都推睡眠段落，Keep 接手后睡眠只在早上昨天档里推一次，
+    /// 下午那觉服务器要到第二天早上才见到（只进档不排纸条）。这里补：睡眠样本落库 / 回前台时看最新一觉——
+    /// 和前一觉隔 ≥2 小时、觉的中点落在 12–21 点（服务器切午睡的口径）、结束 ≥15 分钟（表写完了）、比上次推过的新——
+    /// 就把昨天中午到现在的睡眠段落整窗再推一遍（不带 ?today）：夜觉指纹没变服务器静默跳过，午睡分钟涨了才排「午睡了…」。
+    /// 只推睡眠一键：别的指标过午服务器本来就不收。
+    private var busyNap = false
+    func pushNap() async {
+        guard Keychain.token != nil, !busyNap else { return }
+        busyNap = true; defer { busyNap = false }
+        let cal = Calendar.current
+        let today0 = cal.startOfDay(for: Date())
+        let from = cal.date(byAdding: .day, value: -1, to: today0)!.addingTimeInterval(12 * 3600)
+        let sleep = (await samples(sleepType, from: from, to: Date())).compactMap { $0 as? HKCategorySample }
+        guard !sleep.isEmpty else { return }
+        // 切觉同服务器 _parse_sleep_raw：相邻段隔 ≥2 小时算另一觉
+        var sessions: [[HKCategorySample]] = [[sleep[0]]]
+        for s in sleep.dropFirst() {
+            let prevEnd = sessions[sessions.count - 1].map(\.endDate).max()!
+            if s.startDate.timeIntervalSince(prevEnd) < 2 * 3600 { sessions[sessions.count - 1].append(s) } else { sessions.append([s]) }
+        }
+        let last = sessions[sessions.count - 1]
+        let lo = last.map(\.startDate).min()!, hi = last.map(\.endDate).max()!
+        let midHour = cal.component(.hour, from: lo.addingTimeInterval(hi.timeIntervalSince(lo) / 2))
+        guard (12..<21).contains(midHour), Date().timeIntervalSince(hi) >= 15 * 60 else { return }
+        guard hi.timeIntervalSince1970 > ud.double(forKey: "health.napEnd") else { return }   // 这觉推过了
+        let lines = sleep.map { "\(Self.sleepName($0.value))|\(Self.iso($0.startDate))|\(Self.iso($0.endDate))" }
+        let code = await post(["睡眠原始": lines.joined(separator: "\n")], today: false)
+        if code == 200 {
+            ud.set(hi.timeIntervalSince1970, forKey: "health.napEnd")
+            PushRegistrar.diag("health: nap pushed end=\(Self.hm(hi)) segs=\(last.count)")
+        } else {
+            PushRegistrar.diag("health: nap post failed code=\(code)")
+        }
     }
 
     // MARK: 历史回填（09-10 寻：「我以为可以拿到以前的健康数据」）
