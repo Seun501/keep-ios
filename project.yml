@@ -3,6 +3,9 @@
 name: Keep
 options:
   bundleIdPrefix: cn.seunk
+  # 09-25 寻：系统翻译老把东西翻成西班牙语。工程开发语言原来缺省成 en（XcodeGen 默认）、Info 里又写 zh-Hans、
+  # 也没声明支持哪些语言——App 的「语言」是含糊的。两处都钉成简体中文，Info 再声明只支持 zh-Hans
+  developmentLanguage: zh-Hans
   deploymentTarget:
     iOS: "16.4"
     watchOS: "10.0"
@@ -30,6 +33,7 @@ targets:
       properties:
         CFBundleDisplayName: Keep
         CFBundleDevelopmentRegion: zh-Hans
+        CFBundleLocalizations: [zh-Hans]
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
@@ -96,6 +100,7 @@ targets:
       properties:
         CFBundleDisplayName: Keep
         CFBundleDevelopmentRegion: zh-Hans
+        CFBundleLocalizations: [zh-Hans]
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         WKApplication: true
