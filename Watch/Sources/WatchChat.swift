@@ -149,8 +149,14 @@ final class WatchChat: ObservableObject {
                     }
                 }
             } catch { note = "断了" }
+            // 流一停先把这段就地落成一条（立刻按 md 画），再重拉对账——之前是等整段重拉回来才换成正式消息，
+            // 表上一趟要好几秒，那几秒里一直是裸字（寻 09-25：「加载完再顿几秒才渲染好格式」）
+            if !live.isEmpty {
+                var said = WMsg(); said.role = "assistant"; said.content = live; said.ts = ISO8601DateFormatter().string(from: Date())
+                msgs.append(said)
+            }
+            live = ""; sending = false
             await load()
-            live = ""
         }
     }
 
