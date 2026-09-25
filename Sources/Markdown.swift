@@ -346,7 +346,31 @@ struct RichText: UIViewRepresentable {
         return tv
     }
     func updateUIView(_ tv: UITextView, context: Context) {
+        if live { if Self.patch(tv.textStorage, to: attr) { context.coordinator.cache = nil }; return }
         if !tv.attributedText.isEqual(to: attr) { tv.attributedText = attr; context.coordinator.cache = nil }
+    }
+    /// 直播段只换尾巴（09-25 夜，掉帧仪 09-25：晚上克回话 36 帧、一段 36 秒卡 182 下）：原来每帧整条 attributedText 重设＝
+    /// TextKit 从第一个字起全文重排，回复越长每帧越慢。现在找出新旧开始不同的那一段（字不同，或段落样式变了——
+    /// 比如前一块从「最后一块」变成「不是最后」、段后距 0→16），只替换那段往后；前面排好的行原样留着，TextKit 只重排尾巴。
+    /// 返回有没有改。
+    private static func patch(_ ts: NSTextStorage, to attr: NSAttributedString) -> Bool {
+        let old = ts.string as NSString, new = attr.string as NSString
+        let n = min(old.length, new.length)
+        var d = 0
+        while d < n, old.character(at: d) == new.character(at: d) { d += 1 }
+        if d == old.length, d == new.length, ts.isEqual(to: attr) { return false }
+        // 退到 d 所在那一段的段首，再往前逐段比：样式也一样才停
+        var s = new.paragraphRange(for: NSRange(location: min(d, max(new.length - 1, 0)), length: 0)).location
+        if s > d { s = d }
+        while s > 0 {
+            let p = new.paragraphRange(for: NSRange(location: s - 1, length: 0))
+            if ts.attributedSubstring(from: p).isEqual(to: attr.attributedSubstring(from: p)) { break }
+            s = p.location
+        }
+        ts.beginEditing()
+        ts.replaceCharacters(in: NSRange(location: s, length: old.length - s), with: attr.attributedSubstring(from: NSRange(location: s, length: new.length - s)))
+        ts.endEditing()
+        return true
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     final class Coordinator: NSObject {
@@ -396,12 +420,14 @@ struct KeMarkdown: View {
     var body: some View {
         let blocks = MD.parse(text)
         if !blocks.contains(where: { if case .table = $0 { return true }; return false }) {
-            rich(MDWhole.make(text))
+            // 直播段每帧的半截字不进缓存（09-25 夜）：一分钟回话往 400 格缓存里塞一千多条半截，正史那几百条排好的富文本全被挤掉，
+            // 说完重拉时整页从头再合成一遍；也省掉 make 里再解析一遍
+            rich(live ? MDWhole.build(blocks, size: 18) : MDWhole.make(text))
         } else {
             VStack(alignment: .leading, spacing: 10) {   // 网页 table margin 10
                 ForEach(Array(MDWhole.groups(blocks).enumerated()), id: \.offset) { gi, g in
                     switch g {
-                    case .text(let bs): rich(MDWhole.make(blocks: bs, key: "\(text)|\(gi)"))
+                    case .text(let bs): rich(live ? MDWhole.build(bs, size: 18) : MDWhole.make(blocks: bs, key: "\(text)|\(gi)"))
                     case .table(let h, let r): MDTable(head: h, rows: r)
                     }
                 }
@@ -488,7 +514,7 @@ enum MDWhole {
         if !run.isEmpty { out.append(.text(run)) }
         return out
     }
-    private static func build(_ blocks: [MD.Block], size: CGFloat) -> NSAttributedString {
+    static func build(_ blocks: [MD.Block], size: CGFloat) -> NSAttributedString {
         let out = NSMutableAttributedString()
         func para(_ ns: NSAttributedString, before: CGFloat, after: CGFloat, indent: CGFloat = 0, head: CGFloat = 0) {
             let m = NSMutableAttributedString(attributedString: ns)

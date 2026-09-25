@@ -567,7 +567,7 @@ struct ChatScreen: View {
         .onChange(of: letters.unseen.count) { n in if n == 0 { letterAlertOn = false } }
         .task { await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on || Preview.screen == "letteralert" { letterAlertOn = true } }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
-        .onChange(of: model.sending) { s in clawd.busy(s); JankMeter.shared.streaming(s) }   // 掉帧仪：克回话这段量一遍（09-25）
+        .onChange(of: model.sending) { s in clawd.busy(s); JankMeter.shared.rows = { [weak model] in model?.items.count ?? 0 }; JankMeter.shared.streaming(s) }   // 掉帧仪：克回话这段量一遍（09-25）
         .task { await lintel.refresh() }
         .task { await trip.sync() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }

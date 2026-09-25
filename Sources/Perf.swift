@@ -11,6 +11,8 @@ final class JankMeter {
     private var start: CFTimeInterval = 0
     private var maxGap = 0.0, big = 0, frames = 0
     private var scrollStop: DispatchWorkItem?
+    /// 当前正史行数（09-25 夜）：看卡顿是不是跟着当天攒的行数涨
+    var rows: () -> Int = { 0 }
 
     /// 克在回话（sending 起落）
     func streaming(_ on: Bool) {
@@ -46,7 +48,7 @@ final class JankMeter {
         l.invalidate(); link = nil
         let dur = CACurrentMediaTime() - start
         if tag == "stream" || (dur >= 0.5 && big > 0) {
-            PushRegistrar.diag(String(format: "jank %@: %.1fs maxgap=%.0fms big=%d frames=%d", tag, dur, maxGap, big, frames))
+            PushRegistrar.diag(String(format: "jank %@: %.1fs maxgap=%.0fms big=%d frames=%d rows=%d", tag, dur, maxGap, big, frames, rows()))
         }
         tag = ""
     }

@@ -11,13 +11,17 @@ struct MessageListBody: View {
         // 行距（09-09 寻验「工具+思考+工具+思考」第三四段叠在一起、直播工具行半截在输入框底下）：不再 spacing 22 + 负边距，
         // 改 spacing 0、每行自带上间距——负边距把版面缩成负数：内容高不含它、钉底钉不到、后一行叠上来
         VStack(spacing: 0) {
-            if model.renderFrom > 0 {
-                Button { model.loadOlderDay() } label: {
-                    Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
-                }.buttonStyle(.plain).padding(.top, 4)
-            }
-            ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
-                row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item), last: i == model.items.count - 1).padding(.top, gapBefore(i))
+            // 正史包成一整块（09-25 夜，掉帧仪 09-25：17 点 56 帧、21 点 36 帧，越晚越卡）：ForEach 直接摊在外层 VStack 里，
+            // 直播段每长高一行，外层就把当天攒下的几百行逐个重新问一遍尺寸、重新摆；包成一块后外层只有两个孩子，正史这块尺寸没变就整块照旧
+            VStack(spacing: 0) {
+                if model.renderFrom > 0 {
+                    Button { model.loadOlderDay() } label: {
+                        Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
+                    }.buttonStyle(.plain).padding(.top, 4)
+                }
+                ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
+                    row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item), last: i == model.items.count - 1).padding(.top, gapBefore(i))
+                }
             }
             // 直播段单独订阅 liveBox（09-25）：打字机每帧只重算它，上面七百行正史不动
             LiveSection(box: model.liveBox, afterHist: model.items.last.map { Self.toolsOnly($0.item) } ?? false, hasHist: !model.items.isEmpty)
