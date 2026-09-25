@@ -244,6 +244,7 @@ struct ScrollObserver: UIViewRepresentable {
                 if !self.kbBusy, abs(vh - self.lastH) < 0.5 { self.lastDist = max(0, sv.contentSize.height - y - vh) }
                 self.lastH = vh
                 self.onChange(y, sv.contentSize.height, vh)
+                if self.name == "chat", sv.isTracking || sv.isDragging || sv.isDecelerating { JankMeter.shared.scrolled() }   // 掉帧仪：滑动这段量一遍（09-25）
             }
             obs.append(sv.observe(\.contentOffset) { _, _ in fire() })
             obs.append(sv.observe(\.contentSize) { _, _ in fire() })

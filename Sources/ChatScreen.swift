@@ -81,13 +81,26 @@ struct LiveTurn {
 
 // MARK: - 视图模型
 
+/// 直播段单独一个发布者（09-25 寻「有点卡顿」）：打字机 30 帧/秒写 live，之前它和正史 items 同挂 ChatModel，
+/// 一变就让 MessageListBody 把两天七百来行全部重算一遍（每行拆 reply、查 md 缓存、UITextView 比对富文本），
+/// iPhone 11 扛不住。拆出来后只有 LiveSection / LiveWatch 订阅它，正史那七百行在流式期间一帧都不动。
+@MainActor
+final class LiveBox: ObservableObject {
+    @Published var turn: LiveTurn? = nil
+}
+
 @MainActor
 final class ChatModel: ObservableObject {
     @Published var conversationId: String? = nil
     @Published var msgs: [Msg] = []
     @Published var renderFrom = 0
     @Published var items: [TimelineRow] = []
-    @Published var live: LiveTurn? = nil
+    let liveBox = LiveBox()
+    var live: LiveTurn? {   // 不再 @Published：读写都落到 liveBox，ChatModel 本身不因打字机发布
+        get { liveBox.turn }
+        set { liveBox.turn = newValue }
+    }
+    var onLiveError: () -> Void = {}   // 直播段出错→小 Clawd 警觉（原来靠 ChatScreen 盯 live.events，现在它不随帧重算了）
     @Published var sending = false
     @Published var door: Door? = nil          // 门关着＝整页只剩门页（照网页 updateDoor）
     @Published var lastError: String? = nil
@@ -289,6 +302,7 @@ final class ChatModel: ObservableObject {
                     }
                     live?.apply(ev)
                     if case .delta = ev { startSmoother() }
+                    if case .error = ev { onLiveError() }
                 }
                 PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0) finished=\(live?.finished ?? false) textLen=\(live?.items.compactMap { if case .seg(let s) = $0 { return s.text.count }; return nil }.reduce(0, +) ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
@@ -300,7 +314,7 @@ final class ChatModel: ObservableObject {
                 onLogout()
             } catch {
                 PushRegistrar.diag("chat: error \(error.localizedDescription)")
-                if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")) }
+                if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")); onLiveError() }
             }
             // 流一停先把这一轮就地落成正史：时间戳当场出现、token 数（done 事件带了就一起）——
             // 原来要等整段正史（上百 KB）重拉回来才换上，末尾总卡一下（寻验 09-04）。出错那轮不落，照旧重拉。
@@ -553,15 +567,13 @@ struct ChatScreen: View {
         .onChange(of: letters.unseen.count) { n in if n == 0 { letterAlertOn = false } }
         .task { await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on || Preview.screen == "letteralert" { letterAlertOn = true } }
         .overlay { if greetOn { GreetOverlay(shown: $greetOn).zIndex(70) } }
-        .onChange(of: model.sending) { s in clawd.busy(s) }
-        .onChange(of: model.live?.events ?? 0) { _ in
-            if let l = model.live, l.items.contains(where: { if case .seg(let sg) = $0 { return sg.error != nil }; return false }) { clawd.alert() }
-        }
+        .onChange(of: model.sending) { s in clawd.busy(s); JankMeter.shared.streaming(s) }   // 掉帧仪：克回话这段量一遍（09-25）
         .task { await lintel.refresh() }
         .task { await trip.sync() }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await lintel.refresh() } }
         .onAppear {
             model.onLogout = onLogout
+            model.onLiveError = { clawd.alert() }
             guard Preview.on else { return }
             switch Preview.screen {
             case "imgview":   // 看图器：拿预览里她发的那张
@@ -665,16 +677,16 @@ struct ChatScreen: View {
             }
             .background(KeyboardDismisser())
             .onChange(of: model.items.count) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
-            .onChange(of: model.live?.items.count ?? 0) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { userUp = false } }   // 她自己发了一句＝回到底
             // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」
             // 跟随就断、之后再也不接上（寻验 131「等回复时收键盘，信息流卡在原地」）——动的那段按键盘前的 wasAtBottom 算
             // 09-15 寻：克生成期间她上滑会和自动到底打架——手指还在（拖着/惯性滑着）就不钉，松手离底超 40 后 atBottom 自己变假
-            .onChange(of: model.live?.events ?? 0) { _ in
+            // 09-25：live 拆出 ChatModel（打字机每帧不再让 ChatScreen 和整页七百行重算），跟底这两只搬进 LiveWatch，只盯直播段
+            .background(LiveWatch(box: model.liveBox, onItems: { if atBottom, !userUp { scrollBottom(proxy) } }, onEvent: {
                 if userUp { return }   // 她自己往上翻过就不再跟（09-15 晚）
                 if let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging || sv.isDecelerating { return }
                 if atBottom || (kbAnimating && wasAtBottom) { DispatchQueue.main.async { pinBottom() } }
-            }
+            }))
             // 录音浮层：起录时在底就记下来，卡长高（字多了）跟着钉底；收录把垫的高度撤掉、原本在底再钉一次
             .onChange(of: rec.recording) { on in
                 if on { holdFromBottom = atBottom } else { holdH = 0; if holdFromBottom { DispatchQueue.main.async { pinBottom() } } }

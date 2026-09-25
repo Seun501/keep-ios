@@ -19,9 +19,8 @@ struct MessageListBody: View {
             ForEach(Array(model.items.enumerated()), id: \.element.id) { i, r in
                 row(r.item, afterTools: i > 0 && Self.toolsOnly(model.items[i - 1].item), last: i == model.items.count - 1).padding(.top, gapBefore(i))
             }
-            if let live = model.live {
-                VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
-            }
+            // 直播段单独订阅 liveBox（09-25）：打字机每帧只重算它，上面七百行正史不动
+            LiveSection(box: model.liveBox, afterHist: model.items.last.map { Self.toolsOnly($0.item) } ?? false, hasHist: !model.items.isEmpty)
         }
         .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 10 + lift)   // 网页 #messages padding-bottom 10；录音时再垫浮层高
     }
@@ -40,9 +39,36 @@ struct MessageListBody: View {
         if case .ai(_, let m, _) = model.items[i].item { return m.cleanThinking.isEmpty ? 9 : 12 }
         return 22
     }
+    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
+        switch item {
+        case .daySep(let d): DaySepView(day: d)
+        case .user(let t, let s, let imgs, let p, let v): UserRowView(text: t, stamp: s, images: imgs, pick: p, voice: v)
+        case .ai(_, let m, let u):
+            AIRowView(msg: m, showUsage: u, afterTools: afterTools)
+        case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
+        case .ping(let m): PingChipView(msg: m)
+        case .wakeChip(let hm): WakeChipView(hm: hm)
+        case .knock(let t, let s): KnockRowView(text: t, stamp: s)
+        }
+    }
+
+}
+
+/// 直播段（09-25 从 MessageListBody 拆出）：只订阅 liveBox，打字机每帧只重算这一块。
+/// afterHist＝正史末行是不是「只有工具行」（行距要收）；hasHist＝正史有没有行（第一段上间距）
+struct LiveSection: View {
+    @ObservedObject var box: LiveBox
+    var afterHist: Bool
+    var hasHist: Bool
+
+    var body: some View {
+        if let live = box.turn {
+            VStack(alignment: .leading, spacing: 0) { liveView(live) }.padding(.top, liveTopGap(live)).id("live")
+        }
+    }
     private func liveTopGap(_ live: LiveTurn) -> CGFloat {
-        guard let last = model.items.last else { return 0 }
-        guard Self.toolsOnly(last.item) else { return 22 }
+        guard hasHist else { return 0 }
+        guard afterHist else { return 22 }
         if case .seg(let s)? = live.items.first { return Self.hasThinking(s) ? 12 : 9 }
         return 9
     }
@@ -57,24 +83,9 @@ struct MessageListBody: View {
             return hasThinking(p) ? 8 : 0
         }
     }
-
-    @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
-        switch item {
-        case .daySep(let d): DaySepView(day: d)
-        case .user(let t, let s, let imgs, let p, let v): UserRowView(text: t, stamp: s, images: imgs, pick: p, voice: v)
-        case .ai(_, let m, let u):
-            AIRowView(msg: m, showUsage: u, afterTools: afterTools)
-        case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)
-        case .ping(let m): PingChipView(msg: m)
-        case .wakeChip(let hm): WakeChipView(hm: hm)
-        case .knock(let t, let s): KnockRowView(text: t, stamp: s)
-        }
-    }
-
     /// 直播段（09-09 重排）：不再有任何负边距（136/138 两版负边距都留了病：工具行只露半截、段落叠在一起），
     /// 行距全由 liveGap 按前后段给；第一段的上间距由 liveTopGap 按正史末行给
     @ViewBuilder private func liveView(_ live: LiveTurn) -> some View {
-        let afterHist = model.items.last.map { Self.toolsOnly($0.item) } ?? false
         ForEach(Array(live.items.enumerated()), id: \.offset) { idx, it in
             let prev: LiveItem? = idx > 0 ? live.items[idx - 1] : nil
             switch it {
@@ -101,5 +112,18 @@ struct MessageListBody: View {
                 .padding(.top, prev.map { Self.liveGap(prev: $0, thisIsChip: false, thinking: thinking) } ?? 0)
             }
         }
+    }
+}
+
+/// 只盯直播段的小哨兵（09-25）：live 拆出 ChatModel 后 ChatScreen 那层不再随打字机每帧重算，
+/// 「新段落出现就到底」「字长出来就钉底」这两只 onChange 搬到这里，闭包里读的还是 ChatScreen 的状态
+struct LiveWatch: View {
+    @ObservedObject var box: LiveBox
+    var onItems: () -> Void
+    var onEvent: () -> Void
+    var body: some View {
+        Color.clear
+            .onChange(of: box.turn?.items.count ?? 0) { _ in onItems() }
+            .onChange(of: box.turn?.events ?? 0) { _ in onEvent() }
     }
 }
