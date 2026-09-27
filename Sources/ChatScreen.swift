@@ -147,9 +147,11 @@ final class ChatModel: ObservableObject {
 
     private var staged = false   // 冷启动分两段排过了没
     private func apply(_ conv: ConversationPayload) {
+        // 09-27 寻「看上面的消息老被拽回最底」：摸脉重拉时她手动加载过的更早几天别收回去（同一窗、只往后长才留）
+        let keepFrom = (staged && conv.id == conversationId && conv.messages.count >= msgs.count) ? renderFrom : Int.max
         conversationId = conv.id
         msgs = conv.messages
-        let full = Self.startOfLastDays(msgs, days: 2)
+        let full = min(Self.startOfLastDays(msgs, days: 2), keepFrom)
         lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
         // 09-21 寻「开屏大半白纸」：两天有七百多条（09-20/21 各三四百），一次排完第一帧要等好几秒。
         // 冷启动先只排最近 40 条把屏画出来，0.6 秒后再把两天补齐（内容往上长、开屏落定窗会钉回底）。「主页画两天」不变。
@@ -422,6 +424,7 @@ struct ChatScreen: View {
     // 开屏落定窗（09-21 寻：305 包冷启动还是不在底）：正史排上来后 6 秒内，只要内容长高、她没碰屏、没起键盘，就按真实内容高钉回底，
     // 不再猜是谁把内容撑高的（图片/语音条/字体……）；头几次钉底记一笔 diag 到服务器，方便查是谁长高的
     @State private var settleUntil = Date.distantPast
+    @State private var firstScrolled = false  // 头一回整段拉到过没（之后的重拉只在她本来在底时才跟底）
     @State private var settleLogs = 0
     @State private var loadAt = Date()
     @State private var dbg = ""
@@ -694,6 +697,11 @@ struct ChatScreen: View {
             .onChange(of: holdH) { _ in if rec.recording, holdFromBottom { DispatchQueue.main.async { pinBottom() } } }
             .onChange(of: model.sending) { s in if s { scrollBottom(proxy, animated: true) } }
             .onChange(of: model.loadTick) { _ in
+                // 09-27 寻：往上翻着看时，每 15 秒摸脉一有新动静（克自由时间醒、纸条、网页那头）就整段重拉，原来这里无条件滚底把她拽回去。
+                // 只在开屏（头一回/落定窗内）或本来就在底时跟到底
+                let cold = !firstScrolled || (Date() < settleUntil && !userUp)
+                guard cold || (atBottom && !userUp) else { return }
+                firstScrolled = true
                 scrollBottom(proxy)
                 loadAt = Date(); settleUntil = loadAt.addingTimeInterval(6); settleLogs = 0
             }
