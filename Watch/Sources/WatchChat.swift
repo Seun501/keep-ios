@@ -186,9 +186,13 @@ struct WatchChatView: View {
                             .padding(.bottom, 2)
                         ForEach(m.msgs) { row($0) }
                         if m.sending || !m.live.isEmpty {
-                            (Text(m.live) + Text("▏").foregroundColor(WatchTheme.accent))
-                                .font(WatchTheme.ke).foregroundStyle(WatchTheme.text)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            // 09-27 寻：流式时是裸字（# ** 原样、段距不对），说完才换成 md 那条——现在边长边按 md 画，和落成那条同一套
+                            VStack(alignment: .leading, spacing: 2) {
+                                if !m.live.isEmpty { WatchMarkdown(text: m.live) }
+                                Text("▏").font(WatchTheme.ke).foregroundColor(WatchTheme.accent)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.trailing, 14)
                         }
                         if !m.note.isEmpty {
                             Text(m.note).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)

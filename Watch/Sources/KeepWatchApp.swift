@@ -18,7 +18,8 @@ final class WatchDelegate: NSObject, WKApplicationDelegate {
         // 09-21 寻「表盘图标还是灰的」：装了新包表盘可能还挂着旧渲染——每次启动叫小组件重画；顺手把 watchOS 版本记进 diag
         WidgetCenter.shared.reloadAllTimelines()
         let dev = WKInterfaceDevice.current()
-        WatchDiag.send("launch: watchOS \(dev.systemVersion) \(dev.model) screen=\(Int(dev.screenBounds.width))x\(Int(dev.screenBounds.height)) fonts: \(WatchFonts.report)")
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"   // 09-27 寻问表上是不是最新包：构建号＝Actions run 号
+        WatchDiag.send("launch: build \(build) watchOS \(dev.systemVersion) \(dev.model) screen=\(Int(dev.screenBounds.width))x\(Int(dev.screenBounds.height)) fonts: \(WatchFonts.report)")
     }
 
     func applicationDidBecomeActive() {
