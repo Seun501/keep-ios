@@ -15,6 +15,7 @@ struct Msg: Decodable {
     var napNote: Bool? = nil
     var rainNote: Bool? = nil
     var placeNote: Bool? = nil     // 到/离常去的地方（09-10）
+    var bookNote: Bool? = nil      // 书上新（09-28）：外皮同 placeNote，图标换书
     var knock: Bool? = nil
     var knockText: String? = nil
     var usage: Usage? = nil
@@ -26,7 +27,7 @@ struct Msg: Decodable {
     enum CodingKeys: String, CodingKey {
         case role, content, ts, thinking, wake, images, meal, knock, usage, interrupted, voice, via
         case thinkSecs = "think_secs", toolCalls = "tool_calls", sleepNote = "sleep_note"
-        case napNote = "nap_note", rainNote = "rain_note", knockText = "knock_text", placeNote = "place_note"
+        case napNote = "nap_note", rainNote = "rain_note", knockText = "knock_text", placeNote = "place_note", bookNote = "book_note"
     }
 
     init(from decoder: Decoder) throws {
@@ -44,6 +45,7 @@ struct Msg: Decodable {
         napNote = try? c.decode(Bool.self, forKey: .napNote)
         rainNote = try? c.decode(Bool.self, forKey: .rainNote)
         placeNote = try? c.decode(Bool.self, forKey: .placeNote)
+        bookNote = try? c.decode(Bool.self, forKey: .bookNote)
         knock = try? c.decode(Bool.self, forKey: .knock)
         knockText = try? c.decode(String.self, forKey: .knockText)
         usage = try? c.decode(Usage.self, forKey: .usage)

@@ -323,7 +323,7 @@ struct PingChipView: View {
     private static let uiFont: UIFont = Theme.uiRound(12.5)   // 09-13：Cascadia → 圆体（与 font 同源）
 
     private var isMeal: Bool { msg.meal == true || forceMeal }
-    private var icon: String { msg.rainNote == true ? "cloud" : (msg.placeNote == true ? "pin" : (isMeal ? "bowl" : "moon")) }
+    private var icon: String { msg.bookNote == true ? "tool-book-open" : msg.rainNote == true ? "cloud" : (msg.placeNote == true ? "pin" : (isMeal ? "bowl" : "moon")) }
 
     /// 文案：吃吃「12:40-寻吃了午餐：一碗豆花饭」→「12:40 午餐 · 一碗豆花饭」；雨情去掉自带的 🌧/🌤 头；
     /// 到离「14:02-寻到了学校」→「14:02 到了学校」

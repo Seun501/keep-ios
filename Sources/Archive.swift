@@ -16,13 +16,14 @@ struct ArchEntry: Decodable, Identifiable {
     var napNote: Bool?
     var rainNote: Bool?
     var placeNote: Bool?
+    var bookNote: Bool?
     var wake: Bool?
     var no: Int?
     var thinkSecs: Double?
     var voice: Voice?          // 语音条（09-14）：档案里也能放
     enum CodingKeys: String, CodingKey {
         case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice
-        case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", thinkSecs = "think_secs"
+        case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", bookNote = "book_note", thinkSecs = "think_secs"
     }
     var id: String { "\(no ?? 0)-\(ts ?? "")-\(role ?? "")" }
     var hm: String { TimeFmt.hm(ts) }
@@ -300,7 +301,7 @@ struct ArchiveScreen: View {
     }
     private func pingMsg(_ e: ArchEntry) -> Msg {
         var msg = Msg(role: "user", content: e.text, ts: e.ts, images: e.images)
-        msg.meal = e.meal; msg.sleepNote = e.sleepNote; msg.napNote = e.napNote; msg.rainNote = e.rainNote; msg.placeNote = e.placeNote
+        msg.meal = e.meal; msg.sleepNote = e.sleepNote; msg.napNote = e.napNote; msg.rainNote = e.rainNote; msg.placeNote = e.placeNote; msg.bookNote = e.bookNote
         return msg
     }
     private func aiMsg(_ e: ArchEntry) -> Msg {
