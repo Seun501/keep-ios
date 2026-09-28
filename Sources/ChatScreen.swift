@@ -870,7 +870,7 @@ struct ChatScreen: View {
                         ForEach(Array(pending.enumerated()), id: \.offset) { i, u in
                             ZStack(alignment: .topTrailing) {
                                 DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
-                                    .onTapGesture { Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图
+                                    .onTapGesture { composerFocused = false; Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图；09-28 先收键盘，不和大图打架
                                 Button { pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
