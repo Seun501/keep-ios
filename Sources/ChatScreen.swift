@@ -102,6 +102,9 @@ final class ChatModel: ObservableObject {
     }
     var onLiveError: () -> Void = {}   // 直播段出错→小 Clawd 警觉（原来靠 ChatScreen 盯 live.events，现在它不随帧重算了）
     @Published var sending = false
+    /// 没送到服务器的那条（09-28 寻：网差时发出去的字被吞了）：字和图退回输入框，视图接住就清掉
+    struct Bounce: Equatable { let id = UUID(); let text: String; let images: [String] }
+    @Published var bounced: Bounce? = nil
     @Published var door: Door? = nil          // 门关着＝整页只剩门页（照网页 updateDoor）
     @Published var lastError: String? = nil
     private var knockBusy = false
@@ -287,13 +290,17 @@ final class ChatModel: ObservableObject {
         guard !sending, !(text.isEmpty && images.isEmpty) else { return }
         sending = true; lastError = nil; lastEventAt = Date()
         var um = Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images); um.voice = voice
+        let echoAt = msgs.count, echoTs = um.ts
         msgs.append(um)
         rebuild()
         live = LiveTurn()
         PushRegistrar.diag("chat: send")
         streamTask = Task {
+            var heard = false        // 服务器回过任何一个事件＝这条已落盘
+            var lost = false         // 一个事件都没回就断了：可能根本没送到，对账后决定退不退回输入框
             do {
                 for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice) {
+                    heard = true
                     lastEventAt = Date()
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
                     // 语气到了（09-21）：立刻写进刚发的那条语音气泡，不等克说完重拉正史
@@ -311,11 +318,13 @@ final class ChatModel: ObservableObject {
                 // 克把门关上了：撤下刚画的那条，字还给输入框（网页同款），门页自己升起来
                 door = Door(until: until, note: note, knock: nil, reply: nil)
                 msgs.removeLast(); rebuild()
+                bounced = Bounce(text: text, images: images)
                 await refreshDoor()
             } catch GatewayAPI.Failure.unauthorized {
                 onLogout()
             } catch {
-                PushRegistrar.diag("chat: error \(error.localizedDescription)")
+                PushRegistrar.diag("chat: error \(error.localizedDescription) heard=\(heard)")
+                lost = !heard && !Task.isCancelled
                 if !Task.isCancelled { live?.apply(.error("网络出错：\(error.localizedDescription)")); onLiveError() }
             }
             // 流一停先把这一轮就地落成正史：时间戳当场出现、token 数（done 事件带了就一起）——
@@ -336,6 +345,17 @@ final class ChatModel: ObservableObject {
                     lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
                     rebuild()
                 } else { PushRegistrar.diag("chat: reload failed after stream") }
+            }
+            // 没回过事件就断了：正史里最后一条她的话不是这句＝没送到，撤下回显、字退回输入框。
+            // 正史也拉不到（网还断着）同样退回——宁可她看见重发，也别吞掉她写的字。
+            if lost {
+                let landed = msgs.count > echoAt && msgs.last(where: { $0.role == "user" })?.content == text
+                    && msgs.last(where: { $0.role == "user" })?.ts != echoTs
+                if !landed {
+                    if msgs.indices.contains(echoAt), msgs[echoAt].role == "user", msgs[echoAt].ts == echoTs { msgs.remove(at: echoAt); rebuild() }
+                    bounced = Bounce(text: text, images: images)
+                    PushRegistrar.diag("chat: bounced back to composer chars=\(text.count)")
+                }
             }
         }
     }
@@ -612,6 +632,12 @@ struct ChatScreen: View {
             if p == .background { model.detach() }
         }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.chat") } }
+        .onChange(of: model.bounced) { b in   // 没送到的那条：字接回输入框（她已经又打了字就接在前面），图放回待发
+            guard let b else { return }
+            draft = draft.isEmpty ? b.text : b.text + "\n" + draft
+            if !b.images.isEmpty { pending = b.images + pending }
+            model.bounced = nil
+        }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
