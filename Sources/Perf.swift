@@ -10,6 +10,10 @@ final class JankMeter {
     private var last: CFTimeInterval = 0
     private var start: CFTimeInterval = 0
     private var maxGap = 0.0, big = 0, frames = 0
+    /// 09-28：这一段里克的正文 body 重算几次（正史行 hist / 直播段 live）、markdown 解析几次共几毫秒——看卡在哪一层
+    private var histEvals = 0, liveEvals = 0, parses = 0, parseMs = 0.0
+    func bodyEval(live: Bool) { if live { liveEvals += 1 } else { histEvals += 1 } }
+    func parsed(ms: Double) { parses += 1; parseMs += ms }
     private var scrollStop: DispatchWorkItem?
     /// 当前正史行数（09-25 夜）：看卡顿是不是跟着当天攒的行数涨
     var rows: () -> Int = { 0 }
@@ -31,6 +35,7 @@ final class JankMeter {
     private func begin(_ t: String) {
         guard link == nil else { return }
         tag = t; maxGap = 0; big = 0; frames = 0; last = 0; start = CACurrentMediaTime()
+        histEvals = 0; liveEvals = 0; parses = 0; parseMs = 0
         let l = CADisplayLink(target: self, selector: #selector(tick(_:)))
         l.add(to: .main, forMode: .common)
         link = l
@@ -48,7 +53,8 @@ final class JankMeter {
         l.invalidate(); link = nil
         let dur = CACurrentMediaTime() - start
         if tag == "stream" || (dur >= 0.5 && big > 0) {
-            PushRegistrar.diag(String(format: "jank %@: %.1fs maxgap=%.0fms big=%d frames=%d rows=%d", tag, dur, maxGap, big, frames, rows()))
+            PushRegistrar.diag(String(format: "jank %@: %.1fs maxgap=%.0fms big=%d frames=%d rows=%d hist=%d live=%d parse=%d/%.0fms",
+                                      tag, dur, maxGap, big, frames, rows(), histEvals, liveEvals, parses, parseMs))
         }
         tag = ""
     }

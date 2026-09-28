@@ -131,7 +131,19 @@ enum MD {
                mono: Theme.uiMono(size * 0.86, weight: .regular), color: Theme.text)
     }
 
+    /// 正史行的解析缓存（09-28）：KeMarkdown 每次重算都要先 parse 看有没有表格，正史的字不会变，解析一次就够
+    private final class BlocksBox { let v: [Block]; init(_ v: [Block]) { self.v = v } }
+    private static let parsed: NSCache<NSString, BlocksBox> = { let c = NSCache<NSString, BlocksBox>(); c.countLimit = 600; return c }()
+    static func parseCached(_ text: String) -> [Block] {
+        if let hit = parsed.object(forKey: text as NSString) { return hit.v }
+        let v = parse(text)
+        parsed.setObject(BlocksBox(v), forKey: text as NSString)
+        return v
+    }
+
     static func parse(_ text: String) -> [Block] {
+        let t0 = CACurrentMediaTime()
+        defer { JankMeter.shared.parsed(ms: (CACurrentMediaTime() - t0) * 1000) }
         var blocks: [String] = []
         var t = text
         // 围栏代码先抠出去
@@ -418,7 +430,8 @@ struct KeMarkdown: View {
     var highlight = ""
     var live = false
     var body: some View {
-        let blocks = MD.parse(text)
+        let _ = JankMeter.shared.bodyEval(live: live)
+        let blocks = live ? MD.parse(text) : MD.parseCached(text)
         if !blocks.contains(where: { if case .table = $0 { return true }; return false }) {
             // 直播段每帧的半截字不进缓存（09-25 夜）：一分钟回话往 400 格缓存里塞一千多条半截，正史那几百条排好的富文本全被挤掉，
             // 说完重拉时整页从头再合成一遍；也省掉 make 里再解析一遍
