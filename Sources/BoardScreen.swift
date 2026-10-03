@@ -306,10 +306,17 @@ struct BoardScreen: View {
 
 struct SecTitle: View {
     let t: String
-    init(_ t: String) { self.t = t }
+    var right: String? = nil   // 栏题右侧赤陶小字（记忆页问寻栏「N 个没答」，10-03）
+    init(_ t: String, right: String? = nil) { self.t = t; self.right = right }
     var body: some View {
-        Text(t).font(Theme.cjk(13)).tracking(1.5).foregroundColor(Theme.muted)
-            .padding(.horizontal, 2).padding(.top, 6).padding(.bottom, -4)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(t).font(Theme.cjk(13)).tracking(1.5).foregroundColor(Theme.muted)
+            if let r = right {
+                Spacer(minLength: 8)
+                Text(r).font(Theme.round(12)).foregroundColor(Theme.accent)
+            }
+        }
+        .padding(.horizontal, 2).padding(.top, 6).padding(.bottom, -4)
     }
 }
 

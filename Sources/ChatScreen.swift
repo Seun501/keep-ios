@@ -463,7 +463,7 @@ struct ChatScreen: View {
         case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop", "lockerr": return [.board(openLetter: nil)]
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
-        case "mem": return [.mem]
+        case "mem", "askpick": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）
         case "places", "tripsheet": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
@@ -628,7 +628,7 @@ struct ChatScreen: View {
         .onReceive(pulseTimer) { _ in Task { await model.pulse() } }
         .onChange(of: phase) { p in
             if p == .active { Task { await model.pulse(); await letters.refresh(); if !letters.unseen.isEmpty, path.isEmpty, !Preview.on { letterAlertOn = true }
-                                     await alerts.uvOnce(); await HealthSync.shared.syncOnActive(); await alerts.healthOnce(); await VoiceFixes.refresh() } }   // 「当天首开」也算回前台那次（App 常驻内存时 .task 不会再跑）
+                                     await alerts.uvOnce(); await HealthSync.shared.syncOnActive(); await alerts.healthOnce(); await VoiceFixes.refresh(); await alerts.askOnce() } }   // 「当天首开」也算回前台那次（App 常驻内存时 .task 不会再跑）
             if p == .background { model.detach() }
         }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.chat") } }
@@ -641,16 +641,27 @@ struct ChatScreen: View {
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
-        .overlay { if let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }).zIndex(60) } }
+        .overlay { if let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }, onGo: stripGo(s)).zIndex(60) } }
         .task {
             await alerts.poll(); await alerts.uvOnce()
             // 健康原生化（09-08）：首开问一次授权，然后早上档 + 当下快照；推完了「今天还没传健康数据」自然不弹
             PushRegistrar.diag("chat: task reached health")
             if await HealthSync.shared.requestAuth() { await HealthSync.shared.syncOnActive() }
             await alerts.healthOnce()
+            await alerts.askOnce()
         }
         .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in Task { await alerts.poll() } }
         .onChange(of: model.sending) { s in if !s { Task { await alerts.balance() } } }   // 克说完话后查余额（照网页 done 时 refreshBalance）
+    }
+
+    /// 横笺上的「走过去」：只有问寻卡有——关掉弹窗、去记忆页（已在记忆页就不再叠一层）
+    private func stripGo(_ s: AlertsModel.Strip) -> (() -> Void)? {
+        guard s.kind == "ask" else { return nil }
+        return {
+            if alerts.current?.kind == "ask" { alerts.dismiss() }   // 只关自己这张，别连带吞掉排在后面的
+            drawerOn = false
+            if path.last != .mem { path.append(.mem) }
+        }
     }
 
     /// 量 Clawd 活动区（消息区尺寸）

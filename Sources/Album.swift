@@ -477,11 +477,28 @@ struct MemPayload: Decodable {
     var tools: [Tool]?
 }
 
+/// 问寻卡（10-03）：记忆整理时想问寻的是非题。GET api/askxun / POST api/askxun/answer 都回这个形状
+struct AskXun: Decodable {
+    struct Q: Decodable {
+        var id: Int
+        var q: String
+        var title: String?
+        var status: String?
+        var answer: String?
+        var note: String?
+        var answered_at: String?
+        var key: String { "ask-\(id)" }   // 懒列表身份别用裸 Int，免得和别组撞
+    }
+    var open: [Q]?
+    var answered: [Q]?
+}
+
 struct MemScreen: View {
     var onBack: () -> Void
     @State private var data: MemPayload? = nil
     @State private var failed = false
     @State private var open: Set<String> = []
+    @State private var ask: AskXun? = nil   // 拉不到就是 nil：问寻栏整栏不出现，不影响注入层
 
     var body: some View {
         ZStack {
@@ -495,6 +512,7 @@ struct MemScreen: View {
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
                 OrangeScroll(name: "mem") {
                     LazyVStack(alignment: .leading, spacing: 12) {
+                        if data != nil || failed { askSection }
                         if failed { Text("没拿到数据，退出来再进一次试试").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
                         else if let d = data {
                             SecTitle("注入层 · \(fmt(d.total_chars ?? 0))字")
@@ -516,7 +534,86 @@ struct MemScreen: View {
             }
         }
         .background(EdgeSwipe(onBack: onBack))
-        .task { await load() }
+        .task {
+            async let a: Void = loadAsk()   // 问寻与注入层并行拉
+            await load()
+            await a
+        }
+    }
+    /// 问寻栏（寻 10-03 定稿）：没答的一题一张卡，答过的收在下面一张卡里一行一条
+    @ViewBuilder private var askSection: some View {
+        let qs = ask?.open ?? []
+        let done = ask?.answered ?? []
+        if !qs.isEmpty {
+            SecTitle("问寻", right: "\(qs.count) 个没答")
+            ForEach(qs, id: \.key) { q in
+                AskCard(q: q, pick: demoPick(q, qs), note: demoPick(q, qs) == nil ? "" : "九月开学后改成跑步了") { a, n in await answer(q.id, a, n) }
+            }
+        }
+        if !done.isEmpty {
+            SecTitle("答过的")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(done.prefix(30).enumerated()), id: \.element.key) { i, q in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(q.q).font(Theme.round(13, weight: .medium)).foregroundColor(Theme.text).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 0)
+                        Text(Self.askState(q)).font(Theme.round(12)).foregroundColor(Theme.knockText).lineLimit(1).fixedSize()
+                    }
+                    .padding(.vertical, 2)
+                    .padding(.top, i == 0 ? 0 : 8)
+                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Theme.border).frame(height: 0.5) } }
+                    .padding(.top, i == 0 ? 0 : 6)
+                }
+            }
+            .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
+        }
+    }
+    /// 截图班 askpick：第一张没答的卡预先选中「不是」并写了补充
+    private func demoPick(_ q: AskXun.Q, _ qs: [AskXun.Q]) -> String? {
+        (Preview.on && Preview.screen == "askpick" && q.id == qs.first?.id) ? "不是" : nil
+    }
+    /// 答过的右侧小字：answered/sent 等克批、kept 不用改、done 克已批、rejected 克没采用；不认识的状态当等克批
+    static func askState(_ q: AskXun.Q) -> String {
+        let s: String
+        switch q.status ?? "" {
+        case "kept": s = "不用改"
+        case "done": s = "克已批"
+        case "rejected": s = "克没采用"
+        default: s = "等克批"
+        }
+        return (q.answer ?? "") + " · " + s
+    }
+    private func loadAsk() async {
+        if Preview.on {
+            if let d = Preview.json("preview_askxun"), let p = try? JSONDecoder().decode(AskXun.self, from: d) { ask = p }
+            return
+        }
+        guard let token = Keychain.token else { return }
+        var r = URLRequest(url: Gateway.home.appendingPathComponent("api/askxun"))
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let p = try? JSONDecoder().decode(AskXun.self, from: d) else { return }
+        ask = p
+    }
+    /// 交给克：成功用回包刷新（这张卡挪到「答过的」）；400 答过了 / 404 没这题＝重拉一遍对齐；其余算没交上
+    private func answer(_ id: Int, _ a: String, _ note: String) async -> Bool {
+        if Preview.on { return false }
+        guard let token = Keychain.token else { return false }
+        var r = URLRequest(url: Gateway.home.appendingPathComponent("api/askxun/answer"))
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["id": id, "answer": a]
+        if !note.isEmpty { body["note"] = note }
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return false }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 200, let p = try? JSONDecoder().decode(AskXun.self, from: d) { ask = p; return true }
+        if code == 400 || code == 404 { await loadAsk(); return true }
+        return false
     }
     private func fmt(_ n: Int) -> String { NumberFormatter.localizedString(from: NSNumber(value: n), number: .decimal) }
     /// 工具卡全文：说明 + 每个参数一行「· 名（必填）：说明」
@@ -555,5 +652,75 @@ struct MemScreen: View {
         guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
               let p = try? JSONDecoder().decode(MemPayload.self, from: d) else { failed = true; return }
         data = p
+    }
+}
+
+/// 问寻卡一张（寻 10-03 定稿）：问句、出处淡字、「是 / 不是」两块淡底钮（不描边）；点中一个才展开补充行与「交给克」
+struct AskCard: View {
+    let q: AskXun.Q
+    var onSend: (String, String) async -> Bool
+    @State private var pick: String?
+    @State private var note: String
+    @State private var focused = false
+    @State private var sending = false
+    @State private var failed = false
+    init(q: AskXun.Q, pick: String? = nil, note: String = "", onSend: @escaping (String, String) async -> Bool) {
+        self.q = q
+        self.onSend = onSend
+        _pick = State(initialValue: pick)
+        _note = State(initialValue: note)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(q.q).font(Theme.round(15)).lineSpacing(4).foregroundColor(Theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            if let t = q.title, !t.isEmpty {
+                Text("整理「\(t)」时想到的").font(Theme.round(11)).foregroundColor(Theme.muted).lineLimit(1).padding(.top, 6)
+            }
+            HStack(spacing: 10) { choice("是"); choice("不是") }.padding(.top, 12)
+            if pick != nil {
+                PlainField(text: $note, focused: $focused, placeholder: "补一句（可不填）", font: Theme.uiSys(13), returnKey: .done, onSubmit: { focused = false })
+                    .frame(height: 18)
+                    .padding(.vertical, 9).padding(.horizontal, 12)
+                    .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, 10)
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    if failed { Text("没交上，再点一次").font(Theme.round(12)).foregroundColor(Theme.muted) }
+                    Button { send() } label: {
+                        Text("交给克").font(Theme.round(13, weight: .semibold)).foregroundColor(sending ? Theme.muted : Theme.accent)
+                            .padding(.vertical, 2).padding(.leading, 8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).disabled(sending)
+                }
+                .padding(.top, 10)
+            }
+        }
+        .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
+    }
+    /// 淡底圆角块；选中＝淡赤陶底＋朱砂字（夜里跟着变，同敲门那对色）
+    private func choice(_ a: String) -> some View {
+        let on = pick == a
+        return Button { pick = on ? nil : a; failed = false } label: {
+            Text(a).font(Theme.round(14, weight: on ? .semibold : .regular)).foregroundColor(on ? Theme.knockText : Theme.text)
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .background(on ? Theme.knockBg : Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).disabled(sending)
+    }
+    private func send() {
+        guard let a = pick, !sending else { return }
+        sending = true; failed = false; focused = false
+        let n = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        Task {
+            let ok = await onSend(a, n)
+            sending = false
+            if !ok { failed = true }
+        }
     }
 }

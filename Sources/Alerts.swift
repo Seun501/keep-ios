@@ -99,6 +99,8 @@ struct StripPop: View {
     var en = false
     var msg: String
     var onClose: () -> Void
+    /// 问寻卡（10-03 寻定稿）：给了就在题行最右放赤陶小圆＋白细箭头，点整张笺＝走过去；msg 空＝不写正文
+    var onGo: (() -> Void)? = nil
     var body: some View {
         ZStack {
             Wax.ink.opacity(0.38).ignoresSafeArea().onTapGesture { onClose() }
@@ -108,15 +110,39 @@ struct StripPop: View {
                     // 纸是定色白笺，字用定色墨（夜间模式下别跟着变白——寻验 09-13）
                     if en { Text(title).font(.custom("Georgia-Bold", size: 16.5)).tracking(0.66).foregroundColor(Wax.ink) }
                     else { Text(title).font(Theme.cjk(16.5, weight: .bold)).tracking(1.65).foregroundColor(Wax.ink) }
+                    if onGo != nil {
+                        Spacer(minLength: 8)
+                        AskArrow()
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round))
+                            .frame(width: 12, height: 12)
+                            .frame(width: 21, height: 21)
+                            .background(Theme.accent, in: Circle())
+                    }
                 }
-                RichText(attr: MD.keNS(msg, size: 13.5, weight: .regular, color: Wax.uiInk, lineHeight: 1.68)).padding(.top, 10)
+                if !msg.isEmpty {
+                    RichText(attr: MD.keNS(msg, size: 13.5, weight: .regular, color: Wax.uiInk, lineHeight: 1.68)).padding(.top, 10)
+                }
             }
             .padding(EdgeInsets(top: 19, leading: 21, bottom: 18, trailing: 21))
             .frame(width: min(UIScreen.main.bounds.width * 0.88, 344), alignment: .leading)
             .background(Wax.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Wax.paperLine, lineWidth: 1))
             .shadow(color: Wax.ink.opacity(0.26), radius: 24, y: 16)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .simultaneousGesture(TapGesture().onEnded { onGo?() }, including: onGo == nil ? .none : .all)
         }
+    }
+}
+
+/// Lucide arrow-right（M5 12h14 / m12 5 7 7-7 7），画在 24 格里按框缩放——线细，别用粗字符
+struct AskArrow: Shape {
+    func path(in r: CGRect) -> Path {
+        let s = min(r.width, r.height) / 24
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * s, y: r.minY + y * s) }
+        var p = Path()
+        p.move(to: pt(5, 12)); p.addLine(to: pt(19, 12))
+        p.move(to: pt(12, 5)); p.addLine(to: pt(19, 12)); p.addLine(to: pt(12, 19))
+        return p
     }
 }
 
@@ -153,6 +179,7 @@ final class AlertsModel: ObservableObject {
             if Preview.screen == "strip" { push(Strip(icon: "hourglass", title: "5h limits", en: true, msg: "份额见底，14:00 恢复。", kind: "usage")) }
             if Preview.screen == "ticketstrip" { push(Strip(icon: "tabTicket", title: "克报了一张工单", en: false, msg: "相册工具翻第 3 册时报「没这一册」，目录里明明有。大约在 09:10 前后。", kind: "ticket")) }
             if Preview.screen == "uvstrip" { push(Strip(icon: "sun", title: "今日紫外线", en: false, msg: Self.uvMsg(max: 7.4, level: "强", advice: "记得高倍防晒"), kind: "uv")) }
+            if Preview.screen == "askstrip" { await askOnce() }   // 开屏 task 后段要等健康授权，预览里提前弹
             return
         }
         if let u = await get("api/usage") {
@@ -214,6 +241,20 @@ final class AlertsModel: ObservableObject {
         Self.ud.set(day, forKey: "uvPopDay")
         push(Strip(icon: "sun", title: "今日紫外线", en: false,
                    msg: Self.uvMsg(max: mx, level: d["level"] as? String ?? "", advice: d["advice"] as? String ?? ""), kind: "uv"))
+    }
+    /// 问寻卡（10-03 寻定稿）：当天第一次进 Keep / 回前台、有没答的问题就弹一张横笺（不推手机）。
+    /// 一天最多一次：弹出那刻就记下日子，点箭头还是点外头都算弹过；没问题不弹、也不算弹过
+    func askOnce() async {
+        if Preview.on {
+            if Preview.screen == "askstrip" { push(Strip(icon: "askxun", title: "有 3 个问题想问你", en: false, msg: "", kind: "ask")) }
+            return
+        }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; let day = f.string(from: Date())
+        guard Self.ud.string(forKey: "askPopDay") != day else { return }
+        guard let d = await get("api/askxun"), let open = d["open"] as? [[String: Any]], !open.isEmpty else { return }
+        guard Self.ud.string(forKey: "askPopDay") != day else { return }   // 开屏 task 与回前台各跑一次，别弹两张
+        Self.ud.set(day, forKey: "askPopDay")
+        push(Strip(icon: "askxun", title: "有 \(open.count) 个问题想问你", en: false, msg: "", kind: "ask"))
     }
     static func uvMsg(max: Double, level: String, advice: String) -> String {
         let n = max == max.rounded() ? String(Int(max)) : String(format: "%.1f", max)
