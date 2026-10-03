@@ -499,6 +499,7 @@ struct MemScreen: View {
     @State private var failed = false
     @State private var open: Set<String> = []
     @State private var ask: AskXun? = nil   // 拉不到就是 nil：问寻栏整栏不出现，不影响注入层
+    @State private var doneOpen = Preview.on && Preview.screen == "askpick"   // 答过的平时折成一行（寻 10-03 选乙）
 
     var body: some View {
         ZStack {
@@ -551,18 +552,27 @@ struct MemScreen: View {
             }
         }
         if !done.isEmpty {
-            SecTitle("答过的")
+            // 答过的：平时折成一行「答过 N 个 ›」，点开才一行一条（寻 10-03 选乙）；字一律宋体淡墨，不加粗
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(done.prefix(30).enumerated()), id: \.element.key) { i, q in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(q.q).font(Theme.round(13, weight: .medium)).foregroundColor(Theme.text).lineLimit(1).truncationMode(.tail)
-                        Spacer(minLength: 0)
-                        Text(Self.askState(q)).font(Theme.round(12)).foregroundColor(Theme.knockText).lineLimit(1).fixedSize()
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("答过 \(done.count) 个").font(Theme.cjk(13.5)).foregroundColor(Theme.muted)
+                    Spacer(minLength: 0)
+                    Text("›").font(Theme.cjk(15)).foregroundColor(Theme.muted)
+                        .rotationEffect(.degrees(doneOpen ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { doneOpen.toggle() } }
+                if doneOpen {
+                    ForEach(Array(done.prefix(30).enumerated()), id: \.element.key) { _, q in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(q.q).font(Theme.cjk(13)).foregroundColor(Theme.text).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                            Text(Self.askState(q)).font(Theme.cjk(12)).foregroundColor(Theme.muted).lineLimit(1).fixedSize()
+                        }
+                        .padding(.top, 9)
+                        .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 0.5) }
+                        .padding(.top, 9)
                     }
-                    .padding(.vertical, 2)
-                    .padding(.top, i == 0 ? 0 : 8)
-                    .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Theme.border).frame(height: 0.5) } }
-                    .padding(.top, i == 0 ? 0 : 6)
                 }
             }
             .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
@@ -672,10 +682,10 @@ struct AskCard: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(q.q).font(Theme.round(15)).lineSpacing(4).foregroundColor(Theme.text)
+            Text(q.q).font(Theme.cjk(15)).lineSpacing(4).foregroundColor(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
             if let t = q.title, !t.isEmpty {
-                Text("整理「\(t)」时想到的").font(Theme.round(11)).foregroundColor(Theme.muted).lineLimit(1).padding(.top, 6)
+                Text("整理「\(t)」时想到的").font(Theme.cjk(11.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.top, 6)
             }
             HStack(spacing: 10) { choice("是"); choice("不是") }.padding(.top, 12)
             if pick != nil {
@@ -686,9 +696,9 @@ struct AskCard: View {
                     .padding(.top, 10)
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
-                    if failed { Text("没交上，再点一次").font(Theme.round(12)).foregroundColor(Theme.muted) }
+                    if failed { Text("没交上，再点一次").font(Theme.cjk(12)).foregroundColor(Theme.muted) }
                     Button { send() } label: {
-                        Text("交给克").font(Theme.round(13, weight: .semibold)).foregroundColor(sending ? Theme.muted : Theme.accent)
+                        Text("交给克").font(Theme.cjk(13.5, weight: .medium)).foregroundColor(sending ? Theme.muted : Theme.accent)
                             .padding(.vertical, 2).padding(.leading, 8)
                             .contentShape(Rectangle())
                     }
@@ -706,7 +716,7 @@ struct AskCard: View {
     private func choice(_ a: String) -> some View {
         let on = pick == a
         return Button { pick = on ? nil : a; failed = false } label: {
-            Text(a).font(Theme.round(14, weight: on ? .semibold : .regular)).foregroundColor(on ? Theme.knockText : Theme.text)
+            Text(a).font(Theme.cjk(14, weight: on ? .medium : .regular)).foregroundColor(on ? Theme.knockText : Theme.text)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .background(on ? Theme.knockBg : Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .contentShape(Rectangle())
