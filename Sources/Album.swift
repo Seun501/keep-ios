@@ -469,7 +469,7 @@ struct MemPayload: Decodable {
     struct Layer: Decodable { var title: String; var source: String?; var chars: Int?; var content: String }
     struct Tool: Decodable {
         struct Param: Decodable { var name: String; var required: Bool?; var desc: String? }
-        var name: String; var description: String?; var params: [Param]?
+        var name: String; var description: String?; var params: [Param]?; var folded: Bool?
     }
     var total_chars: Int?
     var layers: [Layer]?
@@ -500,6 +500,19 @@ struct MemScreen: View {
     @State private var open: Set<String> = []
     @State private var ask: AskXun? = nil   // 拉不到就是 nil：问寻栏整栏不出现，不影响注入层
     @State private var doneOpen = Preview.on && Preview.screen == "askpick"   // 答过的平时折成一行（寻 10-03 选乙）
+    // 底栏三栏（寻 10-01 过目样式）：注入 / 词条 / 日子；右上角那句小字随栏换
+    @State private var tab: String = {
+        switch Preview.on ? Preview.screen : "" {
+        case "memword", "memedit": return "word"
+        case "memday", "memdayadd": return "day"
+        default: return "inj"
+        }
+    }()
+    @StateObject private var wm = WordsModel()
+    @StateObject private var dm = DatesModel()
+    @State private var wordEdit: WordDraft? = nil
+    @State private var dayAdd = false
+    private let motto = ["inj": "他每天醒来就看得到的", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
 
     var body: some View {
         ZStack {
@@ -507,39 +520,104 @@ struct MemScreen: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { onBack() } label: { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
-                    Text("记忆").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
+                    Text(motto[tab] ?? "").font(Theme.cjk(13.5, weight: .medium)).tracking(1)
+                        .foregroundColor(Theme.muted).offset(y: 5)
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
-                OrangeScroll(name: "mem") {
+                OrangeScroll(name: "mem-" + tab) {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        if data != nil || failed { askSection }
-                        if failed { Text("没拿到数据，退出来再进一次试试").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
-                        else if let d = data {
-                            SecTitle("注入层 · \(fmt(d.total_chars ?? 0))字")
-                            ForEach(Array((d.layers ?? []).enumerated()), id: \.element.title) { i, l in
-                                card("L\(i)", title: l.title, side: (l.source ?? "") + " · \(fmt(l.chars ?? 0))字", full: l.content)
-                            }
-                            if let s = d.staging, !s.isEmpty {
-                                Text("待班车：" + s.joined(separator: "、") + "——明晨随裁窗换入").font(Theme.round(11)).tracking(0.44).lineSpacing(4).foregroundColor(Theme.muted).padding(.horizontal, 2).padding(.top, -2)
-                            }
-                            let tools = d.tools ?? []
-                            SecTitle("工具层 · \(tools.count)件")
-                            ForEach(tools, id: \.name) { t in   // 别再用 offset 当身份：和上面注入层那组撞了，懒列表就不画（截图实证）
-                                card("T-" + t.name, title: t.name, side: (t.params ?? []).isEmpty ? "" : "\((t.params ?? []).count) 参数", full: toolFull(t))
-                            }
-                        } else { Text("加载中…").font(Theme.round(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.top, UIScreen.main.bounds.height * 0.3) }
+                        switch tab {
+                        case "word": WordsTab(m: wm, onEdit: { wordEdit = $0 })
+                        case "day": DatesTab(m: dm, onAdd: { dayAdd = true })
+                        default: injection
+                        }
                     }
                     .padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 24)
                 }
+                .id(tab)   // 换栏从顶上看起
+                tabs
             }
+            .ignoresSafeArea(.keyboard)
+            if let d = wordEdit { WordSheet(m: wm, d: d, onClose: { wordEdit = nil }).id(d.id).zIndex(80) }
+            if dayAdd { DaySheet(m: dm, onClose: { dayAdd = false }).zIndex(80) }
         }
+        .animation(.easeOut(duration: 0.24), value: wordEdit?.id)
+        .animation(.easeOut(duration: 0.24), value: dayAdd)
         .background(EdgeSwipe(onBack: onBack))
         .task {
-            async let a: Void = loadAsk()   // 问寻与注入层并行拉
+            async let a: Void = loadAsk()   // 问寻、注入层、词条、日子并行拉
+            async let w: Void = wm.load()
+            async let dd: Void = dm.load()
             await load()
-            await a
+            await a; await w; await dd
+            if Preview.on && Preview.screen == "memedit", let g = wm.data?.groups.first, let s = g.sections.first, let it = s.items.first {
+                wordEdit = WordDraft(file: g.file, section: s.title, names: it.names.joined(separator: " / "), desc: it.desc, old: (g.file, it.line))
+            }
+            if Preview.on && Preview.screen == "memdayadd" { dayAdd = true }
         }
+    }
+    /// 注入栏（样式稿 ①）：问寻栏在最上；卡片一样高，只有名字和字数，点开才展开全文；工具分「完全注入」「折叠」两段
+    @ViewBuilder private var injection: some View {
+        if data != nil || failed { askSection }
+        if failed { MemEmpty("没拿到数据，退出来再进一次试试") }
+        else if let d = data {
+            let layers = d.layers ?? []
+            SecTitle("注入层 · \(fmt(d.total_chars ?? 0))字")
+            ForEach(Array(layers.enumerated()), id: \.offset) { i, l in
+                card("L\(i)", title: layerName(l, layers), side: "\(fmt(l.chars ?? 0))字", full: l.content)
+            }
+            if let s = d.staging, !s.isEmpty {
+                Text("待班车：" + s.joined(separator: "、") + "——明晨随裁窗换入").font(Theme.round(11)).tracking(0.44).lineSpacing(4).foregroundColor(Theme.muted).padding(.horizontal, 2).padding(.top, -2)
+            }
+            let tools = d.tools ?? []
+            let full = tools.filter { $0.folded != true }
+            let folded = tools.filter { $0.folded == true }
+            if !full.isEmpty {
+                SecTitle((folded.isEmpty ? "工具 · " : "工具 · 完全注入 · ") + "\(full.count)件 · \(fmt(chars(full)))字")
+                ForEach(full, id: \.name) { t in card("T-" + t.name, title: t.name, side: "\(fmt(toolFull(t).count))字", full: toolFull(t)) }
+            }
+            if !folded.isEmpty {
+                SecTitle("工具 · 折叠 · \(folded.count)件 · \(fmt(chars(folded)))字")
+                ForEach(folded, id: \.name) { t in card("T-" + t.name, title: t.name, side: "\(fmt(toolFull(t).count))字", full: toolFull(t)) }
+            }
+        } else { MemEmpty("加载中…") }
+    }
+    private func chars(_ ts: [MemPayload.Tool]) -> Int { ts.map { toolFull($0).count }.reduce(0, +) }
+    /// 同名的层（几份叙事文件都叫「叙事文件」）后面带上文件名，免得几张卡一模一样
+    private func layerName(_ l: MemPayload.Layer, _ all: [MemPayload.Layer]) -> String {
+        guard all.filter({ $0.title == l.title }).count > 1 else { return l.title }
+        let file = (l.source ?? "").split(separator: "/").last.map(String.init) ?? ""
+        return file.isEmpty ? l.title : l.title + " · " + file
+    }
+    /// 底栏三栏（照留言板 #notesTabs）：选中＝赤陶正圆托白线图标、往上冒、外圈页底色；字加粗
+    private var tabs: some View {
+        HStack(spacing: 0) {
+            tabBtn("inj", "注入", "tabLayer")
+            tabBtn("word", "词条", "tabWord")
+            tabBtn("day", "日子", "tabDay")
+        }
+        .padding(.top, 3).padding(.horizontal, 4).padding(.bottom, 1)
+        .background(Theme.card.ignoresSafeArea(edges: .bottom))
+    }
+    private func tabBtn(_ key: String, _ label: String, _ icon: String) -> some View {
+        let on = tab == key
+        return Button { tab = key } label: {
+            VStack(spacing: 0) {
+                Image(icon).renderingMode(.template).resizable().frame(width: 21, height: 21)
+                    .foregroundColor(on ? .white : Theme.muted)
+                    .frame(width: on ? 42 : 36, height: on ? 42 : 30)
+                    .background(on ? Theme.accent : .clear, in: Circle())
+                    .overlay(Circle().stroke(on ? Theme.boardBg : .clear, lineWidth: 4))
+                    .offset(y: on ? -13 : 0)
+                    .padding(.vertical, on ? -6 : 0)
+                Text(label).font(Theme.round(11.5, weight: on ? .semibold : .regular)).tracking(1.6)
+                    .foregroundColor(on ? Theme.accent : Theme.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.easeOut(duration: 0.2), value: on)
+        }
+        .buttonStyle(.plain)
     }
     /// 问寻栏（寻 10-03 定稿）：没答的一题一张卡，答过的收在下面一张卡里一行一条
     @ViewBuilder private var askSection: some View {
@@ -632,21 +710,21 @@ struct MemScreen: View {
         for p in t.params ?? [] { full += "\n\n· " + p.name + (p.required == true ? "（必填）" : "") + ((p.desc?.isEmpty == false) ? "：" + p.desc! : "") }
         return full
     }
-    /// 卡面照留言板裁：衬线卡题、两行摘要，点卡展开全文
+    /// 卡面（样式稿 ①）：一样高，衬线卡题＋右边淡墨字数＋›，像思考链那样点开才展开全文
     private func card(_ key: String, title: String, side: String, full: String) -> some View {
         let isOpen = open.contains(key)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
+                Text(title).font(Theme.georgiaCJK(16)).tracking(0.16).foregroundColor(Theme.text).lineLimit(1)
                 Spacer()
                 Text(side).font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
+                Text("›").font(Theme.cjk(13)).foregroundColor(Theme.muted).rotationEffect(.degrees(isOpen ? 90 : 0))
             }
-            if isOpen { RichText(attr: MD.keNS(full, size: 14.2, weight: .regular, lineHeight: 1.65)).padding(.top, 8) }
-            else { RichText(attr: MD.keNS(String(full.prefix(180)), size: 13.5, weight: .regular, color: Theme.uiMuted, lineHeight: 1.55), maxLines: 2).padding(.top, 6) }
+            if isOpen { RichText(attr: MD.keNS(full, size: 14.2, weight: .regular, lineHeight: 1.65)).padding(.top, 10) }
         }
         .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
         .contentShape(Rectangle())
         .onTapGesture { if isOpen { open.remove(key) } else { open.insert(key) } }

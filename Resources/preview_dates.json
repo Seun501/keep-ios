@@ -1,0 +1,72 @@
+{
+ "soon": [
+  {
+   "date": "2026-10-04",
+   "spec": "2026-10-04",
+   "title": "去青羊宫",
+   "src": "克 10-02 批",
+   "editable": true,
+   "left": 0
+  },
+  {
+   "date": "2026-10-07",
+   "spec": "2026-10-07",
+   "title": "国庆（放假到 10 月 7 日）",
+   "src": "系统算的",
+   "editable": false,
+   "left": 3
+  },
+  {
+   "date": "2026-10-31",
+   "spec": "2026-10-31",
+   "title": "皈依",
+   "src": "克 10-02 批",
+   "editable": true,
+   "left": 27
+  }
+ ],
+ "planned": [
+  {
+   "date": "2026-10-04",
+   "spec": "2026-10-04",
+   "title": "去青羊宫",
+   "src": "克 10-02 批",
+   "editable": true,
+   "left": 0
+  },
+  {
+   "date": "2026-10-31",
+   "spec": "2026-10-31",
+   "title": "皈依",
+   "src": "寻 10-04 加",
+   "editable": true,
+   "left": 27
+  }
+ ],
+ "yearly": [
+  {
+   "date": "2027-01-05",
+   "spec": "01-05",
+   "title": "寻的生日",
+   "src": "系统算的",
+   "editable": false,
+   "left": 93
+  },
+  {
+   "date": "2027-05-02",
+   "spec": "05-02",
+   "title": "相遇纪念日",
+   "src": "系统算的",
+   "editable": false,
+   "left": 210
+  },
+  {
+   "date": "2027-07-11",
+   "spec": "07-11",
+   "title": "结婚纪念日",
+   "src": "系统算的",
+   "editable": false,
+   "left": 280
+  }
+ ]
+}

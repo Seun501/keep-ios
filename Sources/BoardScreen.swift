@@ -307,13 +307,22 @@ struct BoardScreen: View {
 struct SecTitle: View {
     let t: String
     var right: String? = nil   // 栏题右侧赤陶小字（记忆页问寻栏「N 个没答」，10-03）
-    init(_ t: String, right: String? = nil) { self.t = t; self.right = right }
+    var onRight: (() -> Void)? = nil   // 右侧可点（记忆页词条/日子的「＋」新建，10-04）
+    init(_ t: String, right: String? = nil, onRight: (() -> Void)? = nil) { self.t = t; self.right = right; self.onRight = onRight }
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(t).font(Theme.cjk(13)).tracking(1.5).foregroundColor(Theme.muted)
             if let r = right {
                 Spacer(minLength: 8)
-                Text(r).font(Theme.round(12)).foregroundColor(Theme.accent)
+                if let tap = onRight {
+                    Button(action: tap) {
+                        Text(r).font(Theme.round(16)).foregroundColor(Theme.accent)
+                            .padding(.leading, 16).padding(.vertical, 2).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(r).font(Theme.round(12)).foregroundColor(Theme.accent)
+                }
             }
         }
         .padding(.horizontal, 2).padding(.top, 6).padding(.bottom, -4)

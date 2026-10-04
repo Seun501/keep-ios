@@ -463,7 +463,7 @@ struct ChatScreen: View {
         case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop", "lockerr": return [.board(openLetter: nil)]
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
-        case "mem", "askpick": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）
+        case "mem", "askpick", "memword", "memday", "memedit", "memdayadd": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
         case "places", "tripsheet": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）

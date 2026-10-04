@@ -50,6 +50,18 @@
      "desc": "报个问题"
     }
    ]
+  },
+  {
+   "name": "archive",
+   "description": "想回读某天的原文时用。（说明折起来了，先 archive(help=true) 翻用法）",
+   "params": [],
+   "folded": true
+  },
+  {
+   "name": "surf",
+   "description": "想上网冲浪时用。（说明折起来了，先 surf(help=true) 翻用法）",
+   "params": [],
+   "folded": true
   }
  ]
 }
