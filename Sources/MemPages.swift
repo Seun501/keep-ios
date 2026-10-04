@@ -296,8 +296,7 @@ struct MemSheet<Content: View>: View {
                 VStack(spacing: 0) {
                     Capsule().fill(Theme.border).frame(width: 36, height: 4).padding(.top, 10).padding(.bottom, 14)
                     Text(title).font(Theme.cjk(16, weight: .semibold)).foregroundColor(Theme.text).padding(.bottom, 14)
-                    ScrollView { content().padding(.horizontal, 20).padding(.bottom, 30) }
-                        .scrollBounceBehavior(.basedOnSize)
+                    OrangeScroll(name: "memsheet", bounce: false) { content().padding(.horizontal, 20).padding(.bottom, 30) }   // 赤陶滚动条（寻 10-04）；bounce:false＝内容不满不回弹，同原来
                         .frame(maxHeight: max(160, g.size.height - 120))
                         .fixedSize(horizontal: false, vertical: true)
                 }
