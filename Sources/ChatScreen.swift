@@ -73,7 +73,7 @@ struct LiveTurn {
             finishThought(); var s = seg; s.text += t; seg = s
         case .done(let u):
             finishThought(); settle(); usage = u; finished = true
-        case .error(let m):
+        case .error(let m), .bounce(let m):
             finishThought(); settle(); var s = seg; s.error = m; seg = s; finished = true
         }
     }
@@ -103,7 +103,7 @@ final class ChatModel: ObservableObject {
     var onLiveError: () -> Void = {}   // 直播段出错→小 Clawd 警觉（原来靠 ChatScreen 盯 live.events，现在它不随帧重算了）
     @Published var sending = false
     /// 没送到服务器的那条（09-28 寻：网差时发出去的字被吞了）：字和图退回输入框，视图接住就清掉
-    struct Bounce: Equatable { let id = UUID(); let text: String; let images: [String] }
+    struct Bounce: Equatable { let id = UUID(); let text: String; let images: [String]; var why: String? = nil }   // why：网关说了为什么退（弹一张笺）
     @Published var bounced: Bounce? = nil
     @Published var door: Door? = nil          // 门关着＝整页只剩门页（照网页 updateDoor）
     @Published var lastError: String? = nil
@@ -298,8 +298,9 @@ final class ChatModel: ObservableObject {
         streamTask = Task {
             var heard = false        // 服务器回过任何一个事件＝这条已落盘
             var lost = false         // 一个事件都没回就断了：可能根本没送到，对账后决定退不退回输入框
+            var bounceWhy: String? = nil   // 网关说「没经过模型就被打回、这句已撤出正史」
             do {
-                for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice) {
+                for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice, bounceOK: voice == nil) {
                     heard = true
                     lastEventAt = Date()
                     if case .start(let cid) = ev, !cid.isEmpty { conversationId = cid; PushRegistrar.diag("chat: start") }
@@ -312,6 +313,7 @@ final class ChatModel: ObservableObject {
                     live?.apply(ev)
                     if case .delta = ev { startSmoother() }
                     if case .error = ev { onLiveError() }
+                    if case .bounce(let m) = ev { bounceWhy = m }
                 }
                 PushRegistrar.diag("chat: stream closed events=\(live?.events ?? 0) finished=\(live?.finished ?? false) textLen=\(live?.items.compactMap { if case .seg(let s) = $0 { return s.text.count }; return nil }.reduce(0, +) ?? 0)")
             } catch GatewayAPI.Failure.door(let until, let note) {
@@ -345,6 +347,13 @@ final class ChatModel: ObservableObject {
                     lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
                     rebuild()
                 } else { PushRegistrar.diag("chat: reload failed after stream") }
+            }
+            // 网关撤了她那句（登录票过期/额度到顶这类，克没见过）：正史重拉已经没有它；拉不到就自己撤回显。字退回输入框，弹笺说为什么
+            if let why = bounceWhy {
+                if msgs.indices.contains(echoAt), msgs[echoAt].role == "user", msgs[echoAt].ts == echoTs { msgs.remove(at: echoAt); rebuild() }
+                bounced = Bounce(text: text, images: images, why: why)
+                PushRegistrar.diag("chat: gateway bounced chars=\(text.count)")
+                return
             }
             // 没回过事件就断了：正史里最后一条她的话不是这句＝没送到，撤下回显、字退回输入框。
             // 正史也拉不到（网还断着）同样退回——宁可她看见重发，也别吞掉她写的字。
@@ -636,6 +645,11 @@ struct ChatScreen: View {
             guard let b else { return }
             draft = draft.isEmpty ? b.text : b.text + "\n" + draft
             if !b.images.isEmpty { pending = b.images + pending }
+            if var why = b.why {   // 「出错了：」和「（原始报错：…）」是给排查看的，笺上只留人话
+                if why.hasPrefix("出错了：") { why = String(why.dropFirst(4)) }
+                if let r = why.range(of: "（原始报错") { why = String(why[..<r.lowerBound]) }
+                alerts.push(.init(icon: "hourglass", title: "克没收到这句", en: false, msg: why + "字已经放回输入框。", kind: "bounce"))
+            }
             model.bounced = nil
         }
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }

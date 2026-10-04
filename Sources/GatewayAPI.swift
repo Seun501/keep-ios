@@ -71,6 +71,7 @@ enum GatewayAPI {
         case delta(String)
         case done(Usage?)
         case error(String)
+        case bounce(String)   // 没经过模型就被打回、网关已把她那句撤出正史：字退回输入框（10-04 寻定）
     }
 
     /// 发一条消息，事件按到达顺序吐出。HTTP 层的失败（401/423/其他）在第一次 yield 前以 Failure 抛出。
@@ -104,13 +105,14 @@ enum GatewayAPI {
         return try JSONDecoder().decode(Voice.self, from: data)
     }
 
-    static func chat(conversationId: String?, message: String, images: [String], knock: Bool = false, voice: Voice? = nil) -> AsyncThrowingStream<Event, Error> {
+    static func chat(conversationId: String?, message: String, images: [String], knock: Bool = false, voice: Voice? = nil, bounceOK: Bool = false) -> AsyncThrowingStream<Event, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     var payload: [String: Any] = ["message": message, "images": images]
                     if let conversationId { payload["conversation_id"] = conversationId }
-                    if knock { payload["knock"] = true }   // 敲门：门关着时寻唯一能递进来的一句（08-30 寻定）
+                    if knock { payload["knock"] = true }
+                    if bounceOK { payload["bounce_ok"] = true }   // 告诉网关这边接得住退回；不带的（手表/网页）她那句照旧留在正史   // 敲门：门关着时寻唯一能递进来的一句（08-30 寻定）
                     if let v = voice {   // 语音条元信息随消息落正史；二版带 orig（识别原文）+annotate（让网关照定稿标记号）
                         var vd: [String: Any] = ["url": v.url, "dur": v.dur, "tone": v.tone ?? "", "text": v.text ?? message]
                         if v.annotate == true { vd["annotate"] = 1; vd["orig"] = v.orig ?? "" }
@@ -153,7 +155,9 @@ enum GatewayAPI {
                                 u = try? JSONDecoder().decode(Usage.self, from: udata)
                             }
                             continuation.yield(.done(u))
-                        case "error": continuation.yield(.error(d["message"] as? String ?? "出错了"))
+                        case "error":
+                            let m = d["message"] as? String ?? "出错了"
+                            continuation.yield(d["bounce"] as? Bool == true ? .bounce(m) : .error(m))
                         default: break
                         }
                     }

@@ -178,6 +178,7 @@ final class AlertsModel: ObservableObject {
         if Preview.on {
             if Preview.screen == "strip" { push(Strip(icon: "hourglass", title: "5h limits", en: true, msg: "份额见底，14:00 恢复。", kind: "usage")) }
             if Preview.screen == "ticketstrip" { push(Strip(icon: "tabTicket", title: "克报了一张工单", en: false, msg: "相册工具翻第 3 册时报「没这一册」，目录里明明有。大约在 09:10 前后。", kind: "ticket")) }
+            if Preview.screen == "bouncestrip" { push(Strip(icon: "hourglass", title: "克没收到这句", en: false, msg: "订阅登录票据过期了——正常每小时自动续期，这次赶上了空窗。不用做任何事：最迟一小时内自动续上，这条消息稍等一会儿重发即可。字已经放回输入框。", kind: "bounce")) }
             if Preview.screen == "uvstrip" { push(Strip(icon: "sun", title: "今日紫外线", en: false, msg: Self.uvMsg(max: 7.4, level: "强", advice: "记得高倍防晒"), kind: "uv")) }
             if Preview.screen == "askstrip" { await askOnce() }   // 开屏 task 后段要等健康授权，预览里提前弹
             return

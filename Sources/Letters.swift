@@ -374,7 +374,7 @@ struct LetterReadView: View {
     @ObservedObject var m: LettersModel
     var onBack: () -> Void
     var body: some View {
-        ScrollView {
+        OrangeScroll(name: "letter") {   // 赤陶滚动条，同留言板（寻 10-04：信里那根还是系统灰）
             VStack(alignment: .leading, spacing: 0) {
                 RichText(attr: LetterReadView.bodyText(e.content ?? ""))
                 HStack {
@@ -397,7 +397,6 @@ struct LetterReadView: View {
             .padding(.horizontal, 22)
             .padding(.top, 14)
         }
-        .scrollIndicators(.visible)
         .background(Theme.bg.ignoresSafeArea())
         .background(EdgeSwipe(onBack: onBack))
         .onAppear { m.markOpened(e.id) }   // 摊开即算拆过——回列表蜡就转哑色
