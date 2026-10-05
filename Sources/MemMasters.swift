@@ -150,6 +150,11 @@ struct MasterPage: View {
         }
     }
 
+    /// 出处整块不许从中间折行（「旧便签 L12」曾折成「旧便」/「签 L12」）：字与字之间塞零宽连字符、空格换不断行空格
+    private func glue(_ t: String) -> String {
+        t.map { $0 == " " ? "\u{00A0}" : String($0) }.joined(separator: "\u{2060}")
+    }
+
     /// 正文＋行尾出处拼成一段：桶 / #N 是链接（赤陶、点了走 openURL），别的出处像素小灰字
     private func attributed(_ l: MasterDoc.Line, past: Bool) -> AttributedString {
         var s = AttributedString(l.text)
@@ -165,14 +170,14 @@ struct MasterPage: View {
             }
             for (i, n) in (c.nos ?? []).enumerated() {
                 let day = (c.days ?? []).indices.contains(i) ? c.days![i] : ""
-                var r = AttributedString("  #\(n)")
+                var r = AttributedString("  " + glue("#\(n)"))
                 r.font = Font(Theme.uiMono(11))
                 r.foregroundColor = day.isEmpty ? Theme.muted : Theme.accent
                 if !day.isEmpty { r.link = URL(string: "keepref://no/\(day)/\(n)") }
                 s += r
             }
             if let lb = c.label, lb != "原文" {
-                var r = AttributedString("  " + lb)
+                var r = AttributedString("  " + glue(lb))
                 r.font = Font(Theme.uiPixel(12))
                 r.foregroundColor = Theme.muted
                 s += r
