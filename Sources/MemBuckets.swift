@@ -70,8 +70,8 @@ enum BucketStyle {
         switch src {
         case "hold", "feel": return "克记的"
         case "book": return "读书时记的"
-        case "": return "七月补录"
-        default: return "系统记的"
+        case "import": return "七月补录"      // 07-03 通读旧对话一次导进来的那批
+        default: return "系统记的"            // grow / plan 这类系统代录
         }
     }
 }
@@ -119,11 +119,10 @@ struct BucketsTab: View {
             PlainField(text: $q, focused: $qFocused, placeholder: "Search…", font: Self.searchFont, returnKey: .done,
                        onSubmit: { qFocused = false })
                 .frame(height: 20)
-            Text("\(n)").font(Theme.round(14)).foregroundColor(Theme.muted)
+            Text(verbatim: String(n)).font(Theme.round(14)).foregroundColor(Theme.muted)
         }
         .padding(.horizontal, 14).frame(height: 38)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1)
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
     }
 
     private var chips: some View {
@@ -182,8 +181,7 @@ struct BucketsTab: View {
             }
         }
         .padding(EdgeInsets(top: 6, leading: 10, bottom: 10, trailing: 10))
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
     }
 
     private func groups(_ arr: [BucketsPayload.B]) -> [(String, [BucketsPayload.B])] {
@@ -222,8 +220,7 @@ struct BucketsTab: View {
             if isOpen { meta(b).padding(.top, 9) }
         }
         .padding(EdgeInsets(top: 14, leading: 15, bottom: b.faded && !isOpen ? 13 : 15, trailing: 15))
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
         .opacity(b.faded ? 0.5 : 1)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { if isOpen { open.remove(b.id) } else { open.insert(b.id) } } }
@@ -238,7 +235,7 @@ struct BucketsTab: View {
                     ForEach(Array(b.no.enumerated()), id: \.offset) { i, n in
                         if i > 0 { Text("、") }
                         let day = (b.nd ?? []).indices.contains(i) ? b.nd![i] : ""
-                        Text("聊天 #\(n)").foregroundColor(Theme.accent)
+                        Text(verbatim: "聊天 #\(n)").foregroundColor(Theme.accent)
                             .onTapGesture { if !day.isEmpty { onArchive(day, n) } }
                     }
                 }
