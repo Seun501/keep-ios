@@ -495,6 +495,7 @@ struct AskXun: Decodable {
 
 struct MemScreen: View {
     var onBack: () -> Void
+    var onArchive: (String, Int) -> Void = { _, _ in }   // 桶栏点「聊天 #N」去档案馆那一条（10-05）
     @State private var data: MemPayload? = nil
     @State private var failed = false
     @State private var open: Set<String> = []
@@ -505,14 +506,16 @@ struct MemScreen: View {
         switch Preview.on ? Preview.screen : "" {
         case "memword", "memedit": return "word"
         case "memday", "memdayadd": return "day"
+        case "membk", "membkopen", "membkmon": return "bk"
         default: return "inj"
         }
     }()
     @StateObject private var wm = WordsModel()
     @StateObject private var dm = DatesModel()
+    @StateObject private var bm = BucketsModel()
     @State private var wordEdit: WordDraft? = nil
     @State private var dayAdd = false
-    private let motto = ["inj": "他每天醒来就看得到的", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
+    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
 
     var body: some View {
         ZStack {
@@ -530,6 +533,7 @@ struct MemScreen: View {
                         switch tab {
                         case "word": WordsTab(m: wm, onEdit: { wordEdit = $0 })
                         case "day": DatesTab(m: dm, onAdd: { dayAdd = true })
+                        case "bk": BucketsTab(m: bm, onArchive: onArchive)
                         default: injection
                         }
                     }
@@ -549,8 +553,9 @@ struct MemScreen: View {
             async let a: Void = loadAsk()   // 问寻、注入层、词条、日子并行拉
             async let w: Void = wm.load()
             async let dd: Void = dm.load()
+            async let bb: Void = bm.load()
             await load()
-            await a; await w; await dd
+            await a; await w; await dd; await bb
             if Preview.on && Preview.screen == "memedit", let g = wm.data?.groups.first, let s = g.sections.first, let it = s.items.first {
                 wordEdit = WordDraft(file: g.file, section: s.title, names: it.names.joined(separator: " / "), desc: it.desc, old: (g.file, it.line))
             }
@@ -594,6 +599,7 @@ struct MemScreen: View {
     private var tabs: some View {
         HStack(spacing: 0) {
             tabBtn("inj", "注入", "tabLayer")
+            tabBtn("bk", "桶", "tool-archive")
             tabBtn("word", "词条", "tabWord")
             tabBtn("day", "日子", "tabDay")
         }

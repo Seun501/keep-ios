@@ -472,7 +472,7 @@ struct ChatScreen: View {
         case "board", "boardpop", "boardreply", "letters", "letterread", "lettercompose", "seal", "sealdate", "lockpop", "lockerr": return [.board(openLetter: nil)]
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb": return [.album]
-        case "mem", "askpick", "memword", "memday", "memedit", "memdayadd": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
+        case "mem", "askpick", "memword", "memday", "memedit", "memdayadd", "membk", "membkopen", "membkmon": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
         case "places", "tripsheet": return [.places]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
@@ -496,7 +496,7 @@ struct ChatScreen: View {
                     case .board(let openLetter): BoardScreen(onLogout: onLogout, onBack: pop, onWeb: { path.append(.web($0)) }, openLetter: openLetter)
                     case .books: BooksScreen(onBack: pop)
                     case .album: AlbumScreen(onBack: pop, onArchive: { d, n in path.append(.arch(day: d, q: nil, no: n)) })
-                    case .mem: MemScreen(onBack: pop)
+                    case .mem: MemScreen(onBack: pop, onArchive: { d, n in path.append(.arch(day: d, q: nil, no: n)) })
                     case .places: PlacesScreen(onBack: pop)
                     case .arch(let day, let q, let no): ArchiveScreen(onBack: pop, day: day, query: q, focusNo: no)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
