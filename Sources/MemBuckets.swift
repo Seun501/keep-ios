@@ -130,30 +130,30 @@ struct BucketsTab: View {
     }
 
     private var chips: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             ScrollView(.horizontal, showsIndicators: false) {   // 搜索时多一枚「标题」，窄屏装不下就横着滑；加号钉在右边
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
             ForEach(BucketStyle.domains, id: \.key) { d in
                 let on = dom == d.key
                 Button { dom = on ? "" : d.key } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 2) {
                         Image(d.icon).renderingMode(.template).resizable().frame(width: 12, height: 12)
                         Text(d.label).font(Theme.cjk(12))
                     }
                     .foregroundColor(on ? Theme.knockText : Theme.muted)
-                    .padding(.horizontal, 10).frame(height: 25)
+                    .padding(.horizontal, 8).frame(height: 25)
                     .background(on ? Theme.knockBg : Theme.panel, in: Capsule())
                 }.buttonStyle(.plain)
             }
             Button { mine.toggle() } label: {
                 Text("克").font(Theme.cjk(12)).foregroundColor(mine ? Theme.knockText : Theme.muted)
-                    .padding(.horizontal, 10).frame(height: 25)
+                    .padding(.horizontal, 8).frame(height: 25)
                     .background(mine ? Theme.knockBg : Theme.panel, in: Capsule())
             }.buttonStyle(.plain)
             if !q.trimmingCharacters(in: .whitespaces).isEmpty {   // 「只搜标题」：搜索框有字才出现（寻 10-05）
                 Button { titleOnly.toggle() } label: {
                     Text("标题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
-                        .padding(.horizontal, 10).frame(height: 25)
+                        .padding(.horizontal, 8).frame(height: 25)
                         .background(titleOnly ? Theme.knockBg : Theme.panel, in: Capsule())
                 }.buttonStyle(.plain)
             }
