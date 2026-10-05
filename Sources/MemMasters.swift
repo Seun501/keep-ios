@@ -111,9 +111,9 @@ struct MasterPage: View {
             if let b = peek {
                 Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.32).ignoresSafeArea()
                     .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { peek = nil } }
-                BucketCard(b: b, isOpen: true, onArchive: { d, n in peek = nil; onArchive(d, n) })
+                BucketCard(b: b, isOpen: true, pop: true, onArchive: { d, n in peek = nil; onArchive(d, n) })
                     .shadow(color: Theme.text.opacity(0.18), radius: 16, y: 8)
-                    .padding(.horizontal, 18)
+                    .frame(width: min(UIScreen.main.bounds.width * 0.92, 400))   // 照留言板浮卡的宽
                     .transition(.opacity)
             }
         }

@@ -205,13 +205,14 @@ struct BucketsTab: View {
 struct BucketCard: View {
     let b: BucketsPayload.B
     var isOpen: Bool
+    var pop = false          // 主文件页里浮起来的那张：照留言板浮卡放大留白、题更大、题与正文空得更开（寻 10-05）
     var onArchive: (String, Int) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(b.t).font(Theme.georgiaCJK(16)).foregroundColor(Theme.text)
+                    Text(b.t).font(Theme.georgiaCJK(pop ? 18 : 16)).foregroundColor(Theme.text)
                     if let ic = BucketStyle.icon(b.d) {
                         Image(ic).renderingMode(.template).resizable().frame(width: 13, height: 13)
                             .foregroundColor(b.keep ? Theme.accent : Theme.muted)   // 受保护＝图标染赤陶（寻 10-05，不要锁）
@@ -222,15 +223,16 @@ struct BucketCard: View {
                 Text(BucketStyle.corner(b)).font(.custom("Georgia", size: 12)).foregroundColor(Theme.muted)
             }
             if !b.faded || isOpen {
-                Text(b.body).font(Theme.serif(14.5)).lineSpacing(4).foregroundColor(Theme.text.opacity(0.85))
+                Text(b.body).font(Theme.serif(pop ? 14.8 : 14.5)).lineSpacing(pop ? 7 : 4).foregroundColor(Theme.text.opacity(0.85))
                     .lineLimit(isOpen ? nil : 2).fixedSize(horizontal: false, vertical: isOpen)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, pop ? 14 : 8)
             }
             if isOpen { meta.padding(.top, 18) }
         }
-        .padding(EdgeInsets(top: 14, leading: 15, bottom: b.faded && !isOpen ? 13 : 15, trailing: 15))
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
-        .opacity(b.faded ? 0.5 : 1)
+        .padding(pop ? EdgeInsets(top: 22, leading: 22, bottom: 22, trailing: 22)
+                     : EdgeInsets(top: 14, leading: 15, bottom: b.faded && !isOpen ? 13 : 15, trailing: 15))
+        .background(RoundedRectangle(cornerRadius: pop ? 18 : 14, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
+        .opacity(b.faded && !pop ? 0.5 : 1)
         .contentShape(Rectangle())
     }
 
@@ -241,7 +243,7 @@ struct BucketCard: View {
             if !b.no.isEmpty {
                 HStack(spacing: 0) {
                     ForEach(Array(b.no.enumerated()), id: \.offset) { i, n in
-                        if i > 0 { Text("、") }
+                        if i > 0 { Text(" ") }
                         let day = (b.nd ?? []).indices.contains(i) ? b.nd![i] : ""
                         Text(verbatim: "#\(n)").foregroundColor(Theme.accent)
                             .onTapGesture { if !day.isEmpty { onArchive(day, n) } }
@@ -249,6 +251,6 @@ struct BucketCard: View {
                 }
             }
         }
-        .font(Theme.round(11)).lineSpacing(1).foregroundColor(Theme.muted)
+        .font(Theme.round(11.5)).lineSpacing(1).foregroundColor(Theme.muted)   // 和相册照片底下那几行同号
     }
 }
