@@ -84,6 +84,7 @@ struct BucketsTab: View {
     @State private var q = ""
     @State private var qFocused = false
     @State private var dom = ""
+    @State private var titleOnly = false   // 只搜标题（寻 10-05）
     @State private var mine = false     // 只看克亲手记的（寻 10-05：标签就写一个「克」）
     @State private var mon = ""          // yyyy-MM
     @State private var monOpen = Preview.on && Preview.screen == "membkmon"
@@ -96,7 +97,7 @@ struct BucketsTab: View {
         let k = q.trimmingCharacters(in: .whitespaces)
         return all.filter { b in
             (dom.isEmpty || b.d == dom) && (mon.isEmpty || b.day.hasPrefix(mon)) && (!mine || BucketStyle.byKe(b.src))
-                && (k.isEmpty || b.t.contains(k) || b.body.contains(k))
+                && (k.isEmpty || b.t.contains(k) || (!titleOnly && b.body.contains(k)))
         }.sorted { $0.day > $1.day }
     }
 
@@ -123,6 +124,11 @@ struct BucketsTab: View {
                        selectAllOnFocus: true, onSubmit: { qFocused = false })   // 照抽屉：有字时再点＝全选
                 .frame(height: 20)
             Text(verbatim: String(n)).font(Theme.round(14)).foregroundColor(Theme.muted)
+            Button { titleOnly.toggle() } label: {   // 「题」＝只搜标题；点亮淡赤陶
+                Text("题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
+                    .frame(width: 24, height: 24)
+                    .background(titleOnly ? Theme.knockBg : Theme.panel, in: Circle())
+            }.buttonStyle(.plain).padding(.trailing, -6)
         }
         .padding(.horizontal, 14).frame(height: 38)
         .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
