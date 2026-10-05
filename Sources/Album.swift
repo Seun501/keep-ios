@@ -507,15 +507,18 @@ struct MemScreen: View {
         case "memword", "memedit": return "word"
         case "memday", "memdayadd": return "day"
         case "membk", "membkopen", "membkmon": return "bk"
+        case "memmf", "memmfdoc", "memmfpeek": return "mf"
         default: return "inj"
         }
     }()
     @StateObject private var wm = WordsModel()
     @StateObject private var dm = DatesModel()
     @StateObject private var bm = BucketsModel()
+    @StateObject private var mm = MastersModel()
+    @State private var masterOpen: String? = Preview.on && ["memmfdoc", "memmfpeek"].contains(Preview.screen) ? "寻的身体与健康" : nil
     @State private var wordEdit: WordDraft? = nil
     @State private var dayAdd = false
-    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
+    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "mf": "他长久知道的那些事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
 
     var body: some View {
         ZStack {
@@ -534,6 +537,7 @@ struct MemScreen: View {
                         case "word": WordsTab(m: wm, onEdit: { wordEdit = $0 })
                         case "day": DatesTab(m: dm, onAdd: { dayAdd = true })
                         case "bk": BucketsTab(m: bm, onArchive: onArchive)
+                        case "mf": MastersTab(m: mm, onOpen: { n in withAnimation(.easeOut(duration: 0.26)) { masterOpen = n } })
                         default: injection
                         }
                     }
@@ -545,6 +549,10 @@ struct MemScreen: View {
             .ignoresSafeArea(.keyboard)
             if let d = wordEdit { WordSheet(m: wm, d: d, onClose: { wordEdit = nil }).id(d.id).zIndex(80) }
             if dayAdd { DaySheet(m: dm, onClose: { dayAdd = false }).zIndex(80) }
+            if let n = masterOpen {
+                MasterPage(name: n, m: mm, buckets: bm, onBack: { withAnimation(.easeOut(duration: 0.26)) { masterOpen = nil } }, onArchive: onArchive)
+                    .transition(.move(edge: .trailing)).zIndex(90)
+            }
         }
         .animation(.easeOut(duration: 0.24), value: wordEdit?.id)
         .animation(.easeOut(duration: 0.24), value: dayAdd)
@@ -554,8 +562,9 @@ struct MemScreen: View {
             async let w: Void = wm.load()
             async let dd: Void = dm.load()
             async let bb: Void = bm.load()
+            async let mf: Void = mm.load()
             await load()
-            await a; await w; await dd; await bb
+            await a; await w; await dd; await bb; await mf
             if Preview.on && Preview.screen == "memedit", let g = wm.data?.groups.first, let s = g.sections.first, let it = s.items.first {
                 wordEdit = WordDraft(file: g.file, section: s.title, names: it.names.joined(separator: " / "), desc: it.desc, old: (g.file, it.line))
             }
@@ -599,6 +608,7 @@ struct MemScreen: View {
     private var tabs: some View {
         HStack(spacing: 0) {
             tabBtn("inj", "注入", "tabLayer")
+            tabBtn("mf", "主文件", "tool-scroll")
             tabBtn("bk", "桶", "tool-archive")
             tabBtn("word", "词条", "tabWord")
             tabBtn("day", "日子", "tabDay")

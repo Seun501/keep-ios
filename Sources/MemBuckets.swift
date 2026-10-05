@@ -193,19 +193,28 @@ struct BucketsTab: View {
         return out
     }
 
-    /// 桶卡：Georgia 题＋分类图标（＋锁）＋右上 Georgia 小日期；两行宋体正文；淡去只露标题。点了原地下拉。
     private func card(_ b: BucketsPayload.B) -> some View {
         let isOpen = open.contains(b.id)
-        return VStack(alignment: .leading, spacing: 0) {
+        return BucketCard(b: b, isOpen: isOpen, onArchive: onArchive)
+            .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { if isOpen { open.remove(b.id) } else { open.insert(b.id) } } }
+    }
+}
+
+/// 桶卡（桶栏和主文件页浮卡共用）：Georgia 题＋分类线图标（受保护的染赤陶）＋右上 Georgia 小日期；
+/// 两行宋体正文；淡去只露标题、整张变浅；展开后正文全出，底下空一行接两行圆体小灰字（日期·谁记的 / 条号）。
+struct BucketCard: View {
+    let b: BucketsPayload.B
+    var isOpen: Bool
+    var onArchive: (String, Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(b.t).font(Theme.georgiaCJK(16)).foregroundColor(Theme.text)
                     if let ic = BucketStyle.icon(b.d) {
-                        Image(ic).renderingMode(.template).resizable().frame(width: 13, height: 13).foregroundColor(Theme.muted)
-                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
-                    }
-                    if b.keep {
-                        Image("lock").renderingMode(.template).resizable().frame(width: 12, height: 12).foregroundColor(Theme.knockText)
+                        Image(ic).renderingMode(.template).resizable().frame(width: 13, height: 13)
+                            .foregroundColor(b.keep ? Theme.accent : Theme.muted)   // 受保护＝图标染赤陶（寻 10-05，不要锁）
                             .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
                     }
                 }
@@ -217,17 +226,16 @@ struct BucketsTab: View {
                     .lineLimit(isOpen ? nil : 2).fixedSize(horizontal: false, vertical: isOpen)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
             }
-            if isOpen { meta(b).padding(.top, 9) }
+            if isOpen { meta.padding(.top, 18) }
         }
         .padding(EdgeInsets(top: 14, leading: 15, bottom: b.faded && !isOpen ? 13 : 15, trailing: 15))
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
         .opacity(b.faded ? 0.5 : 1)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { if isOpen { open.remove(b.id) } else { open.insert(b.id) } } }
     }
 
-    /// 照相册照片底下那两行：圆体小灰字，比正文小；条号赤陶，点了去档案馆
-    private func meta(_ b: BucketsPayload.B) -> some View {
+    /// 照相册照片底下那两行：圆体小灰字，比正文小；条号赤陶（不带「聊天」二字），点了去档案馆
+    private var meta: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(BucketStyle.cnDate(b.c) + " · " + BucketStyle.who(b.src))
             if !b.no.isEmpty {
@@ -235,7 +243,7 @@ struct BucketsTab: View {
                     ForEach(Array(b.no.enumerated()), id: \.offset) { i, n in
                         if i > 0 { Text("、") }
                         let day = (b.nd ?? []).indices.contains(i) ? b.nd![i] : ""
-                        Text(verbatim: "聊天 #\(n)").foregroundColor(Theme.accent)
+                        Text(verbatim: "#\(n)").foregroundColor(Theme.accent)
                             .onTapGesture { if !day.isEmpty { onArchive(day, n) } }
                     }
                 }
