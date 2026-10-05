@@ -506,7 +506,7 @@ struct MemScreen: View {
         switch Preview.on ? Preview.screen : "" {
         case "memword", "memedit": return "word"
         case "memday", "memdayadd": return "day"
-        case "membk", "membkopen", "membkmon": return "bk"
+        case "membk", "membkopen", "membkmon", "membkq": return "bk"
         case "memmf", "memmfdoc", "memmfpeek": return "mf"
         case "mem", "askpick": return "inj"
         default: return "bk"   // 寻 10-05：记忆页默认进桶栏

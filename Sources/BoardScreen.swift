@@ -230,7 +230,6 @@ struct BoardScreen: View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(dayEn(n.lastTs)).font(.custom("Georgia-Bold", size: 16)).tracking(0.16).foregroundColor(Theme.text)
-                    Text(verbatim: n.id).font(Theme.mono(11)).foregroundColor(Theme.muted)   // 克说「n071」时对得上是哪篇（寻 10-05）
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
                         let fresh = n.newCount
@@ -378,6 +377,9 @@ struct NotePop: View {
                                     // 09-15 寻定：名字标签和旁边的时间戳走方舟像素 12（预览里她点头的就是这一行）
                                     Text(mm.from == "xun" ? "寻" : "克").font(Theme.pixel(12))
                                         .foregroundColor(mm.from == "xun" ? xunGreen : Theme.accent)
+                                    if idx == 0 {   // 帖子编号放点开的卡里（克说「n071」时对得上是哪篇，寻 10-05）
+                                        Text(verbatim: note.id).font(Theme.mono(11)).foregroundColor(Theme.muted).padding(.leading, 4)
+                                    }
                                     Spacer()
                                     Text(TimeFmt.stamp(mm.ts ?? note.created)).font(Theme.pixel(12)).foregroundColor(Theme.muted)
                                 }

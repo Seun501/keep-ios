@@ -81,10 +81,10 @@ enum BucketStyle {
 struct BucketsTab: View {
     @ObservedObject var m: BucketsModel
     var onArchive: (String, Int) -> Void
-    @State private var q = ""
+    @State private var q = Preview.on && Preview.screen == "membkq" ? "青羊" : ""
     @State private var qFocused = false
     @State private var dom = ""
-    @State private var titleOnly = false   // 只搜标题（寻 10-05）
+    @State private var titleOnly = Preview.on && Preview.screen == "membkq"   // 只搜标题（寻 10-05）
     @State private var mine = false     // 只看克亲手记的（寻 10-05：标签就写一个「克」）
     @State private var mon = ""          // yyyy-MM
     @State private var monOpen = Preview.on && Preview.screen == "membkmon"
@@ -124,11 +124,6 @@ struct BucketsTab: View {
                        selectAllOnFocus: true, onSubmit: { qFocused = false })   // 照抽屉：有字时再点＝全选
                 .frame(height: 20)
             Text(verbatim: String(n)).font(Theme.round(14)).foregroundColor(Theme.muted)
-            Button { titleOnly.toggle() } label: {   // 「题」＝只搜标题；点亮淡赤陶
-                Text("题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
-                    .frame(width: 24, height: 24)
-                    .background(titleOnly ? Theme.knockBg : Theme.panel, in: Circle())
-            }.buttonStyle(.plain).padding(.trailing, -6)
         }
         .padding(.horizontal, 14).frame(height: 38)
         .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card).shadow(color: Theme.text.opacity(0.06), radius: 1, y: 1))
@@ -136,6 +131,8 @@ struct BucketsTab: View {
 
     private var chips: some View {
         HStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {   // 搜索时多一枚「标题」，窄屏装不下就横着滑；加号钉在右边
+            HStack(spacing: 6) {
             ForEach(BucketStyle.domains, id: \.key) { d in
                 let on = dom == d.key
                 Button { dom = on ? "" : d.key } label: {
@@ -153,6 +150,15 @@ struct BucketsTab: View {
                     .padding(.horizontal, 10).frame(height: 25)
                     .background(mine ? Theme.knockBg : Theme.panel, in: Capsule())
             }.buttonStyle(.plain)
+            if !q.trimmingCharacters(in: .whitespaces).isEmpty {   // 「只搜标题」：搜索框有字才出现（寻 10-05）
+                Button { titleOnly.toggle() } label: {
+                    Text("标题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
+                        .padding(.horizontal, 10).frame(height: 25)
+                        .background(titleOnly ? Theme.knockBg : Theme.panel, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+            }
+            }
             Spacer(minLength: 0)
             Button { withAnimation(.easeOut(duration: 0.2)) { monOpen.toggle() } } label: {
                 ZStack(alignment: .topTrailing) {
@@ -239,6 +245,7 @@ struct BucketCard: View {
             if !b.faded || isOpen {
                 Text(b.body).font(Theme.serif(pop ? 14.8 : 14.5)).lineSpacing(pop ? 7 : 4).foregroundColor(Theme.text.opacity(0.85))
                     .lineLimit(isOpen ? nil : 2).fixedSize(horizontal: false, vertical: isOpen)
+                    .textSelection(.enabled)   // 长按能选字复制（寻 10-05）
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, pop ? 14 : 8)
             }
             if isOpen { meta.padding(.top, 18) }
@@ -253,7 +260,7 @@ struct BucketCard: View {
     /// 照相册照片底下那两行：圆体小灰字，比正文小；条号赤陶（不带「聊天」二字），点了去档案馆
     private var meta: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: [BucketStyle.md(b.c), b.hm ?? "", BucketStyle.who(b.src)].filter { !$0.isEmpty }.joined(separator: "·"))   // 10/2·19:31·克
+            Text(verbatim: [BucketStyle.md(b.c), b.hm ?? "", BucketStyle.who(b.src)].filter { !$0.isEmpty }.joined(separator: " · "))   // 10/2·19:31·克
             if !b.no.isEmpty {
                 HStack(spacing: 0) {
                     ForEach(Array(b.no.enumerated()), id: \.offset) { i, n in
