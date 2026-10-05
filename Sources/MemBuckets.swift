@@ -152,7 +152,7 @@ struct BucketsTab: View {
             }.buttonStyle(.plain)
             if !q.trimmingCharacters(in: .whitespaces).isEmpty {   // 「只搜标题」：搜索框有字才出现（寻 10-05）
                 Button { titleOnly.toggle() } label: {
-                    Text("标题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
+                    Text("题").font(Theme.cjk(12)).foregroundColor(titleOnly ? Theme.knockText : Theme.muted)
                         .padding(.horizontal, 8).frame(height: 25)
                         .background(titleOnly ? Theme.knockBg : Theme.panel, in: Capsule())
                 }.buttonStyle(.plain)
