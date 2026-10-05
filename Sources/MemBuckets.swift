@@ -12,6 +12,7 @@ struct BucketsPayload: Decodable {
         var d: String
         var ev: String
         var c: String
+        var hm: String?
         var faded: Bool
         var keep: Bool
         var no: [Int]
@@ -68,12 +69,13 @@ enum BucketStyle {
     }
     static func who(_ src: String) -> String {
         switch src {
-        case "hold", "feel": return "克记的"
-        case "book": return "读书时记的"
-        case "import": return "七月补录"      // 07-03 通读旧对话一次导进来的那批
-        default: return "系统记的"            // grow / plan 这类系统代录
+        case "hold", "feel": return "克"
+        case "book": return "读书"
+        case "import": return "补录"          // 07-03 通读旧对话一次导进来的那批
+        default: return "系统"                // grow / plan 这类系统代录
         }
     }
+    static func byKe(_ src: String) -> Bool { src == "hold" || src == "feel" }
 }
 
 struct BucketsTab: View {
@@ -82,6 +84,7 @@ struct BucketsTab: View {
     @State private var q = ""
     @State private var qFocused = false
     @State private var dom = ""
+    @State private var mine = false     // 只看克亲手记的（寻 10-05：标签就写一个「克」）
     @State private var mon = ""          // yyyy-MM
     @State private var monOpen = Preview.on && Preview.screen == "membkmon"
     @State private var year = BucketStyle.thisYear
@@ -92,7 +95,7 @@ struct BucketsTab: View {
         let all = m.items ?? []
         let k = q.trimmingCharacters(in: .whitespaces)
         return all.filter { b in
-            (dom.isEmpty || b.d == dom) && (mon.isEmpty || b.day.hasPrefix(mon))
+            (dom.isEmpty || b.d == dom) && (mon.isEmpty || b.day.hasPrefix(mon)) && (!mine || BucketStyle.byKe(b.src))
                 && (k.isEmpty || b.t.contains(k) || b.body.contains(k))
         }.sorted { $0.day > $1.day }
     }
@@ -117,7 +120,7 @@ struct BucketsTab: View {
     private func search(_ n: Int) -> some View {
         HStack(spacing: 8) {
             PlainField(text: $q, focused: $qFocused, placeholder: "Search…", font: Self.searchFont, returnKey: .done,
-                       onSubmit: { qFocused = false })
+                       selectAllOnFocus: true, onSubmit: { qFocused = false })   // 照抽屉：有字时再点＝全选
                 .frame(height: 20)
             Text(verbatim: String(n)).font(Theme.round(14)).foregroundColor(Theme.muted)
         }
@@ -139,6 +142,11 @@ struct BucketsTab: View {
                     .background(on ? Theme.knockBg : Theme.panel, in: Capsule())
                 }.buttonStyle(.plain)
             }
+            Button { mine.toggle() } label: {
+                Text("克").font(Theme.cjk(12)).foregroundColor(mine ? Theme.knockText : Theme.muted)
+                    .padding(.horizontal, 10).frame(height: 25)
+                    .background(mine ? Theme.knockBg : Theme.panel, in: Capsule())
+            }.buttonStyle(.plain)
             Spacer(minLength: 0)
             Button { withAnimation(.easeOut(duration: 0.2)) { monOpen.toggle() } } label: {
                 ZStack(alignment: .topTrailing) {
@@ -211,13 +219,13 @@ struct BucketCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(b.t).font(Theme.georgiaCJK(pop ? 18 : 16)).foregroundColor(Theme.text)
-                    if let ic = BucketStyle.icon(b.d) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if let ic = BucketStyle.icon(b.d) {   // 分类图标放标题最前（寻 10-05）
                         Image(ic).renderingMode(.template).resizable().frame(width: 13, height: 13)
                             .foregroundColor(b.keep ? Theme.accent : Theme.muted)   // 受保护＝图标染赤陶（寻 10-05，不要锁）
                             .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
                     }
+                    Text(b.t).font(Theme.georgiaCJK(pop ? 18 : 16)).foregroundColor(Theme.text)
                 }
                 Spacer(minLength: 4)
                 Text(BucketStyle.corner(b)).font(.custom("Georgia", size: 12)).foregroundColor(Theme.muted)
@@ -239,7 +247,7 @@ struct BucketCard: View {
     /// 照相册照片底下那两行：圆体小灰字，比正文小；条号赤陶（不带「聊天」二字），点了去档案馆
     private var meta: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(BucketStyle.cnDate(b.c) + " · " + BucketStyle.who(b.src))
+            Text(verbatim: [BucketStyle.md(b.c), b.hm ?? "", BucketStyle.who(b.src)].filter { !$0.isEmpty }.joined(separator: "·"))   // 10/2·19:31·克
             if !b.no.isEmpty {
                 HStack(spacing: 0) {
                     ForEach(Array(b.no.enumerated()), id: \.offset) { i, n in

@@ -508,7 +508,8 @@ struct MemScreen: View {
         case "memday", "memdayadd": return "day"
         case "membk", "membkopen", "membkmon": return "bk"
         case "memmf", "memmfdoc", "memmfpeek": return "mf"
-        default: return "inj"
+        case "mem", "askpick": return "inj"
+        default: return "bk"   // 寻 10-05：记忆页默认进桶栏
         }
     }()
     @StateObject private var wm = WordsModel()
