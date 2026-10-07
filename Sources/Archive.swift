@@ -29,7 +29,12 @@ struct ArchEntry: Decodable, Identifiable {
     var hm: String { TimeFmt.hm(ts) }
     var isPing: Bool { meal == true || sleepNote == true || napNote == true || rainNote == true || placeNote == true }
 }
-struct ArchDay: Decodable { var date: String; var entries: [ArchEntry] }
+/// 克写的那天的近况（10-07 寻定：近况在网关存档里单独成一块、像日记）。不占条号，挂在它写的那一天
+struct ArchRecent: Decodable {
+    var text: String; var short: String?; var writtenAt: String?
+    enum CodingKeys: String, CodingKey { case text, short, writtenAt = "written_at" }
+}
+struct ArchDay: Decodable { var date: String; var entries: [ArchEntry]; var recent: ArchRecent? }
 struct ArchHit: Decodable, Identifiable {
     var date: String; var time: String; var who: String?; var snippet: String?; var think: Bool?
     var dayMore: Int?
@@ -192,6 +197,7 @@ struct ArchiveScreen: View {
             OrangeScroll(name: "arch") {
                 let picks = Self.picks(d)
                 LazyVStack(spacing: 22) {
+                    if let r = d.recent { RecentCard(r: r) }   // 克写的这一天：页首一张，默认收着
                     ForEach(d.entries) { e in row(e, pick: picks[e.id]).id(e.id) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
@@ -342,5 +348,30 @@ struct ArchiveScreen: View {
             }
             .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 24)
         }
+    }
+}
+
+
+/// 档案馆天页顶上那张「克写的这一天」（10-07）：淡底无描边，宋体正文，默认露五行、点一下展开
+struct RecentCard: View {
+    var r: ArchRecent
+    @State private var open = false
+    private var when: String {   // 「2026-10-06 10:02」→「10/6 10:02 写」
+        guard let w = r.writtenAt, w.count >= 16 else { return "" }
+        let mo = Int(w.dropFirst(5).prefix(2)) ?? 0, dd = Int(w.dropFirst(8).prefix(2)) ?? 0
+        return " · \(mo)/\(dd) \(w.suffix(5)) 写"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("📔 克写的这一天" + when).font(Theme.pixel(12)).foregroundColor(Theme.muted)
+            Text(r.text).font(Theme.serif(14)).lineSpacing(5).foregroundColor(Theme.text)
+                .lineLimit(open ? nil : 5).textSelection(.enabled)
+            Text(open ? "收起" : "展开 ›").font(Theme.round(12)).foregroundColor(Theme.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 12, leading: 15, bottom: 11, trailing: 15))
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } }
     }
 }
