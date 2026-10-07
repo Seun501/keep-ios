@@ -483,6 +483,7 @@ struct AskXun: Decodable {
         var id: Int
         var q: String
         var title: String?
+        var src: String?          // sweep＝整理记忆时问的；pending＝克复审悬着的事时问的（10-07）
         var status: String?
         var answer: String?
         var note: String?
@@ -678,18 +679,22 @@ struct MemScreen: View {
     }
     /// 截图班 askpick：第一张没答的卡预先选中「不是」并写了补充
     private func demoPick(_ q: AskXun.Q, _ qs: [AskXun.Q]) -> String? {
-        (Preview.on && Preview.screen == "askpick" && q.id == qs.first?.id) ? "不是" : nil
+        (Preview.on && Preview.screen == "askpick" && q.id == qs.first?.id) ? "" : nil
     }
     /// 答过的右侧小字：answered/sent 等克批、kept 不用改、done 克已批、rejected 克没采用；不认识的状态当等克批
     static func askState(_ q: AskXun.Q) -> String {
         let s: String
-        switch q.status ?? "" {
-        case "kept": s = "不用改"
-        case "done": s = "克已批"
-        case "rejected": s = "克没采用"
-        default: s = "等克批"
+        if q.src == "pending" {   // 悬着的事那路：答了进第二天的便签草拟
+            s = q.status == "done" ? "已写进便签" : "等明天的便签"
+        } else {
+            switch q.status ?? "" {
+            case "kept": s = "不用改"
+            case "done": s = "克已批"
+            case "rejected": s = "克没采用"
+            default: s = "等克批"
+            }
         }
-        return (q.answer ?? "") + " · " + s
+        return ((q.answer ?? "").isEmpty ? "" : q.answer! + " · ") + s
     }
     private func loadAsk() async {
         if Preview.on {
@@ -711,7 +716,7 @@ struct MemScreen: View {
         r.httpMethod = "POST"
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: Any] = ["id": id, "answer": a]
+        var body: [String: Any] = ["id": id, "answer": a]   // a 现在多是空串：只交那句话（10-07）
         if !note.isEmpty { body["note"] = note }
         r.httpBody = try? JSONSerialization.data(withJSONObject: body)
         guard let (d, resp) = try? await URLSession.shared.data(for: r) else { return false }
@@ -783,15 +788,16 @@ struct AskCard: View {
             Text(q.q).font(Theme.cjk(15)).lineSpacing(4).foregroundColor(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
             if let t = q.title, !t.isEmpty {
-                Text("整理「\(t)」时想到的").font(Theme.cjk(11.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.top, 6)
+                Text(q.src == "pending" ? "悬着的事：\(t)" : "整理「\(t)」时想到的")
+                    .font(Theme.cjk(11.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.top, 6)
             }
-            HStack(spacing: 10) { choice("是"); choice("不是") }.padding(.top, 12)
-            if pick != nil {
-                PlainField(text: $note, focused: $focused, placeholder: "补一句（可不填）", font: Theme.uiSys(13), returnKey: .done, onSubmit: { focused = false })
-                    .frame(height: 18)
-                    .padding(.vertical, 9).padding(.horizontal, 12)
-                    .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(.top, 10)
+            // 寻 10-07：拆掉「是 / 不是」，写一句话就行
+            PlainField(text: $note, focused: $focused, placeholder: "写一句", font: Theme.uiSys(13), returnKey: .done, onSubmit: { focused = false })
+                .frame(height: 18)
+                .padding(.vertical, 9).padding(.horizontal, 12)
+                .background(Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.top, 12)
+            if !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
                     if failed { Text("没交上，再点一次").font(Theme.cjk(12)).foregroundColor(Theme.muted) }
@@ -810,23 +816,12 @@ struct AskCard: View {
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
     }
-    /// 淡底圆角块；选中＝淡赤陶底＋朱砂字（夜里跟着变，同敲门那对色）
-    private func choice(_ a: String) -> some View {
-        let on = pick == a
-        return Button { pick = on ? nil : a; failed = false } label: {
-            Text(a).font(Theme.cjk(14, weight: on ? .medium : .regular)).foregroundColor(on ? Theme.knockText : Theme.text)
-                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .background(on ? Theme.knockBg : Theme.boardBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).disabled(sending)
-    }
     private func send() {
-        guard let a = pick, !sending else { return }
-        sending = true; failed = false; focused = false
         let n = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        guard !n.isEmpty, !sending else { return }
+        sending = true; failed = false; focused = false
         Task {
-            let ok = await onSend(a, n)
+            let ok = await onSend(pick ?? "", n)
             sending = false
             if !ok { failed = true }
         }

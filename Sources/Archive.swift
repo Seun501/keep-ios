@@ -197,7 +197,6 @@ struct ArchiveScreen: View {
             OrangeScroll(name: "arch") {
                 let picks = Self.picks(d)
                 LazyVStack(spacing: 22) {
-                    if let r = d.recent { RecentCard(r: r) }   // 克写的这一天：页首一张，默认收着
                     ForEach(d.entries) { e in row(e, pick: picks[e.id]).id(e.id) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
