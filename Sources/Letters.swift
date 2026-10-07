@@ -56,11 +56,15 @@ final class LettersModel: ObservableObject {
             loaded = true; return
         }
         guard let token = Keychain.token else { return }
+        if !loaded, let c = NetCache.load("api/letters"), let p = try? JSONDecoder().decode(LettersPayload.self, from: c) {
+            entries = p.entries; loaded = true   // 先摆上次存的信（10-07）；未读与红点只认网上那份
+        }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/letters"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let p = try? JSONDecoder().decode(LettersPayload.self, from: d) else { return }
+        NetCache.save("api/letters", d)
         entries = p.entries; unseen = p.unseen ?? []; badge = p.badge ?? 0
         loaded = true
     }

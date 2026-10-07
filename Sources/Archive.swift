@@ -361,17 +361,18 @@ struct RecentCard: View {
         let mo = Int(w.dropFirst(5).prefix(2)) ?? 0, dd = Int(w.dropFirst(8).prefix(2)) ?? 0
         return " · \(mo)/\(dd) \(w.suffix(5)) 写"
     }
+    private func flip() { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("📔 克写的这一天" + when).font(Theme.pixel(12)).foregroundColor(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()).onTapGesture(perform: flip)
             Text(r.text).font(Theme.serif(14)).lineSpacing(5).foregroundColor(Theme.text)
-                .lineLimit(open ? nil : 5).textSelection(.enabled)
+                .lineLimit(open ? nil : 5).textSelection(.enabled)   // 正文点了不开合，好选字（寻 10-07）
             Text(open ? "收起" : "展开 ›").font(Theme.round(12)).foregroundColor(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()).onTapGesture(perform: flip)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(top: 12, leading: 15, bottom: 11, trailing: 15))
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { open.toggle() } }
     }
 }

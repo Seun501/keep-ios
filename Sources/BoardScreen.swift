@@ -42,6 +42,7 @@ final class BoardModel: ObservableObject {
     @Published var tab = "notes"          // tickets | notes | letters
     @Published var openId: String? = nil
     @Published var loaded = false          // 没拉到之前不显示「还没有帖子」（寻验 32）
+    private var landed = false             // 落栏只在第一次拉到网上那份时做（暂存那份不算）
 
     func refresh() async {
         if Preview.on, let d = Preview.json("preview_notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: d) {
@@ -51,14 +52,16 @@ final class BoardModel: ObservableObject {
             return
         }
         guard let token = Keychain.token else { return }
+        if !loaded, let c = NetCache.load("api/notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: c) {
+            notes = p.notes; unread = p.unread ?? 0; loaded = true   // 先摆上次存的（10-07），下面拉到新的再换
+        }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/notes"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let p = try? JSONDecoder().decode(NotesPayload.self, from: d) else { return }
-        notes = p.notes
-        unread = p.unread ?? 0
-        if !loaded { await landOnTab(token) }   // 第一次翻开：哪栏有新进门直接落哪栏（照网页 notesBtn，寻验 44）
+        if NetCache.save("api/notes", d) || !loaded { notes = p.notes; unread = p.unread ?? 0 }
+        if !landed { landed = true; await landOnTab(token) }   // 第一次翻开：哪栏有新进门直接落哪栏（照网页 notesBtn，寻验 44）
         loaded = true
     }
     /// 照网页：信＞工单；留言有新落默认栏本身

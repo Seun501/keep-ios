@@ -28,13 +28,18 @@ final class MastersModel: ObservableObject {
             if let d = Preview.json("preview_masters"), let p = try? JSONDecoder().decode(MastersPayload.self, from: d) { files = p.files } else { failed = true }
             return
         }
+        if files == nil, let c = NetCache.load("api/masters"), let p = try? JSONDecoder().decode(MastersPayload.self, from: c) { files = p.files }
         guard let (d, code) = await MemAPI.call("api/masters"), code == 200,
               let p = try? JSONDecoder().decode(MastersPayload.self, from: d) else { failed = files == nil; return }
-        files = p.files; failed = false
+        if NetCache.save("api/masters", d) || files == nil { files = p.files }
+        failed = false
     }
     func doc(_ name: String) async -> MasterDoc? {
         if Preview.on { return Preview.json("preview_master_doc").flatMap { try? JSONDecoder().decode(MasterDoc.self, from: $0) } }
-        guard let (d, code) = await MemAPI.call("api/masters/" + name), code == 200 else { return nil }
+        guard let (d, code) = await MemAPI.call("api/masters/" + name), code == 200 else {   // 没连上就拿上次存的
+            return NetCache.load("api/masters/" + name).flatMap { try? JSONDecoder().decode(MasterDoc.self, from: $0) }
+        }
+        NetCache.save("api/masters/" + name, d)
         return try? JSONDecoder().decode(MasterDoc.self, from: d)
     }
 }

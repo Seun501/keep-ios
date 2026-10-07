@@ -34,9 +34,11 @@ final class BucketsModel: ObservableObject {
             if let d = Preview.json("preview_buckets"), let p = try? JSONDecoder().decode(BucketsPayload.self, from: d) { items = p.items } else { failed = true }
             return
         }
+        if items == nil, let c = NetCache.load("api/buckets"), let p = try? JSONDecoder().decode(BucketsPayload.self, from: c) { items = p.items }
         guard let (d, code) = await MemAPI.call("api/buckets"), code == 200,
               let p = try? JSONDecoder().decode(BucketsPayload.self, from: d) else { failed = items == nil; return }
-        items = p.items; failed = false
+        if NetCache.save("api/buckets", d) || items == nil { items = p.items }
+        failed = false
     }
 }
 

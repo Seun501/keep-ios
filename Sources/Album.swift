@@ -737,14 +737,15 @@ struct MemScreen: View {
                 Text(side).font(Theme.round(11)).tracking(0.44).foregroundColor(Theme.muted)
                 Text("›").font(Theme.cjk(13)).foregroundColor(Theme.muted).rotationEffect(.degrees(isOpen ? 90 : 0))
             }
-            if isOpen { RichText(attr: MD.keNS(full, size: 14.2, weight: .regular, lineHeight: 1.65)).padding(.top, 10) }
+            // 只有抬头这一行开合（寻 10-07：展开后要选正文里的字，点正文别收起）
+            .padding(.vertical, 13).contentShape(Rectangle())
+            .onTapGesture { if isOpen { open.remove(key) } else { open.insert(key) } }
+            if isOpen { RichText(attr: MD.keNS(full, size: 14.2, weight: .regular, lineHeight: 1.65)).padding(.bottom, 13) }
         }
-        .padding(EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 15))
+        .padding(EdgeInsets(top: 0, leading: 15, bottom: 0, trailing: 15))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Wax.ink.opacity(0.06), radius: 2, y: 1)
-        .contentShape(Rectangle())
-        .onTapGesture { if isOpen { open.remove(key) } else { open.insert(key) } }
     }
     private func load() async {
         if Preview.on {
@@ -752,11 +753,13 @@ struct MemScreen: View {
             return
         }
         guard let token = Keychain.token else { return }
+        if data == nil, let c = NetCache.load("api/memory/injection"), let p = try? JSONDecoder().decode(MemPayload.self, from: c) { data = p }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/memory/injection"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200,
-              let p = try? JSONDecoder().decode(MemPayload.self, from: d) else { failed = true; return }
-        data = p
+              let p = try? JSONDecoder().decode(MemPayload.self, from: d) else { failed = data == nil; return }
+        if NetCache.save("api/memory/injection", d) || data == nil { data = p }
+        failed = false
     }
 }
 

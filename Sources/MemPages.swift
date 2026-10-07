@@ -41,6 +41,27 @@ enum MemAPI {
     }
 }
 
+/// 本地暂存（寻 10-07：记忆页、留言板每次点开都现拉，慢）：翻开先摆上次存下的那份，
+/// 同时去拉新的，拉到了、和存的不一样才换上并存下。只存 GET 回包，放系统缓存目录（系统清了就重拉）。
+enum NetCache {
+    private static var dir: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("netcache", isDirectory: true)
+    }
+    private static func file(_ key: String) -> URL {
+        dir.appendingPathComponent(key.replacingOccurrences(of: "/", with: "_") + ".json")
+    }
+    static func load(_ key: String) -> Data? { Preview.on ? nil : try? Data(contentsOf: file(key)) }
+    /// 存下；回 true＝和上次存的不一样（调用方据此决定要不要换掉屏上那份）
+    @discardableResult
+    static func save(_ key: String, _ d: Data) -> Bool {
+        if Preview.on { return true }
+        if let old = try? Data(contentsOf: file(key)), old == d { return false }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? d.write(to: file(key), options: .atomic)
+        return true
+    }
+}
+
 @MainActor
 final class WordsModel: ObservableObject {
     @Published var data: WordsPayload? = nil
@@ -50,9 +71,11 @@ final class WordsModel: ObservableObject {
             if let d = Preview.json("preview_words"), let p = try? JSONDecoder().decode(WordsPayload.self, from: d) { data = p } else { failed = true }
             return
         }
+        if data == nil, let c = NetCache.load("api/words"), let p = try? JSONDecoder().decode(WordsPayload.self, from: c) { data = p }
         guard let (d, code) = await MemAPI.call("api/words"), code == 200,
               let p = try? JSONDecoder().decode(WordsPayload.self, from: d) else { failed = data == nil; return }
-        data = p; failed = false
+        if NetCache.save("api/words", d) || data == nil { data = p }
+        failed = false
     }
     /// 存/删：成功回 nil（列表用回包刷新）；失败回给她看的一句话
     func send(_ body: [String: Any]) async -> String? {
@@ -78,9 +101,11 @@ final class DatesModel: ObservableObject {
             if let d = Preview.json("preview_dates"), let p = try? JSONDecoder().decode(DatesPayload.self, from: d) { data = p } else { failed = true }
             return
         }
+        if data == nil, let c = NetCache.load("api/dates"), let p = try? JSONDecoder().decode(DatesPayload.self, from: c) { data = p }
         guard let (d, code) = await MemAPI.call("api/dates"), code == 200,
               let p = try? JSONDecoder().decode(DatesPayload.self, from: d) else { failed = data == nil; return }
-        data = p; failed = false
+        if NetCache.save("api/dates", d) || data == nil { data = p }
+        failed = false
     }
     func send(_ body: [String: Any]) async -> String? {
         if Preview.on { return "预览里不真存" }
