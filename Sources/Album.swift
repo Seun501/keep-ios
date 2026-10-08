@@ -509,6 +509,7 @@ struct MemScreen: View {
         case "memday", "memdayadd": return "day"
         case "membk", "membkopen", "membkmon", "membkq": return "bk"
         case "memmf", "memmfdoc", "memmfpeek": return "mf"
+        case "memrecent": return "recent"
         case "mem", "askpick": return "inj"
         default: return "bk"   // 寻 10-05：记忆页默认进桶栏
         }
@@ -517,10 +518,11 @@ struct MemScreen: View {
     @StateObject private var dm = DatesModel()
     @StateObject private var bm = BucketsModel()
     @StateObject private var mm = MastersModel()
+    @StateObject private var rm = RecentModel()
     @State private var masterOpen: String? = Preview.on && ["memmfdoc", "memmfpeek"].contains(Preview.screen) ? "寻的身体与健康" : nil
     @State private var wordEdit: WordDraft? = nil
     @State private var dayAdd = false
-    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "mf": "他长久知道的那些事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提"]
+    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "mf": "他长久知道的那些事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提", "recent": "他每天写下的前一天"]
 
     var body: some View {
         ZStack {
@@ -540,6 +542,7 @@ struct MemScreen: View {
                         case "day": DatesTab(m: dm, onAdd: { dayAdd = true })
                         case "bk": BucketsTab(m: bm, onArchive: onArchive)
                         case "mf": MastersTab(m: mm, onOpen: { n in withAnimation(.easeOut(duration: 0.26)) { masterOpen = n } })
+                        case "recent": RecentTab(m: rm)
                         default: injection
                         }
                     }
@@ -565,8 +568,9 @@ struct MemScreen: View {
             async let dd: Void = dm.load()
             async let bb: Void = bm.load()
             async let mf: Void = mm.load()
+            async let rr: Void = rm.load()
             await load()
-            await a; await w; await dd; await bb; await mf
+            await a; await w; await dd; await bb; await mf; await rr
             if Preview.on && Preview.screen == "memedit", let g = wm.data?.groups.first, let s = g.sections.first, let it = s.items.first {
                 wordEdit = WordDraft(file: g.file, section: s.title, names: it.names.joined(separator: " / "), desc: it.desc, old: (g.file, it.line))
             }
@@ -610,6 +614,7 @@ struct MemScreen: View {
     private var tabs: some View {
         HStack(spacing: 0) {
             tabBtn("inj", "注入", "tabLayer")
+            tabBtn("recent", "近况", "tool-notebook")
             tabBtn("mf", "主文件", "tool-scroll")
             tabBtn("bk", "桶", "tool-archive")
             tabBtn("word", "词条", "tabWord")
