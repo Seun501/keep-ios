@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 记忆页「近况」栏（寻 10-07：克写的 days/ 一篇篇列，是记忆页一栏、不是档案馆卡）
+// MARK: - 记忆页「近况」（寻 10-07：克写的 days/ 一篇篇列，是记忆页一栏、不是档案馆卡；10-08 六栏太多，并进日子栏底下）
 // 接口 /api/recent：新的在前，每篇＝详细版＋短版（四天前那天他压的三五句，有才有）＋几点写的。只读。
 
 struct RecentPayload: Decodable {
@@ -30,18 +30,15 @@ final class RecentModel: ObservableObject {
 
 struct RecentTab: View {
     @ObservedObject var m: RecentModel
-    // 预览里第一篇开着，截图看得见正文样子
-    @State private var open: Set<String> = Preview.on ? ["2026-10-07"] : []
+    @State private var open: Set<String> = []
     var body: some View {
+        // 接在日子栏「每年的」下面：按月分段，栏题「他写下的 · 十月 · 7 篇」；没写过/没拉到就整段不出，不打扰上面的日子
         if let d = m.data {
-            if d.days.isEmpty { MemEmpty("他还没写过近况") }
-            // 按月分段，栏题「十月 · 7 篇」
             ForEach(months(d.days)) { g in
-                SecTitle("\(g.id) · \(g.days.count) 篇")
+                SecTitle("他写下的 · \(g.id) · \(g.days.count) 篇")
                 ForEach(g.days, id: \.date) { day in card(day) }
             }
-        } else if m.failed { MemEmpty("没拿到数据，退出来再进一次试试") }
-        else { MemEmpty("加载中…") }
+        }
     }
     /// 卡片同注入栏：只有抬头开合，正文可选字（寻 10-07）
     private func card(_ day: RecentPayload.Day) -> some View {

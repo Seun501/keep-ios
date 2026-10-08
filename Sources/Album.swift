@@ -506,10 +506,9 @@ struct MemScreen: View {
     @State private var tab: String = {
         switch Preview.on ? Preview.screen : "" {
         case "memword", "memedit": return "word"
-        case "memday", "memdayadd": return "day"
+        case "memday", "memdayadd", "memrecent": return "day"
         case "membk", "membkopen", "membkmon", "membkq": return "bk"
         case "memmf", "memmfdoc", "memmfpeek": return "mf"
-        case "memrecent": return "recent"
         case "mem", "askpick": return "inj"
         default: return "bk"   // 寻 10-05：记忆页默认进桶栏
         }
@@ -522,7 +521,7 @@ struct MemScreen: View {
     @State private var masterOpen: String? = Preview.on && ["memmfdoc", "memmfpeek"].contains(Preview.screen) ? "寻的身体与健康" : nil
     @State private var wordEdit: WordDraft? = nil
     @State private var dayAdd = false
-    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "mf": "他长久知道的那些事", "word": "你提到时，递给他的那一行", "day": "早安卡提前三天开始提", "recent": "他每天写下的前一天"]
+    private let motto = ["inj": "他每天醒来就看得到的", "bk": "他记下的每一件事", "mf": "他长久知道的那些事", "word": "你提到时，递给他的那一行", "day": "快到的，和他写下的"]
 
     var body: some View {
         ZStack {
@@ -539,10 +538,11 @@ struct MemScreen: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         switch tab {
                         case "word": WordsTab(m: wm, onEdit: { wordEdit = $0 })
-                        case "day": DatesTab(m: dm, onAdd: { dayAdd = true })
+                        case "day":   // 近况并进日子栏（寻 10-08：六栏太多）：快到的在上，他写下的在下
+                            DatesTab(m: dm, onAdd: { dayAdd = true })
+                            RecentTab(m: rm)
                         case "bk": BucketsTab(m: bm, onArchive: onArchive)
                         case "mf": MastersTab(m: mm, onOpen: { n in withAnimation(.easeOut(duration: 0.26)) { masterOpen = n } })
-                        case "recent": RecentTab(m: rm)
                         default: injection
                         }
                     }
@@ -614,7 +614,6 @@ struct MemScreen: View {
     private var tabs: some View {
         HStack(spacing: 0) {
             tabBtn("inj", "注入", "tabLayer")
-            tabBtn("recent", "近况", "tool-notebook")
             tabBtn("mf", "主文件", "tool-scroll")
             tabBtn("bk", "桶", "tool-archive")
             tabBtn("word", "词条", "tabWord")
