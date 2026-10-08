@@ -46,11 +46,14 @@ final class MastersModel: ObservableObject {
 
 struct MastersTab: View {
     @ObservedObject var m: MastersModel
+    @ObservedObject var changes: ChangesModel
+    var onChanges: () -> Void
     var onOpen: (String) -> Void
 
     var body: some View {
         if m.failed { MemEmpty("没拿到主文件，退出来再进一次试试") }
         else if let fs = m.files {
+            ChangesEntry(m: changes, onOpen: onChanges)   // 改动单只读页入口（10-08）：改的就是这些主文件
             ForEach(["常驻", "路径为主", "其余"], id: \.self) { tag in
                 let arr = fs.filter { $0.tag == tag }
                 if !arr.isEmpty {

@@ -508,7 +508,7 @@ struct MemScreen: View {
         case "memword", "memedit": return "word"
         case "memday", "memdayadd", "memrecent": return "day"
         case "membk", "membkopen", "membkmon", "membkq": return "bk"
-        case "memmf", "memmfdoc", "memmfpeek": return "mf"
+        case "memmf", "memmfdoc", "memmfpeek", "memchanges": return "mf"
         case "mem", "askpick": return "inj"
         default: return "bk"   // 寻 10-05：记忆页默认进桶栏
         }
@@ -518,6 +518,8 @@ struct MemScreen: View {
     @StateObject private var bm = BucketsModel()
     @StateObject private var mm = MastersModel()
     @StateObject private var rm = RecentModel()
+    @StateObject private var cm = ChangesModel()
+    @State private var changesOpen = Preview.on && Preview.screen == "memchanges"
     @State private var masterOpen: String? = Preview.on && ["memmfdoc", "memmfpeek"].contains(Preview.screen) ? "寻的身体与健康" : nil
     @State private var wordEdit: WordDraft? = nil
     @State private var dayAdd = false
@@ -542,7 +544,8 @@ struct MemScreen: View {
                             DatesTab(m: dm, onAdd: { dayAdd = true })
                             RecentTab(m: rm)
                         case "bk": BucketsTab(m: bm, onArchive: onArchive)
-                        case "mf": MastersTab(m: mm, onOpen: { n in withAnimation(.easeOut(duration: 0.26)) { masterOpen = n } })
+                        case "mf": MastersTab(m: mm, changes: cm, onChanges: { withAnimation(.easeOut(duration: 0.26)) { changesOpen = true } },
+                                              onOpen: { n in withAnimation(.easeOut(duration: 0.26)) { masterOpen = n } })
                         default: injection
                         }
                     }
@@ -558,6 +561,10 @@ struct MemScreen: View {
                 MasterPage(name: n, m: mm, buckets: bm, onBack: { withAnimation(.easeOut(duration: 0.26)) { masterOpen = nil } }, onArchive: onArchive)
                     .transition(.move(edge: .trailing)).zIndex(90)
             }
+            if changesOpen {
+                ChangesPage(m: cm, onBack: { withAnimation(.easeOut(duration: 0.26)) { changesOpen = false } })
+                    .transition(.move(edge: .trailing)).zIndex(90)
+            }
         }
         .animation(.easeOut(duration: 0.24), value: wordEdit?.id)
         .animation(.easeOut(duration: 0.24), value: dayAdd)
@@ -569,8 +576,9 @@ struct MemScreen: View {
             async let bb: Void = bm.load()
             async let mf: Void = mm.load()
             async let rr: Void = rm.load()
+            async let ch: Void = cm.load()
             await load()
-            await a; await w; await dd; await bb; await mf; await rr
+            await a; await w; await dd; await bb; await mf; await rr; await ch
             if Preview.on && Preview.screen == "memedit", let g = wm.data?.groups.first, let s = g.sections.first, let it = s.items.first {
                 wordEdit = WordDraft(file: g.file, section: s.title, names: it.names.joined(separator: " / "), desc: it.desc, old: (g.file, it.line))
             }

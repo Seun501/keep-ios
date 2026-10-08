@@ -1,0 +1,22 @@
+{
+ "open": [
+  {"id": 161, "op": "CHANGE", "status": "pending", "explicit": true, "file": "寻的身体与健康",
+   "target": "（示例）寻每天早上七点起床。", "text": "（示例）寻开学后改成每天早上六点半起床。",
+   "quote": "（示例）开学了得早起", "nos": [4021], "day": "2026-10-06", "at": "2026-10-08T14:02:47+08:00", "kind": "nightly"},
+  {"id": 162, "op": "ADD", "status": "pending", "explicit": false, "file": "学业与计划",
+   "text": "（示例）寻这学期选了统计和计量。", "quote": "（示例）这学期有统计", "nos": [4033],
+   "day": "2026-10-06", "at": "2026-10-08T14:02:47+08:00", "kind": "nightly"}
+ ],
+ "done": [
+  {"id": 158, "op": "DATE", "status": "approved", "date": "2026-10-31", "title": "（示例）期中考试",
+   "quote": "（示例）月底期中", "nos": [3990], "day": "2026-10-05", "at": "2026-10-08T07:31:01+08:00", "kind": "nightly"},
+  {"id": 157, "op": "ADD", "status": "edited", "file": "关于寻", "section": "人",
+   "text": "（示例）小林：寻的室友，学会计。", "quote": "（示例）小林说", "nos": [3984],
+   "day": "2026-10-05", "at": "2026-10-08T07:31:01+08:00", "kind": "nightly"},
+  {"id": 150, "op": "ADD", "status": "passed", "file": "家与人际",
+   "text": "（示例）寻的妈妈周末会打电话来。", "xun": true, "quote": "（示例）一般周日",
+   "day": "2026-10-05", "at": "2026-10-08T13:01:59+08:00", "kind": "nightly"},
+  {"id": 140, "op": "FADE", "status": "approved", "file": "寻的内在地图",
+   "target": "（示例）寻最近在看一部长篇小说。", "day": "", "at": "2026-10-07T07:16:47+08:00", "kind": "nightly"}
+ ]
+}
