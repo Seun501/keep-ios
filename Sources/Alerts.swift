@@ -155,7 +155,7 @@ final class AlertsModel: ObservableObject {
     private var balAlerted = false
     private var usageWindow = ""
     private static let ud = UserDefaults.standard
-    static let balLow = 5.0
+    static let balLow = 3.0   // 10-24 寻：5 → 3
 
     func dismiss() {
         guard let s = queue.first else { return }
