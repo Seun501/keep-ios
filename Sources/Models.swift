@@ -127,5 +127,17 @@ enum TimeFmt {
     static func stamp(_ iso: String?) -> String { iso.flatMap(parse).map(stamp) ?? "" }
     static func hm(_ iso: String?) -> String { iso.flatMap(parse).map(hm) ?? "" }
     static func nowIso() -> String { iso.string(from: Date()) }
+    private static let taipeiDay: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Taipei"); return f
+    }()
+    /// 网关时间戳 → 台北日期（档案馆按台北日分天）。ts 有 +00:00 也有 +08:00（10-27 起），
+    /// 切前 10 位在台北 0–8 点会差一天；先抹小数再解析（六位小数 ISO8601DateFormatter 不认），解析不了才退回前 10 位。
+    static func localDay(_ s: String?) -> String {
+        guard let s = s, !s.isEmpty else { return "" }
+        let clean = s.replacingOccurrences(of: "\\.\\d+", with: "", options: .regularExpression)
+        if let d = isoPlain.date(from: clean) { return taipeiDay.string(from: d) }
+        return String(s.prefix(10))
+    }
     static func isoString(_ d: Date) -> String { iso.string(from: d) }
 }

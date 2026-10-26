@@ -340,7 +340,7 @@ struct AlbumScreen: View {
     private func dayGroups(_ ph: [Photo]) -> [(String, [Photo])] {
         var out: [(String, [Photo])] = []
         for p in ph {
-            let day = String((p.ts ?? "").prefix(10))
+            let day = TimeFmt.localDay(p.ts)
             if let last = out.last, last.0 == day { out[out.count - 1].1.append(p) } else { out.append((day, [p])) }
         }
         return out
@@ -429,7 +429,7 @@ struct Lightbox: View {
                                     if let u = p.surfUrl, let url = URL(string: u) { Link("冲浪存的 · 原网页 ↗", destination: url).foregroundColor(Theme.accent) }
                                     else { Text("冲浪存的 · 原网页 ↗").foregroundColor(Theme.accent) }
                                 } else if let n = p.no, n > 0 {
-                                    Text("聊天 #\(n)").foregroundColor(Theme.accent).onTapGesture { onArchive(String((p.ts ?? "").prefix(10)), n) }
+                                    Text("聊天 #\(n)").foregroundColor(Theme.accent).onTapGesture { onArchive(TimeFmt.localDay(p.ts), n) }
                                 } else { Text("聊天") }
                             }
                         }

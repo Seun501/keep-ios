@@ -176,7 +176,7 @@ struct ChangesPage: View {
     private func byDay(_ items: [ChangesPayload.Item]) -> [DayGroup] {
         var out: [DayGroup] = []
         for x in items {
-            let k = String((x.at ?? "").prefix(10))
+            let k = TimeFmt.localDay(x.at)
             if out.last?.id == k { out[out.count - 1].items.append(x) } else { out.append(DayGroup(id: k, items: [x])) }
         }
         return out
