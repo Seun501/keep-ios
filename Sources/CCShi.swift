@@ -701,8 +701,9 @@ struct CCShiSessionScreen: View {
             Text("上下文压缩过了：\(CCFmt.tok(e.pre ?? 0)) → \(CCFmt.tok(e.post ?? 0))")
                 .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
         case .end(let e):
-            Text(CCFmt.endLine(e))   // 照 Claude Code：整行灰，✻ 也灰
-                .font(Theme.mono(12)).foregroundColor(Theme.muted.opacity(0.85)).padding(.top, 2).padding(.bottom, 10)
+            // 照 Claude Code：整行灰，✻ 也灰；✻ 单用系统字（Cascadia 没有这个字形，画成了 *，截图 452）
+            (Text("✻ ").font(.system(size: 12.5, weight: .semibold)) + Text(String(CCFmt.endLine(e).dropFirst(2))).font(Theme.mono(12)))
+                .foregroundColor(Theme.muted.opacity(0.85)).padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
         }
