@@ -17,6 +17,7 @@ struct CCSession: Decodable, Identifiable, Hashable {
     var archived: Bool?
     var unread: Int?
     var ctx: Int?
+    var ctx_max: Int?          // 这个模型的窗口（CC 每轮报的 contextWindow；没报过按 20 万）
     var model: String?
     var model_actual: String?
     var seq: Int?
@@ -554,13 +555,14 @@ struct CCShiSessionScreen: View {
     }
     @State private var infoOpen = Preview.on && Preview.screen == "ccshiinfo"
     @State private var usageLine = ""
+    private var ctxMax: Int { max(1, m.meta?.ctx_max ?? 200_000) }
     private var header: some View {
         HStack(spacing: 12) {
             Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
             Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
             Spacer()
             if let c = m.meta?.ctx, c > 0 {
-                Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: c) }.buttonStyle(.plain)
+                Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: c, max: ctxMax) }.buttonStyle(.plain)
             }
             Menu {
                 ForEach(CCFmt.models, id: \.0) { mm in
@@ -581,12 +583,13 @@ struct CCShiSessionScreen: View {
     /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
     private var infoCard: some View {
         let c = m.meta?.ctx ?? 0
+        let pct = Int(Double(c) * 100 / Double(ctxMax))
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                CCRing(used: c, size: 34)
+                CCRing(used: c, max: ctxMax, size: 34)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("上下文 \(CCFmt.tok(c)) / 20 万").font(Theme.round(14, weight: .medium)).foregroundColor(Theme.text)
-                    Text("用了 \(Int(Double(c) / 2000))%" + (c >= 150_000 ? "，快满了，压一下吧" : "")).font(Theme.round(12)).foregroundColor(c >= 150_000 ? Theme.accent : Theme.muted)
+                    Text("上下文 \(CCFmt.tok(c)) / \(CCFmt.tok(ctxMax))").font(Theme.round(14, weight: .medium)).foregroundColor(Theme.text)
+                    Text("用了 \(pct)%" + (pct >= 75 ? "，找个空当压一下吧" : "")).font(Theme.round(12)).foregroundColor(pct >= 75 ? Theme.accent : Theme.muted)
                 }
             }
             if !usageLine.isEmpty { Text("额度 " + usageLine).font(Theme.round(12)).foregroundColor(Theme.muted) }
@@ -951,9 +954,10 @@ struct CCLiveRow: View {
 /// 上下文圆环：20 万为满，75% 起变赤陶
 struct CCRing: View {
     let used: Int
+    var max: Int = 200_000
     var size: CGFloat = 20
     var body: some View {
-        let f = min(1, Double(used) / 200_000)
+        let f = min(1, Double(used) / Double(Swift.max(1, max)))
         ZStack {
             Circle().stroke(Theme.userBubble, lineWidth: size / 7)
             Circle().trim(from: 0, to: f).stroke(f >= 0.75 ? Theme.accent : Theme.muted, style: StrokeStyle(lineWidth: size / 7, lineCap: .round))

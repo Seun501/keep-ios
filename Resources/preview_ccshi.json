@@ -6,10 +6,11 @@
    "updated": "2026-10-27T20:41:00+08:00",
    "status": "idle",
    "last_text": "第二版的截图出来了，问题卡在最下面，你点点看。",
-   "ctx": 61200,
+   "ctx": 432000,
    "model": "",
    "model_actual": "claude-opus-5-5",
-   "unread": 2
+   "unread": 2,
+   "ctx_max": 1000000
   },
   {
    "id": "p2",
