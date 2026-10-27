@@ -53,6 +53,8 @@ struct CCEvent: Decodable {
     var since: Double?
     var now: Double?
     var tasks: [CCBgTask]?
+    var desc: String?          // 正在跑的那条命令「在干嘛」
+    var desc_tool: String?
     var thought: Double?       // 刚想完的那段秒数（亮几秒「thought for Xs」）
     var thought_at: Double?
     var ctx: Int?
@@ -1000,16 +1002,20 @@ struct CCLiveRow: View {
                                                             .init(color: Self.claude, location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
                 Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor,
-                               thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                               thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil, desc: live.desc)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
             }
         }
     }
     /// (1m 23s · ↓5.7k tokens · still thinking)
     /// 括号里：thinking → 想久了 still thinking → 想完亮 3 秒 thought for Xs → 收（照 Claude Code）
-    static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int, thought: Double? = nil) -> String {
+    static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int, thought: Double? = nil, desc: String? = nil) -> String {
         var parts = [CCFmt.dur(el)]
         if out > 0 { parts.append("↓" + CCFmt.k(out)) }
+        if let d = desc, !d.isEmpty, doing != "thinking" {   // 命令自带的说明（「Check service and tunnel processes」）比工具名好懂
+            parts.append(d)
+            return "(" + parts.joined(separator: " · ") + ")"
+        }
         switch doing ?? "" {
         case "thinking": parts.append(thinkFor >= 8 ? "still thinking" : "thinking")
         case "compacting": parts.append("compacting")
