@@ -131,7 +131,10 @@ enum CCShiAPI {
     @MainActor static func file(_ sid: String, _ name: String) async -> Data? {
         let k = sid + "/" + name
         if let d = cache[k] { return d }
-        if Preview.on { return UIImage(named: "AppIcon")?.pngData() ?? UIImage(systemName: "photo")?.pngData() }
+        if Preview.on {
+            let r = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 400))
+            return r.image { c in UIColor(red: 0.85, green: 0.78, blue: 0.70, alpha: 1).setFill(); c.fill(CGRect(x: 0, y: 0, width: 600, height: 400)) }.pngData()
+        }
         guard let token = Keychain.token else { return nil }
         var r = URLRequest(url: url("sessions/\(sid)/files/\(name)"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -488,9 +491,9 @@ struct CCShiSessionScreen: View {
                             .padding(.horizontal, 18).padding(.top, 6)
                         }
                         .scrollDismissesKeyboard(.interactively)
-                        .onChange(of: m.events.count) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                        .onChange(of: m.running) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                        .onAppear { if !(Preview.on && Preview.screen == "ccshitop") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("bottom", anchor: .bottom) } } }
+                        .onChange(of: m.events.count) { _ in toBottom(proxy) }
+                        .onChange(of: m.running) { _ in toBottom(proxy) }
+                        .onAppear { toBottom(proxy) }
                     }
                     if rec.recording {
                         VStack(spacing: 0) {
@@ -526,6 +529,12 @@ struct CCShiSessionScreen: View {
         .onDisappear { m.markRead(); m.stopStream() }
         .onChange(of: phase) { p in if p == .active { m.start() } }
         .onChange(of: focused) { on in if on { plusOpen = false } }
+    }
+
+    /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次
+    private func toBottom(_ proxy: ScrollViewProxy) {
+        if Preview.on && Preview.screen == "ccshitop" { return }
+        for d in [0.05, 0.3, 0.8] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { proxy.scrollTo("bottom", anchor: .bottom) } }
     }
 
     // MARK: 顶栏：返回、会话名、模型；下面一行上下文（居中）＋压缩
