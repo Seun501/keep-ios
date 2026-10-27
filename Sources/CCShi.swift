@@ -911,6 +911,9 @@ struct CCLiveRow: View {
     let live: CCEvent
     let offset: Double
     static let stars = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
+    /// Claude Code 主题里的两色（CLI 里读的：claude rgb(215,119,87)、claudeShimmer rgb(245,149,117)）
+    static let claude = Color(red: 215/255, green: 119/255, blue: 87/255)
+    static let shimmer = Color(red: 245/255, green: 149/255, blue: 117/255)
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.12)) { ctx in
             let t = ctx.date.timeIntervalSince1970
@@ -920,13 +923,13 @@ struct CCLiveRow: View {
             let star = Self.stars[Int(t / 0.12) % Self.stars.count]
             let phase = CGFloat((t.truncatingRemainder(dividingBy: 2.0)) / 2.0) * 1.6 - 0.3   // -0.3 → 1.3，两秒扫一趟
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(star).font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.accent).frame(width: 18, alignment: .leading)
+                Text(star).font(.system(size: 14, weight: .semibold)).foregroundColor(Self.claude).frame(width: 18, alignment: .leading)
                 Text((live.verb ?? "Clauding") + "… ").font(Theme.mono(12.5))
-                    .foregroundStyle(LinearGradient(stops: [.init(color: Theme.accent, location: 0),
-                                                            .init(color: Theme.accent, location: max(0, phase - 0.15)),
-                                                            .init(color: Theme.accent.opacity(0.35), location: min(1, max(0, phase))),
-                                                            .init(color: Theme.accent, location: min(1, phase + 0.15)),
-                                                            .init(color: Theme.accent, location: 1)],
+                    .foregroundStyle(LinearGradient(stops: [.init(color: Self.claude, location: 0),
+                                                            .init(color: Self.claude, location: max(0, phase - 0.15)),
+                                                            .init(color: Self.shimmer, location: min(1, max(0, phase))),
+                                                            .init(color: Self.claude, location: min(1, phase + 0.15)),
+                                                            .init(color: Self.claude, location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
                 Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
@@ -1262,7 +1265,9 @@ struct CCShowCard: View {
                         Spacer()
                     }
                     .padding(14)
-                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 16, style: .continuous))   // 寻 10-27：白卡和底色融成一片；换暖米底
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card)   // 寻 10-27：白卡＋一圈晕影（同输入卡那种软投影），不描边
+                        .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
+                        .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6))
                 }.buttonStyle(.plain)
             }
             if let t = event.title, !t.isEmpty {
