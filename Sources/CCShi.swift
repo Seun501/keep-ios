@@ -49,6 +49,8 @@ struct CCEvent: Decodable {
     var doing: String?
     var since: Double?
     var now: Double?
+    var thought: Double?       // 刚想完的那段秒数（亮几秒「thought for Xs」）
+    var thought_at: Double?
     var ctx: Int?
 }
 
@@ -574,7 +576,6 @@ struct CCShiSessionScreen: View {
         let pct = Int(Double(c) * 100 / Double(ctxMax))
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                CCRing(used: c, max: ctxMax, size: 30)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("上下文 \(CCFmt.tok(c)) / \(CCFmt.tok(ctxMax))").font(Theme.round(14, weight: .medium)).foregroundColor(Theme.text)
                     Text("用了 \(pct)%" + (pct >= 75 ? "，找个空当压一下吧" : "")).font(Theme.round(12)).foregroundColor(pct >= 75 ? Theme.accent : Theme.muted)
@@ -934,19 +935,21 @@ struct CCLiveRow: View {
                                                             .init(color: Self.claude, location: min(1, phase + 0.15)),
                                                             .init(color: Self.claude, location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
-                Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor,
+                               thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
             }
         }
     }
     /// (1m 23s · ↓5.7k tokens · still thinking)
-    static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int) -> String {
+    /// 括号里：thinking → 想久了 still thinking → 想完亮 3 秒 thought for Xs → 收（照 Claude Code）
+    static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int, thought: Double? = nil) -> String {
         var parts = [CCFmt.dur(el)]
         if out > 0 { parts.append("↓" + CCFmt.k(out)) }
         switch doing ?? "" {
         case "thinking": parts.append(thinkFor >= 8 ? "still thinking" : "thinking")
         case "compacting": parts.append("compacting")
-        case "", "writing": break
+        case "", "writing": if let t = thought { parts.append("thought for " + (t < 10 ? String(format: "%.1fs", t) : "\(Int(t))s")) }
         case let d: parts.append(d)
         }
         return "(" + parts.joined(separator: " · ") + ")"
@@ -1268,6 +1271,7 @@ struct CCShowCard: View {
                         Spacer()
                     }
                     .padding(14)
+                    .frame(width: UIScreen.main.bounds.width * 0.58)   // 寻 10-27：别占满屏宽，大约半屏
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card)   // 寻 10-27：白卡＋一圈晕影（同输入卡那种软投影），不描边
                         .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
                         .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6))
