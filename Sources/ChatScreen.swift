@@ -503,7 +503,7 @@ struct ChatScreen: View {
                     case .arch(let day, let q, let no): ArchiveScreen(onBack: pop, day: day, query: q, focusNo: no)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
                     case .ccshi: CCShiListScreen(onBack: pop, onOpen: { path.append(.ccshiSession($0)) })
-                    case .ccshiSession(let id): CCShiSessionScreen(id: id, onBack: pop).id(id)
+                    case .ccshiSession(let id): CCShiSessionScreen(id: id, onBack: pop, onOpen: { path.append(.ccshiSession($0)) }).id(id)
                     }
                 }
                 .zIndex(Double(100 + i))

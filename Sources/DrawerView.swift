@@ -29,6 +29,7 @@ struct DrawerView: View {
     @State private var ym: (Int, Int) = (Calendar.current.component(.year, from: Date()), Calendar.current.component(.month, from: Date()))
     @State private var usage = Preview.on ? "" : (UserDefaults.standard.string(forKey: "cache.usage") ?? "")
     @State private var notesBadge = 0
+    @State private var ccBadge = 0
 
     var body: some View {
         let w = min(UIScreen.main.bounds.width * 0.78, 300)
@@ -71,7 +72,7 @@ struct DrawerView: View {
                     hair
                     row("位置") { onNavigate(.places) }   // 09-12 寻改名
                     hair
-                    row("CC师") { onNavigate(.ccshi) }      // 10-27 寻定：手机上和 CC师 干活
+                    row("CC师", badge: ccBadge) { onNavigate(.ccshi) }      // 10-27 寻定：手机上和 CC师 干活；没看的回复条数同留言板那枚
                 }
                 .padding(.top, 10)
 
@@ -201,7 +202,8 @@ struct DrawerView: View {
     }
 
     private func load() async {
-        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5% · Fri"; notesBadge = 1; return }
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5% · Fri"; notesBadge = 1; ccBadge = 2; return }
+        Task { ccBadge = await CCShiAPI.unread() ?? ccBadge }
         guard let token = Keychain.token else { return }
         func get(_ path: String) async -> [String: Any]? {
             var r = URLRequest(url: Gateway.home.appendingPathComponent(path))

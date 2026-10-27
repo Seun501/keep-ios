@@ -1,8 +1,12 @@
 import SwiftUI
+import WebKit
 
 /// 手机上的 CC师（10-27 寻定乙路线）：Keep → ke.seunk.cn/ccshi/…（Caddy 拿 App 口令问网关验过才放行）→ 反向隧道 → 腾讯机 ccx 小服务。
 /// 后端源码在 vault `项目/脚本/腾讯机/ccshi/server.py`。多个会话；每个会话的事件按 seq 递增，断线凭最后的 seq 接上。
 /// 克的字（Lora＋思源宋）只给克；CC师 的正文用圆体，一眼分得开。
+/// 第二版（寻 10-27 点的单）：输入卡照搬克那边（语音、+ 菜单）、额度居中、小 Clawd 干活行（Clauding… 计时 · ↓token）、
+/// thinking…/still thinking…/Thought for 2.3s、上下文＋压缩、问题卡、改文件红绿对比、任务清单、发图、递图/HTML 预览、
+/// 长按复制/从这里重来、换模型、未读小红圈。
 
 struct CCSession: Decodable, Identifiable, Hashable {
     var id: String
@@ -11,6 +15,11 @@ struct CCSession: Decodable, Identifiable, Hashable {
     var status: String?
     var last_text: String?
     var archived: Bool?
+    var unread: Int?
+    var ctx: Int?
+    var model: String?
+    var model_actual: String?
+    var seq: Int?
     var running: Bool { status == "running" }
 }
 
@@ -23,9 +32,22 @@ struct CCEvent: Decodable {
     var input: String?
     var id: String?          // tool / tool_result 的配对号
     var error: Bool?
-    var secs: Int?
+    var secs: Double?
     var state: String?
-    enum CodingKeys: String, CodingKey { case seq, ts, kind, text, name, input, id, error, secs, state }
+    var images: [String]?
+    var file: String?
+    var type: String?
+    var title: String?
+    var pre: Int?
+    var post: Int?
+    var out: Int?
+    // live（不落盘，SSE 顺带推）
+    var verb: String?
+    var started: Double?
+    var doing: String?
+    var since: Double?
+    var now: Double?
+    var ctx: Int?
 }
 
 struct CCUsage: Decodable {
@@ -45,13 +67,16 @@ struct CCUsage: Decodable {
 }
 
 enum CCShiAPI {
-    private static func req(_ path: String, method: String = "GET", body: [String: Any]? = nil) throws -> URLRequest {
-        guard let token = Keychain.token else { throw GatewayAPI.Failure.unauthorized }
+    static func url(_ path: String) -> URL {
         // 查询串不能拼进 path（appendingPathComponent 会把 ? 转成 %3F，构建 216 撞过）
         let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
         var comps = URLComponents(url: Gateway.home.appendingPathComponent("ccshi/api/" + parts[0]), resolvingAgainstBaseURL: false)!
         if parts.count > 1 { comps.percentEncodedQuery = parts[1] }
-        var r = URLRequest(url: comps.url!)
+        return comps.url!
+    }
+    private static func req(_ path: String, method: String = "GET", body: [String: Any]? = nil) throws -> URLRequest {
+        guard let token = Keychain.token else { throw GatewayAPI.Failure.unauthorized }
+        var r = URLRequest(url: url(path))
         r.httpMethod = method
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -69,25 +94,60 @@ enum CCShiAPI {
     struct List: Decodable { var sessions: [CCSession] }
     struct Events: Decodable { var meta: CCSession; var events: [CCEvent] }
     struct Queued: Decodable { var queued: Int? }
+    struct Unread: Decodable { var unread: Int }
+    struct Uploaded: Decodable { var file: String }
+    struct OK: Decodable { var ok: Bool? }
 
     static func sessions() async throws -> [CCSession] { (try await get("sessions") as List).sessions }
     static func usage() async -> CCUsage? { try? await get("usage") }
+    static func unread() async -> Int? { (try? await get("unread") as Unread)?.unread }
     static func create(_ title: String) async throws -> CCSession { try await get("sessions", method: "POST", body: ["title": title]) }
     static func rename(_ id: String, _ title: String) async { _ = try? await get("sessions/\(id)/rename", method: "POST", body: ["title": title]) as CCSession }
     static func archive(_ id: String, _ on: Bool) async { _ = try? await get("sessions/\(id)/archive", method: "POST", body: ["archived": on]) as CCSession }
-    static func send(_ id: String, _ text: String) async throws { _ = try await get("sessions/\(id)/send", method: "POST", body: ["text": text]) as Queued }
+    static func send(_ id: String, _ text: String, images: [String] = []) async throws { _ = try await get("sessions/\(id)/send", method: "POST", body: ["text": text, "images": images]) as Queued }
     static func stop(_ id: String) async { _ = try? await get("sessions/\(id)/stop", method: "POST", body: [:]) as [String: Bool] }
+    static func compact(_ id: String) async { _ = try? await get("sessions/\(id)/compact", method: "POST", body: [:]) as Queued }
+    static func setModel(_ id: String, _ m: String) async -> CCSession? { try? await get("sessions/\(id)/model", method: "POST", body: ["model": m]) }
+    static func rewind(_ id: String, seq: Int) async -> CCSession? { try? await get("sessions/\(id)/rewind", method: "POST", body: ["seq": seq]) }
+    static func markRead(_ id: String, seq: Int) async { _ = try? await get("sessions/\(id)/read", method: "POST", body: ["seq": seq]) as OK }
     static func events(_ id: String, after: Int) async throws -> Events { try await get("sessions/\(id)/events?after=\(after)") }
 
-    /// SSE：吐 after 之后的事件，连着就一直等新的；断了由调用方凭最后 seq 重连
+    /// 她发的图：jpeg 字节直传，回服务端给的文件名
+    static func upload(_ id: String, jpeg: Data) async throws -> String {
+        guard let token = Keychain.token else { throw GatewayAPI.Failure.unauthorized }
+        var r = URLRequest(url: url("sessions/\(id)/upload"))
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        r.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        r.httpBody = jpeg
+        r.timeoutInterval = 60
+        let (d, resp) = try await URLSession.shared.data(for: r)
+        guard (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { throw GatewayAPI.Failure.http(0) }
+        return try JSONDecoder().decode(Uploaded.self, from: d).file
+    }
+
+    /// 会话里的文件（她发的图、我递的图/HTML/PDF）：带口令取原始字节，内存里留一份
+    @MainActor private static var cache: [String: Data] = [:]
+    @MainActor static func file(_ sid: String, _ name: String) async -> Data? {
+        let k = sid + "/" + name
+        if let d = cache[k] { return d }
+        if Preview.on { return UIImage(named: "AppIcon")?.pngData() ?? UIImage(systemName: "photo")?.pngData() }
+        guard let token = Keychain.token else { return nil }
+        var r = URLRequest(url: url("sessions/\(sid)/files/\(name)"))
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (d, resp) = try? await URLSession.shared.data(for: r),
+              (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
+        cache[k] = d
+        return d
+    }
+
+    /// SSE：吐 after 之后的事件（外加不落盘的 live 行），连着就一直等新的；断了由调用方凭最后 seq 重连
     static func stream(_ id: String, after: Int) -> AsyncThrowingStream<CCEvent, Error> {
         AsyncThrowingStream { c in
             let task = Task {
                 do {
                     guard let token = Keychain.token else { throw GatewayAPI.Failure.unauthorized }
-                    var comps = URLComponents(url: Gateway.home.appendingPathComponent("ccshi/api/sessions/\(id)/stream"), resolvingAgainstBaseURL: false)!
-                    comps.queryItems = [URLQueryItem(name: "after", value: String(after))]
-                    var r = URLRequest(url: comps.url!)
+                    var r = URLRequest(url: url("sessions/\(id)/stream?after=\(after)"))
                     r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                     r.timeoutInterval = 60      // 服务端 20 秒一次心跳
                     let (bytes, resp) = try await URLSession.shared.bytes(for: r)
@@ -108,6 +168,19 @@ enum CCShiAPI {
 extension Notification.Name {
     /// 点了「CC师」推送：object＝会话号（电脑上的会话是空串＝只开列表）
     static let keepOpenCCShi = Notification.Name("keep.openCCShi")
+}
+
+enum CCFmt {
+    /// 4.2 万 / 1237
+    static func tok(_ n: Int) -> String { n >= 10000 ? String(format: "%.1f 万", Double(n) / 10000) : String(n) }
+    /// ↓5.7k（同 Claude Code 那行）
+    static func k(_ n: Int) -> String { n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n) }
+    static func dur(_ s: Int) -> String { s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s" }
+    static let models: [(String, String)] = [("", "默认"), ("claude-opus-5-5", "Opus 5.5"), ("claude-opus-4-6", "Opus 4.6"), ("claude-sonnet-5-5", "Sonnet 5.5")]
+    static func modelShort(_ m: String?) -> String {
+        guard let m, !m.isEmpty else { return "" }
+        return models.first(where: { $0.0 == m })?.1 ?? m.replacingOccurrences(of: "claude-", with: "")
+    }
 }
 
 // MARK: - 会话列表
@@ -153,10 +226,6 @@ struct CCShiListScreen: View {
                     }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).frame(minHeight: 52)
-                if !m.usage.isEmpty {
-                    Text(m.usage).font(Theme.round(12)).foregroundColor(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 6)
-                }
                 OrangeScroll(name: "ccshi") {
                     LazyVStack(spacing: 10) {
                         if !m.err.isEmpty {
@@ -176,8 +245,11 @@ struct CCShiListScreen: View {
                             if m.showArchived { ForEach(old) { s in card(s) } }
                         }
                     }
-                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 28)
+                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
                 }
+                // 额度一行：居中、钉在页底（寻 10-27：居中好看；同抽屉底那行）
+                Text(m.usage).font(Theme.round(12)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity).frame(height: 16).padding(.top, 4).padding(.bottom, 10)
             }
         }
         .background(EdgeSwipe(onBack: onBack))
@@ -199,9 +271,12 @@ struct CCShiListScreen: View {
                     Spacer()
                     Text(s.running ? "在干活" : TimeFmt.stamp(s.updated)).font(Theme.round(12)).foregroundColor(s.running ? Theme.accent : Theme.muted)
                 }
-                Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
-                    .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .top, spacing: 8) {
+                    Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
+                        .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let n = s.unread, n > 0 { CCBadge(n: n) }
+                }
             }
             .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -221,15 +296,28 @@ struct CCShiListScreen: View {
     }
 }
 
+/// 未读小红圈：照抽屉留言板那枚（20 高、最小 20 宽、一位数正圆）
+struct CCBadge: View {
+    let n: Int
+    var body: some View {
+        Text("\(n)").font(Theme.round(12)).foregroundColor(.white)
+            .padding(.horizontal, 6).frame(minWidth: 20).frame(height: 20)
+            .background(Theme.accent, in: Capsule())
+    }
+}
+
 // MARK: - 会话页
 
 @MainActor final class CCShiSessionModel: ObservableObject {
     let id: String
     @Published var meta: CCSession? = nil
     @Published var events: [CCEvent] = []
+    @Published var live: CCEvent? = nil
+    @Published var liveOffset: Double = 0     // 服务端时钟 − 手机时钟（计时用服务端的起点）
     @Published var err = ""
-    private var last = 0
+    private(set) var last = 0
     private var streamTask: Task<Void, Never>? = nil
+    var onNew: (() -> Void)? = nil
     init(id: String) { self.id = id }
 
     var running: Bool { meta?.running == true }
@@ -241,10 +329,8 @@ struct CCShiListScreen: View {
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
-                    if self.meta == nil || self.last == 0 {
-                        let e = try await CCShiAPI.events(self.id, after: 0)
-                        self.meta = e.meta; self.absorb(e.events)
-                    }
+                    let e = try await CCShiAPI.events(self.id, after: self.last)
+                    self.meta = e.meta; self.absorb(e.events)
                     for try await ev in CCShiAPI.stream(self.id, after: self.last) { self.absorb([ev]) }
                     self.err = ""
                 } catch {
@@ -258,49 +344,87 @@ struct CCShiListScreen: View {
     func stopStream() { streamTask?.cancel(); streamTask = nil }
 
     private func absorb(_ evs: [CCEvent]) {
-        for e in evs where e.seq > last {
-            events.append(e); last = e.seq
-            if e.kind == "status" { meta?.status = e.state }
+        var grew = false
+        for e in evs {
+            if e.kind == "live" {
+                live = e
+                if let n = e.now { liveOffset = n - Date().timeIntervalSince1970 }
+                if let c = e.ctx { meta?.ctx = c }
+                continue
+            }
+            guard e.seq > last else { continue }
+            events.append(e); last = e.seq; grew = true
+            if e.kind == "status" { meta?.status = e.state; if e.state == "idle" { live = nil } }
+            if e.kind == "compact", let p = e.post { meta?.ctx = p }
         }
+        if grew { onNew?() }
     }
 
-    func send(_ text: String) async -> Bool {
-        do { try await CCShiAPI.send(id, text); err = ""; return true }
-        catch { err = "没送出去，字留在输入框里"; return false }
+    func send(_ text: String, images: [Data] = []) async -> Bool {
+        do {
+            var names: [String] = []
+            for d in images { names.append(try await CCShiAPI.upload(id, jpeg: d)) }
+            try await CCShiAPI.send(id, text, images: names)
+            err = ""; return true
+        } catch { err = "没送出去，字留在输入框里"; return false }
     }
     func stop() { Task { await CCShiAPI.stop(id) } }
+    func compact() { Task { await CCShiAPI.compact(id) } }
+    func setModel(_ m: String) { Task { if let s = await CCShiAPI.setModel(id, m) { meta?.model = s.model } } }
+    func markRead() { if !Preview.on, last > 0 { let s = last; Task { await CCShiAPI.markRead(id, seq: s) } } }
 
     private func loadPreview() {
         guard let d = Preview.json("preview_ccshi"), let p = try? JSONDecoder().decode(CCShiPreview.self, from: d) else { return }
-        meta = p.sessions.first; events = p.events
-        if Preview.screen == "ccshirun" { meta?.status = "running" }
+        meta = p.sessions.first; events = p.events; last = p.events.last?.seq ?? 0
+        if Preview.screen == "ccshirun" {
+            meta?.status = "running"
+            let now = Date().timeIntervalSince1970
+            var lv = CCEvent(seq: 0, kind: "live")
+            lv.verb = "Clauding"; lv.started = now - 83; lv.doing = "thinking"; lv.since = now - 12; lv.now = now; lv.out = 5700
+            live = lv
+        }
     }
 }
 
-/// 一轮里连着的东西排成「块」：她的话、我的思考、工具（调用＋结果配对）、正文、一轮收尾的时间
+/// 一轮里连着的东西排成「块」：她的话、我的思考、工具（调用＋结果配对）、正文、递来的文件、一轮收尾
 private enum CCBlock: Identifiable {
     case user(CCEvent)
     case thinking(CCEvent)
     case tool(CCEvent, CCEvent?)
+    case ask(CCEvent, Bool)
+    case todo(CCEvent, Bool)
     case text(CCEvent)
+    case show(CCEvent)
+    case compact(CCEvent)
     case end(CCEvent)
     case error(CCEvent)
     var id: Int {
         switch self {
-        case .user(let e), .thinking(let e), .text(let e), .end(let e), .error(let e): return e.seq
+        case .user(let e), .thinking(let e), .text(let e), .show(let e), .compact(let e), .end(let e), .error(let e): return e.seq
         case .tool(let e, _): return e.seq
+        case .ask(let e, _), .todo(let e, _): return e.seq
         }
     }
+    static let hidden: Set<String> = ["ToolSearch", "mcp__ccshi__show"]
     static func build(_ evs: [CCEvent]) -> [CCBlock] {
         var out: [CCBlock] = []
         var results: [String: CCEvent] = [:]
         for e in evs where e.kind == "tool_result" { if let i = e.id { results[i] = e } }
+        let lastTodo = evs.last(where: { $0.kind == "tool" && $0.name == "TodoWrite" })?.seq
+        let lastUser = evs.last(where: { $0.kind == "user" })?.seq ?? 0
         for e in evs {
             switch e.kind {
             case "user": out.append(.user(e))
             case "thinking": out.append(.thinking(e))
-            case "tool": out.append(.tool(e, e.id.flatMap { results[$0] }))
+            case "tool":
+                let n = e.name ?? ""
+                if hidden.contains(n) { continue }
+                if n.hasSuffix("__ask") { out.append(.ask(e, e.seq < lastUser)) }
+                else if n == "TodoWrite" { out.append(.todo(e, e.seq == lastTodo)) }
+                else { out.append(.tool(e, e.id.flatMap { results[$0] })) }
             case "text": out.append(.text(e))
+            case "show": out.append(.show(e))
+            case "compact": out.append(.compact(e))
             case "result": out.append(.end(e))
             case "error": out.append(.error(e))
             default: break
@@ -312,13 +436,20 @@ private enum CCBlock: Identifiable {
 
 struct CCShiSessionScreen: View {
     var onBack: () -> Void
+    var onOpen: (String) -> Void
     @StateObject private var m: CCShiSessionModel
     @State private var draft = ""
     @State private var focused = false
+    @State private var pending: [UIImage] = []
+    @State private var plusOpen = false
+    @State private var holdStarted = false
+    @State private var webDoc: CCWebDoc? = nil
+    @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
 
-    init(id: String, onBack: @escaping () -> Void) {
+    init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }) {
         self.onBack = onBack
+        self.onOpen = onOpen
         _m = StateObject(wrappedValue: CCShiSessionModel(id: id))
     }
 
@@ -326,24 +457,28 @@ struct CCShiSessionScreen: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
-                    Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
-                    Spacer()
-                    if m.running { Text("在干活").font(Theme.round(12)).foregroundColor(Theme.accent) }
-                }
-                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).frame(minHeight: 52)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(CCBlock.build(m.events)) { b in row(b) }
-                            Color.clear.frame(height: 8).id("bottom")
+                header
+                ZStack(alignment: .bottom) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(CCBlock.build(m.events)) { b in row(b) }
+                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset).padding(.top, 6) }
+                                Color.clear.frame(height: 8).id("bottom")
+                            }
+                            .padding(.horizontal, 18).padding(.top, 6)
                         }
-                        .padding(.horizontal, 18).padding(.top, 6)
+                        .scrollDismissesKeyboard(.interactively)
+                        .onChange(of: m.events.count) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                        .onChange(of: m.running) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: m.events.count) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    if rec.recording {
+                        VStack(spacing: 0) {
+                            LiveCard(rec: rec).padding(.bottom, 8)
+                            HoldHints(rec: rec).padding(.bottom, 6)
+                        }
+                    }
                 }
                 if !m.err.isEmpty {
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
@@ -352,73 +487,353 @@ struct CCShiSessionScreen: View {
             }
         }
         .background(EdgeSwipe(onBack: onBack))
-        .onAppear { m.start() }
-        .onDisappear { m.stopStream() }
+        .overlayPreferenceValue(PlusAnchorKey.self) { a in
+            if plusOpen, let a {
+                GeometryReader { g in
+                    let r = g[a]
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+                        plusMenu
+                            .frame(width: 176, height: max(0, r.maxY - 4), alignment: .bottomLeading)
+                            .offset(x: r.minX + 2)
+                            .transition(.scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
+                    }
+                }
+                .zIndex(50)
+            }
+        }
+        .sheet(item: $webDoc) { d in CCWebSheet(doc: d) }
+        .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start() }
+        .onDisappear { m.markRead(); m.stopStream() }
         .onChange(of: phase) { p in if p == .active { m.start() } }
+        .onChange(of: focused) { on in if on { plusOpen = false } }
     }
 
+    // MARK: 顶栏：返回、会话名、模型；下面一行上下文（居中）＋压缩
+    private var modelLabel: String {
+        let a = CCFmt.modelShort(m.meta?.model)
+        return a.isEmpty ? CCFmt.modelShort(m.meta?.model_actual) : a
+    }
+    private var header: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 12) {
+                Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                Spacer()
+                Menu {
+                    ForEach(CCFmt.models, id: \.0) { mm in
+                        Button { m.setModel(mm.0) } label: {
+                            if (m.meta?.model ?? "") == mm.0 { Label(mm.1, systemImage: "checkmark") } else { Text(mm.1) }
+                        }
+                    }
+                } label: {
+                    Text(modelLabel.isEmpty ? "模型" : modelLabel)
+                        .font(Theme.round(12)).foregroundColor(Theme.muted)
+                        .padding(.horizontal, 10).frame(height: 26)
+                        .background(Theme.userBubble, in: Capsule())
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 12).frame(minHeight: 44)
+            if let c = m.meta?.ctx, c > 0 {
+                let full = c >= 150_000
+                HStack(spacing: 10) {
+                    Text("上下文 \(CCFmt.tok(c)) / 20 万").font(Theme.round(12)).foregroundColor(full ? Theme.accent : Theme.muted)
+                    if !m.running && c >= 20_000 {
+                        Button { m.compact() } label: {
+                            Text("压缩").font(Theme.round(12)).foregroundColor(full ? .white : Theme.text)
+                                .padding(.horizontal, 10).frame(height: 22)
+                                .background(full ? Theme.accent : Theme.userBubble, in: Capsule())
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity).padding(.bottom, 6)
+            }
+        }
+    }
+
+    // MARK: 一块
     @ViewBuilder private func row(_ b: CCBlock) -> some View {
         switch b {
         case .user(let e):
-            UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: []).padding(.vertical, 12)
+            VStack(alignment: .trailing, spacing: 6) {
+                if let imgs = e.images, !imgs.isEmpty {
+                    HStack(spacing: 6) { ForEach(imgs, id: \.self) { n in CCFileImage(sid: m.id, name: n, maxW: 120, maxH: 120) } }
+                }
+                UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: [])
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.vertical, 12)
         case .thinking(let e):
-            ThinkView(text: e.text ?? "", label: "Thought").padding(.vertical, 3)
+            ThinkView(text: e.text ?? "", label: e.secs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thought").padding(.vertical, 3)
         case .tool(let call, let res):
             CCToolRow(call: call, result: res).padding(.vertical, 3)
+        case .ask(let e, let answered):
+            CCAskCard(event: e, answered: answered, onAnswer: { t in Task { _ = await m.send(t) } }).padding(.vertical, 8)
+        case .todo(let e, let latest):
+            CCTodoCard(event: e, open: latest).padding(.vertical, 6)
         case .text(let e):
-            RichText(attr: MD.ns(e.text ?? "", base: Theme.uiRound(16), bold: Theme.uiRound(16, weight: .semibold),
-                                 mono: Theme.uiMono(13), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
-                .textSelection(.enabled).padding(.vertical, 8)
+            CCTextRow(event: e, onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: e.seq) { onOpen(s.id) } } })
+        case .show(let e):
+            CCShowCard(sid: m.id, event: e, onOpen: { webDoc = $0 }).padding(.vertical, 8)
+        case .compact(let e):
+            Text("上下文压缩过了：\(CCFmt.tok(e.pre ?? 0)) → \(CCFmt.tok(e.post ?? 0))")
+                .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
         case .end(let e):
-            Text(TimeFmt.stamp(e.ts) + (e.secs.map { "  ·  \(Self.dur($0))" } ?? ""))
+            Text(TimeFmt.stamp(e.ts) + (e.secs.map { "  ·  " + CCFmt.dur(Int($0)) } ?? "") + (e.out.map { "  ·  ↓" + CCFmt.k($0) + " tokens" } ?? ""))
                 .font(Theme.round(12)).foregroundColor(Theme.muted).padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
         }
     }
 
-    private static func dur(_ s: Int) -> String { s < 60 ? "\(s) 秒" : "\(s / 60) 分 \(s % 60) 秒" }
-
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // MARK: 输入卡（照搬克那边：同一张卡、投影、长按说话、+ 菜单、↑/■/声波钮）
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Composer(text: $draft, focused: $focused, placeholder: m.running ? "接着说（排在这轮后面）…" : "跟 CC师 说…")
-            HStack {
+        VStack(spacing: 6) {
+            if !pending.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(pending.enumerated()), id: \.offset) { i, img in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: img).resizable().scaledToFill().frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                Button { pending.remove(at: i) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                                        .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
+                                }.buttonStyle(.plain).offset(x: 4, y: -4)
+                            }
+                        }
+                    }.padding(.horizontal, 2).padding(.top, 6)
+                }
+            }
+            ZStack {
+                Composer(text: $draft, focused: $focused, placeholder: m.running ? "接着说（排在这轮后面）…" : "Chat with CC师…")
+                    .opacity(rec.recording ? 0 : 1)
+                    .overlay {
+                        if !focused && draft.isEmpty {
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { focused = true }
+                                .gesture(LongPressGesture(minimumDuration: 0.2).sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                                    .onChanged { v in
+                                        switch v {
+                                        case .second(true, let drag):
+                                            if !holdStarted { holdStarted = true; startHold() }
+                                            let md = Self.holdMode(drag?.translation ?? .zero)
+                                            let c = md == .cancel, e = md == .edit
+                                            if rec.cancelHint != c || rec.editHint != e {
+                                                rec.cancelHint = c; rec.editHint = e
+                                                if c || e { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                                            }
+                                        default: break
+                                        }
+                                    }
+                                    .onEnded { v in
+                                        holdStarted = false
+                                        if case .second(true, let drag) = v { endHold(Self.holdMode(drag?.translation ?? .zero)) } else { endHold(.cancel) }
+                                    })
+                        }
+                    }
+                if rec.recording { RecordingBar(rec: rec) }
+            }
+            .padding(.top, 2).padding(.bottom, 4)
+            HStack(spacing: 8) {
+                Button {
+                    focused = false
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen = true }
+                } label: {
+                    Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
+                        .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .anchorPreference(key: PlusAnchorKey.self, value: .bounds) { $0 }
+                .padding(.leading, -4)
                 Spacer()
-                if m.running {
+                if m.running && canSend {   // 干活时也能接着说：叫停钮让到左边
                     Button { m.stop() } label: {
                         RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
                             .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                     }.buttonStyle(.plain)
                 }
                 Button {
-                    guard canSend else { return }
-                    let t = draft; draft = ""
-                    Task { if !(await m.send(t)) { draft = t } }
+                    if canSend { sendNow() } else if m.running { m.stop() }
                 } label: {
-                    Text("↑").font(Theme.ui(17, weight: .medium)).foregroundColor(.white)
-                        .frame(width: 36, height: 36).background(canSend ? Theme.accent : Theme.sendIdle, in: Circle())
-                }.buttonStyle(.plain)
+                    Group {
+                        if canSend {
+                            Text("↑").font(Theme.ui(17, weight: .medium)).foregroundColor(.white)
+                        } else if m.running {
+                            RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
+                        } else {
+                            Image("wav").renderingMode(.template).resizable().frame(width: 25, height: 25).foregroundColor(Theme.sendIdleFg)
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .background(canSend ? Theme.accent : (m.running ? Theme.attachBg : Theme.sendIdle), in: Circle())
+                    .animation(.easeInOut(duration: 0.2), value: canSend)
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(EdgeInsets(top: 16, leading: 18, bottom: 10, trailing: 14))
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.composer))
-        .padding(.horizontal, 10).padding(.bottom, 8)
+        .padding(EdgeInsets(top: 18, leading: 18, bottom: 10, trailing: 14))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.composer)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
+            .shadow(color: Color.black.opacity(0.09), radius: 19, y: 14))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .onTapGesture { if !focused { focused = true } }
+        .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)
+    }
+
+    private var plusMenu: some View {
+        VStack(spacing: 0) {
+            plusRow("相册", "photo.on.rectangle") {
+                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in pending.append(contentsOf: imgs.prefix(max(0, 4 - pending.count))) }
+            }
+            plusRow("拍照", "camera") {
+                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(width: 176)
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.regularMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.bg.opacity(0.6)))
+        }
+        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
+    }
+    private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 14) {
+                Image(systemName: sys).font(.system(size: 20)).foregroundColor(Color(uiColor: Theme.uiScrollTint)).frame(width: 26)
+                Text(title).font(.system(size: 17)).foregroundColor(Theme.text)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 22).padding(.trailing, 16).frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func sendNow() {
+        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let imgs = pending.compactMap { Self.jpeg($0) }
+        let keepText = draft, keepImgs = pending
+        draft = ""; pending = []; focused = false
+        Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs } }
+    }
+    /// 长边 1568 的 jpeg（同克那边：Anthropic 最优尺寸）
+    private static func jpeg(_ ui: UIImage) -> Data? {
+        let L: CGFloat = 1568
+        let s = min(1, L / max(ui.size.width, ui.size.height))
+        let size = CGSize(width: (ui.size.width * s).rounded(), height: (ui.size.height * s).rounded())
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in ui.draw(in: CGRect(origin: .zero, size: size)) }
+            .jpegData(compressionQuality: 0.85)
+    }
+
+    // 语音：同克那边的手势（左滑取消、右滑编辑、松手发）；只要字，录音文件不上传、不写语气
+    private func startHold() {
+        guard !rec.recording else { return }
+        focused = false
+        Task {
+            if await rec.requestPermission() {
+                if !holdStarted { return }
+                _ = rec.start()
+            }
+        }
+    }
+    enum HoldMode { case send, edit, cancel }
+    private static func holdMode(_ t: CGSize) -> HoldMode { (t.width < -60 || t.height < -60) ? .cancel : (t.width > 60 ? .edit : .send) }
+    private func endHold(_ mode: HoldMode) {
+        guard rec.recording else { return }
+        if mode == .cancel { rec.cancel(); UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
+        Task {
+            guard let r = await rec.finish() else { return }
+            try? FileManager.default.removeItem(at: r.0)
+            if mode == .send && !r.2.isEmpty {
+                let imgs = pending.compactMap { Self.jpeg($0) }; pending = []
+                _ = await m.send(r.2, images: imgs)
+            } else {
+                draft = r.2; focused = true
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
     }
 }
 
-/// 工具一行（同克那边的工具行一族：线图标＋原名小字）；点开看我传了什么、回来了什么
+/// 我的一段正文：圆体；长按复制／从这里重来（新开一个分叉，原会话不动）
+struct CCTextRow: View {
+    let event: CCEvent
+    let onRewind: () -> Void
+    var body: some View {
+        let t = (event.text ?? "").replacingOccurrences(of: "\n[ \t]*\n+", with: "\n", options: .regularExpression)   // 空行不画成整行空白（截图 429）
+        RichText(attr: MD.ns(t, base: Theme.uiRound(16), bold: Theme.uiRound(16, weight: .semibold),
+                             mono: Theme.uiMono(13), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
+            .padding(.vertical, 8)
+            .contextMenu {
+                Button { UIPasteboard.general.string = event.text ?? "" } label: { Label("复制", systemImage: "doc.on.doc") }
+                Button(action: onRewind) { Label("从这里重来（新开一个分叉）", systemImage: "arrow.uturn.backward") }
+            }
+    }
+}
+
+// MARK: - 干活中的那一行（照 Claude Code 的「✻ Clauding… (1m 23s · ↓5.7k tokens)」，前面坐一只小 Clawd）
+
+struct CCLiveRow: View {
+    let live: CCEvent
+    let offset: Double
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+            let now = ctx.date.timeIntervalSince1970 + offset
+            let el = Int(max(0, now - (live.started ?? now)))
+            let thinkFor = Int(max(0, now - (live.since ?? now)))
+            let out = live.out ?? 0
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    ClawdWeb(state: Self.clawd(live.doing), flip: false).frame(width: 34, height: 34).allowsHitTesting(false)
+                    (Text("✻ " + (live.verb ?? "Clauding") + "… ").foregroundColor(Theme.accent)
+                     + Text("(" + CCFmt.dur(el) + (out > 0 ? " · ↓" + CCFmt.k(out) + " tokens" : "") + ")").foregroundColor(Theme.muted))
+                        .font(Theme.mono(12.5))
+                }
+                if live.doing == "thinking" {
+                    Text(thinkFor >= 8 ? "still thinking…" : "thinking…").font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.leading, 42)
+                } else if let d = live.doing, !d.isEmpty, d != "writing" {
+                    Text(d == "compacting" ? "compacting…" : d + "…").font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.leading, 42)
+                }
+            }
+        }
+    }
+    /// 小 Clawd 的动作随我在干的事换：想＝巫师、读写文件＝搬箱子、压缩＝晕、其余＝敲代码
+    static func clawd(_ doing: String?) -> String {
+        switch doing ?? "" {
+        case "thinking": return "wizard"
+        case "compacting": return "dizzy"
+        case "Read", "Write", "Edit", "Glob", "Grep": return "carry"
+        case "", "writing": return "typing"
+        default: return "code"
+        }
+    }
+}
+
+// MARK: - 工具行（同克那边的工具行一族：线图标＋原名小字）；点开看传了什么、回来了什么；改文件画红绿对比
+
 struct CCToolRow: View {
     let call: CCEvent
     let result: CCEvent?
     @State private var open = false
+    private var input: [String: Any] {
+        guard let s = call.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        return j
+    }
     var body: some View {
+        let j = input
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
-                Image("wrench").renderingMode(.template).resizable().frame(width: 14, height: 14)
+                Image(Self.icon(call.name)).renderingMode(.template).resizable().frame(width: 14, height: 14)
                 Text((call.name ?? "?") + (result == nil ? "…" : "")).font(Theme.mono(12.5))
-                Text(Self.brief(call)).font(Theme.mono(12)).lineLimit(1).truncationMode(.tail)
+                Text(Self.brief(j)).font(Theme.mono(12)).lineLimit(1).truncationMode(.tail)
                 if result?.error == true { Text("失败").font(Theme.round(12)).foregroundColor(Theme.knockText) }
             }
             .foregroundColor(Theme.muted)
@@ -427,8 +842,14 @@ struct CCToolRow: View {
             .onTapGesture { open.toggle() }
             if open {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(call.input ?? "").font(Theme.mono(11.5)).foregroundColor(Theme.text).textSelection(.enabled)
-                    if let r = result?.text, !r.isEmpty {
+                    if let old = j["old_string"] as? String, let new = j["new_string"] as? String {
+                        CCDiff(old: old, new: new)
+                    } else if call.name == "Write", let c = j["content"] as? String {
+                        CCDiff(old: "", new: c)
+                    } else {
+                        Text(call.input ?? "").font(Theme.mono(11.5)).foregroundColor(Theme.text).textSelection(.enabled)
+                    }
+                    if let r = result?.text, !r.isEmpty, j["old_string"] == nil {
                         Rectangle().fill(Theme.border).frame(height: 1)
                         Text(r).font(Theme.mono(11.5)).foregroundColor(Theme.muted).textSelection(.enabled)
                     }
@@ -439,14 +860,290 @@ struct CCToolRow: View {
             }
         }
     }
-    /// 工具名后面跟一截要点：Bash 的命令、Read/Edit 的文件名、Grep 的关键词
-    static func brief(_ e: CCEvent) -> String {
-        guard let s = e.input, let d = s.data(using: .utf8),
-              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return "" }
+    static func icon(_ n: String?) -> String {
+        switch n ?? "" {
+        case "Read": return "tool-book-open"
+        case "Edit", "MultiEdit", "Write": return "tool-pencil"
+        case "Grep", "Glob": return "search"
+        case "WebFetch", "WebSearch": return "tool-globe"
+        default: return "wrench"
+        }
+    }
+    /// 工具名后面跟一截要点：Bash 的说明/命令、Read/Edit 的文件名、Grep 的关键词
+    static func brief(_ j: [String: Any]) -> String {
         if let c = j["description"] as? String { return c }
         if let p = j["file_path"] as? String { return (p as NSString).lastPathComponent }
         if let c = j["command"] as? String { return c }
         if let p = j["pattern"] as? String { return p }
+        if let q = j["query"] as? String { return q }
+        if let u = j["url"] as? String { return u }
         return ""
     }
+}
+
+/// 红绿对比：删掉的行淡红底「-」，加上的行淡绿底「+」；两段共有的头尾只留三行灰色上下文
+struct CCDiff: View {
+    let old: String
+    let new: String
+    private struct Line: Identifiable { let id: Int; let sign: String; let text: String }
+    private var lines: [Line] {
+        let a = old.isEmpty ? [String]() : old.components(separatedBy: "\n")
+        let b = new.components(separatedBy: "\n")
+        var head = 0
+        while head < min(a.count, b.count) && a[head] == b[head] { head += 1 }
+        var tail = 0
+        while tail < min(a.count, b.count) - head && a[a.count - 1 - tail] == b[b.count - 1 - tail] { tail += 1 }
+        var out: [Line] = []
+        func add(_ s: String, _ t: String) { out.append(Line(id: out.count, sign: s, text: t)) }
+        for l in a[max(0, head - 3)..<head] { add(" ", l) }
+        for l in a[head..<(a.count - tail)] { add("-", l) }
+        for l in b[head..<(b.count - tail)] { add("+", l) }
+        for l in a[(a.count - tail)..<min(a.count, a.count - tail + 3)] { add(" ", l) }
+        return out
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines) { l in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(l.sign).frame(width: 10, alignment: .leading)
+                    Text(l.text.isEmpty ? " " : l.text).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(Theme.mono(11.5))
+                .foregroundColor(l.sign == " " ? Theme.muted : Theme.text)
+                .padding(.vertical, 1).padding(.horizontal, 4)
+                .background(l.sign == "-" ? Theme.dyn(0xF6DEDA, 0x4A2E2A) : (l.sign == "+" ? Theme.dyn(0xDDEEDD, 0x2B4030) : Color.clear))
+            }
+        }
+        .textSelection(.enabled)
+    }
+}
+
+// MARK: - 任务清单（TodoWrite）：最新那张展开，旧的折成一行
+
+struct CCTodoCard: View {
+    let event: CCEvent
+    @State private var open: Bool
+    init(event: CCEvent, open: Bool) { self.event = event; _open = State(initialValue: open) }
+    private struct Todo { let content: String; let status: String }
+    private var todos: [Todo] {
+        guard let s = event.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let arr = j["todos"] as? [[String: Any]] else { return [] }
+        return arr.map { t in
+            let st = t["status"] as? String ?? "pending"
+            let txt = (st == "in_progress" ? t["activeForm"] as? String : nil) ?? (t["content"] as? String ?? "")
+            return Todo(content: txt, status: st)
+        }
+    }
+    var body: some View {
+        let ts = todos
+        let done = ts.filter { $0.status == "completed" }.count
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image("tool-bookmark").renderingMode(.template).resizable().frame(width: 14, height: 14)
+                Text("任务清单 \(done)/\(ts.count)").font(Theme.mono(12.5))
+            }
+            .foregroundColor(Theme.muted)
+            .contentShape(Rectangle())
+            .onTapGesture { open.toggle() }
+            if open {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(ts.enumerated()), id: \.offset) { _, t in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: t.status == "completed" ? "checkmark.circle.fill" : (t.status == "in_progress" ? "circle.dotted" : "circle"))
+                                .font(.system(size: 13)).foregroundColor(t.status == "pending" ? Theme.muted : Theme.accent)
+                            Text(t.content).font(Theme.round(14))
+                                .foregroundColor(t.status == "completed" ? Theme.muted : Theme.text)
+                                .strikethrough(t.status == "completed", color: Theme.muted)
+                        }
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
+    }
+}
+
+// MARK: - 问题卡（我用 mcp__ccshi__ask 问她）：标题胶囊＋问句＋选项；可多题、可多选、总有「其他」自己写；答完作为下一句发回来
+
+struct CCAskCard: View {
+    let event: CCEvent
+    let answered: Bool
+    let onAnswer: (String) -> Void
+    private struct Opt { let label: String; let desc: String }
+    private struct Q { let header: String; let question: String; let options: [Opt]; let multi: Bool }
+    @State private var picks: [Int: Set<Int>] = [:]
+    @State private var other: [Int: String] = [:]
+    @State private var sent = false
+    private var qs: [Q] {
+        guard let s = event.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let arr = j["questions"] as? [[String: Any]] else { return [] }
+        return arr.map { q in
+            Q(header: q["header"] as? String ?? "", question: q["question"] as? String ?? "",
+              options: (q["options"] as? [[String: Any]] ?? []).map { Opt(label: $0["label"] as? String ?? "", desc: $0["description"] as? String ?? "") },
+              multi: q["multiSelect"] as? Bool ?? false)
+        }
+    }
+    var body: some View {
+        let list = qs
+        let locked = answered || sent
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(Array(list.enumerated()), id: \.offset) { qi, q in
+                question(qi, q, locked)
+            }
+            if !locked {
+                HStack {
+                    Spacer()
+                    Button { submit(list) } label: {
+                        Text("回答").font(Theme.round(14, weight: .medium)).foregroundColor(.white)
+                            .padding(.horizontal, 20).frame(height: 36)
+                            .background(ready(list) ? Theme.accent : Theme.sendIdle, in: Capsule())
+                    }.buttonStyle(.plain).disabled(!ready(list))
+                }
+            } else {
+                Text(answered ? "答过了" : "已发出").font(Theme.round(12)).foregroundColor(Theme.muted)
+            }
+        }
+        .padding(16)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .opacity(locked ? 0.75 : 1)
+    }
+    @ViewBuilder private func question(_ qi: Int, _ q: Q, _ locked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if !q.header.isEmpty {
+                    Text(q.header).font(Theme.round(11.5)).foregroundColor(Theme.accent)
+                        .padding(.horizontal, 8).frame(height: 20).background(Theme.knockBg, in: Capsule())
+                }
+                if q.multi { Text("可多选").font(Theme.round(11.5)).foregroundColor(Theme.muted) }
+            }
+            Text(q.question).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text)
+            ForEach(Array(q.options.enumerated()), id: \.offset) { oi, o in
+                let on = picks[qi]?.contains(oi) == true
+                Button {
+                    guard !locked else { return }
+                    var s = picks[qi] ?? []
+                    if q.multi { if on { s.remove(oi) } else { s.insert(oi) } } else { s = [oi]; other[qi] = nil }
+                    picks[qi] = s
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(o.label).font(Theme.round(14.5)).foregroundColor(on ? .white : Theme.text)
+                        if !o.desc.isEmpty { Text(o.desc).font(Theme.round(12)).foregroundColor(on ? Color.white.opacity(0.85) : Theme.muted) }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(on ? Theme.accent : Theme.userBubble, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }.buttonStyle(.plain)
+            }
+            if !locked {
+                TextField("其他（自己写）", text: Binding(get: { other[qi] ?? "" },
+                                                     set: { v in other[qi] = v; if !v.isEmpty && !q.multi { picks[qi] = [] } }))
+                    .font(Theme.round(14)).padding(.horizontal, 14).frame(height: 40)
+                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+    }
+    private func ready(_ list: [Q]) -> Bool {
+        list.indices.allSatisfy { i in !(picks[i] ?? []).isEmpty || !(other[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+    private func submit(_ list: [Q]) {
+        var lines: [String] = []
+        for (qi, q) in list.enumerated() {
+            var a = (picks[qi] ?? []).sorted().map { q.options[$0].label }
+            if let o = other[qi]?.trimmingCharacters(in: .whitespaces), !o.isEmpty { a.append(o) }
+            lines.append((q.header.isEmpty ? q.question : q.header) + "：" + a.joined(separator: "、"))
+        }
+        sent = true
+        onAnswer(lines.joined(separator: "\n"))
+    }
+}
+
+// MARK: - 我递来的文件：图片就地画（点开看大图）；HTML/PDF/文本一张卡，点开整页预览
+
+struct CCFileImage: View {
+    let sid: String
+    let name: String
+    var maxW: CGFloat = 260
+    var maxH: CGFloat = 320
+    @State private var img: UIImage? = nil
+    var body: some View {
+        Group {
+            if let img {
+                Image(uiImage: img).resizable().scaledToFit().frame(maxWidth: maxW, maxHeight: maxH)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .onTapGesture { ImageViewer.shared.image = img }
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.userBubble).frame(width: min(maxW, 120), height: min(maxH, 90))
+            }
+        }
+        .task { if img == nil, let d = await CCShiAPI.file(sid, name) { img = UIImage(data: d) } }
+    }
+}
+
+struct CCWebDoc: Identifiable { let id = UUID(); let title: String; let data: Data; let mime: String }
+
+struct CCShowCard: View {
+    let sid: String
+    let event: CCEvent
+    let onOpen: (CCWebDoc) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if event.type == "image", let f = event.file {
+                CCFileImage(sid: sid, name: f)
+            } else {
+                Button { Task { await open() } } label: {
+                    HStack(spacing: 10) {
+                        Image("tool-scroll").renderingMode(.template).resizable().frame(width: 18, height: 18).foregroundColor(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.name ?? "文件").font(Theme.round(14.5, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
+                            Text((event.type ?? "").uppercased() + " · 点开预览").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                        }
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }.buttonStyle(.plain)
+            }
+            if let t = event.title, !t.isEmpty {
+                Text(t).font(Theme.round(12.5)).foregroundColor(Theme.muted)
+            }
+        }
+    }
+    @MainActor private func open() async {
+        guard let f = event.file, let d = await CCShiAPI.file(sid, f) else { return }
+        let mime = event.type == "html" ? "text/html" : (event.type == "pdf" ? "application/pdf" : "text/plain")
+        let title = (event.title?.isEmpty == false ? event.title : event.name) ?? ""
+        onOpen(CCWebDoc(title: title, data: d, mime: mime))
+    }
+}
+
+struct CCWebSheet: View {
+    let doc: CCWebDoc
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(doc.title).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                Spacer()
+                Button("完成") { dismiss() }.font(Theme.round(15)).foregroundColor(Theme.accent)
+            }
+            .padding(.horizontal, 18).frame(height: 50)
+            CCWeb(doc: doc)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+    }
+}
+
+/// HTML 原样跑（不带网关口令；页面里的外链照常能开）；PDF/文本交给 WKWebView 自己画
+struct CCWeb: UIViewRepresentable {
+    let doc: CCWebDoc
+    func makeUIView(context: Context) -> WKWebView {
+        let w = WKWebView()
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.load(doc.data, mimeType: doc.mime, characterEncodingName: "utf-8", baseURL: URL(string: "about:blank")!)
+        return w
+    }
+    func updateUIView(_ w: WKWebView, context: Context) {}
 }
