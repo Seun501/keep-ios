@@ -178,17 +178,27 @@ extension Notification.Name {
 }
 
 enum CCFmt {
+    /// 43.2万 / 100万（小卡里用，紧凑）
+    static func tokShort(_ n: Int) -> String {
+        n >= 10000 ? (n % 10000 == 0 ? "\(n / 10000)万" : String(format: "%.1f万", Double(n) / 10000)) : String(n)
+    }
     /// 4.2 万 / 1237
     static func tok(_ n: Int) -> String { n >= 10000 ? String(format: "%.1f 万", Double(n) / 10000) : String(n) }
     /// ↓5.7k（同 Claude Code 那行）
     static func k(_ n: Int) -> String { n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n) }
     static func dur(_ s: Int) -> String { s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s" }
-    /// 一轮收尾那行：时间 · 用时 · ↓输出 token（拆开写：一行拼完编译器类型推断超时，构建 431）
+    /// 一轮收尾那行，照 Claude Code：「✻ Cooked for 43s · done 3:05 PM」（寻 10-27：token 数不放这儿，右上角有）
+    static let doneVerbs = ["Baked", "Brewed", "Churned", "Cogitated", "Cooked", "Crunched", "Mulled", "Pondered",
+                            "Simmered", "Noodled", "Percolated", "Sautéed", "Whisked", "Worked", "Marinated", "Kneaded"]
     static func endLine(_ e: CCEvent) -> String {
-        var parts: [String] = [TimeFmt.stamp(e.ts)]
-        if let s = e.secs { parts.append(dur(Int(s))) }
-        if let o = e.out { parts.append("↓" + k(o) + " tokens") }
-        return parts.joined(separator: "  ·  ")
+        let verb = doneVerbs[abs(e.seq) % doneVerbs.count]
+        var t = "✻ " + verb + " for " + dur(Int(e.secs ?? 0))
+        if let d = TimeFmt.parse(e.ts ?? "") {
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US")
+            f.dateFormat = Calendar.current.isDateInToday(d) ? "h:mm a" : "M/d h:mm a"
+            t += " · done " + f.string(from: d)
+        }
+        return t
     }
     /// 干活行括号里那截：(1m 23s · ↓5.7k tokens)
     static func liveTail(_ el: Int, _ out: Int) -> String {
@@ -531,14 +541,22 @@ struct CCShiSessionScreen: View {
         .overlay(alignment: .topTrailing) {
             if infoOpen {
                 ZStack(alignment: .topTrailing) {
-                    Color.black.opacity(0.001).ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.15)) { infoOpen = false } }
-                    infoCard.padding(.top, 52).padding(.trailing, 14)
+                    Color.black.opacity(0.001).ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.15)) { infoOpen = false; modelOpen = false } }
+                    HStack(alignment: .top, spacing: 8) {
+                        if modelOpen { modelCard.padding(.top, 70).transition(.opacity) }
+                        infoCard
+                    }
+                    .padding(.top, 52).padding(.trailing, 14)
                         .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
                 }
             }
         }
         .sheet(item: $webDoc) { d in CCWebSheet(doc: d) }
-        .onAppear { if Preview.on && Preview.screen == "ccshiinfo" { DispatchQueue.main.asyncAfter(deadline: .now() + 4) { infoOpen = true } } }
+        .onAppear {
+            if Preview.on && ["ccshiinfo", "ccshimodel"].contains(Preview.screen) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { infoOpen = true; modelOpen = Preview.screen == "ccshimodel" }
+            }
+        }
         .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start() }
         .onDisappear { m.markRead(); m.stopStream() }
         .onChange(of: phase) { p in if p == .active { m.start() } }
@@ -573,47 +591,65 @@ struct CCShiSessionScreen: View {
     /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
     private var infoCard: some View {
         let c = m.meta?.ctx ?? 0
-        let pct = Int(Double(c) * 100 / Double(ctxMax))
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("上下文 \(CCFmt.tok(c)) / \(CCFmt.tok(ctxMax))").font(Theme.round(14, weight: .medium)).foregroundColor(Theme.text)
-                    Text("用了 \(pct)%" + (pct >= 75 ? "，找个空当压一下吧" : "")).font(Theme.round(12)).foregroundColor(pct >= 75 ? Theme.accent : Theme.muted)
-                }
+        let hot = Double(c) / Double(ctxMax) >= 0.75
+        return VStack(alignment: .leading, spacing: 8) {
+            // 上下文＋压缩同一行（寻 10-27：瘦长简洁，压缩别做成大块按钮）
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(CCFmt.tokShort(c) + " / " + CCFmt.tokShort(ctxMax)).font(Theme.mono(13, weight: .medium))
+                    .foregroundColor(hot ? CCRing.color(Double(c) / Double(ctxMax)) : Theme.text)
+                Spacer(minLength: 6)
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { infoOpen = false; modelOpen = false }
+                    m.compact()
+                } label: {
+                    Text("压缩").font(Theme.round(12.5, weight: .medium)).foregroundColor(m.running ? Theme.muted : Theme.accent)
+                }.buttonStyle(.plain).disabled(m.running)
             }
-            if !usageLine.isEmpty { Text("额度 " + usageLine).font(Theme.round(12)).foregroundColor(Theme.muted) }
-            // 换模型（不常用，收在这张卡里）：两行两个、写全名（「O 5.5」看不懂，截图 442）
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach([0, 2], id: \.self) { r in
-                    HStack(spacing: 6) {
-                        ForEach(CCFmt.models[r..<r + 2], id: \.0) { mm in
-                            let on = (m.meta?.model ?? "") == mm.0
-                            Button { m.setModel(mm.0) } label: {
-                                Text(mm.1).font(Theme.round(12.5)).foregroundColor(on ? .white : Theme.text)
-                                    .frame(maxWidth: .infinity).frame(height: 28)
-                                    .background(on ? Theme.accent : Theme.userBubble, in: Capsule())
-                            }.buttonStyle(.plain)
-                        }
-                    }
+            if !usageLine.isEmpty { Text(usageLine).font(Theme.mono(11.5)).foregroundColor(Theme.muted) }
+            Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1)
+            // 在役模型；点开旁边弹小窗选别的
+            Button { withAnimation(.easeOut(duration: 0.15)) { modelOpen.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Text(modelLabel.isEmpty ? "模型" : modelLabel).font(Theme.mono(12.5)).foregroundColor(Theme.text)
+                    Spacer(minLength: 4)
+                    Image("chev").renderingMode(.template).resizable().frame(width: 12, height: 12)
+                        .rotationEffect(.degrees(modelOpen ? -90 : 90)).foregroundColor(Theme.muted)
                 }
-            }
-            Text("现在：" + (modelLabel.isEmpty ? "—" : modelLabel) + "（换了从下一轮起生效）").font(Theme.round(11.5)).foregroundColor(Theme.muted)
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { infoOpen = false }
-                m.compact()
-            } label: {
-                Text(m.running ? "干完这轮再压缩" : "压缩上下文").font(Theme.round(14)).foregroundColor(m.running ? Theme.muted : .white)
-                    .frame(maxWidth: .infinity).frame(height: 38)
-                    .background(m.running ? Theme.userBubble : Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }.buttonStyle(.plain).disabled(m.running)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
         }
-        .padding(16)
-        .frame(width: 270)
-        .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.regularMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.bg.opacity(0.6)))
-        }
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+        .frame(width: 196)
+        .background(Self.popBg)
         .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
+    }
+    @State private var modelOpen = false
+    /// 换模型的小窗（贴在小卡左边）：一行一个，当前那个打勾；换了从下一轮起生效
+    private var modelCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(CCFmt.models.filter { !$0.0.isEmpty }, id: \.0) { mm in
+                let on = modelLabel == mm.1
+                Button {
+                    m.setModel(mm.0)
+                    withAnimation(.easeOut(duration: 0.15)) { modelOpen = false }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(mm.1).font(Theme.mono(12.5)).foregroundColor(Theme.text)
+                        Spacer(minLength: 4)
+                        if on { Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.accent) }
+                    }
+                    .padding(.horizontal, 14).frame(height: 38).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(width: 150)
+        .background(Self.popBg)
+        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
+    }
+    private static var popBg: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.regularMaterial)
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.bg.opacity(0.6)))
     }
 
     // MARK: 一块
@@ -645,7 +681,7 @@ struct CCShiSessionScreen: View {
                 .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
         case .end(let e):
             Text(CCFmt.endLine(e))
-                .font(Theme.round(12)).foregroundColor(Theme.muted).padding(.top, 2).padding(.bottom, 10)
+                .font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
         }
