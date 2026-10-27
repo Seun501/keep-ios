@@ -933,7 +933,7 @@ struct CCLiveRow: View {
                                                             .init(color: Theme.accent, location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
                 Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
-                    .lineLimit(1).truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
             }
         }
     }
