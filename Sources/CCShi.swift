@@ -1108,7 +1108,9 @@ struct CCToolGroup: View {
             case "read": return "read \(c) file" + (c > 1 ? "s" : "")
             case "edit": return "edited \(c) file" + (c > 1 ? "s" : "")
             case "write": return "wrote \(c) file" + (c > 1 ? "s" : "")
-            case "search": return "searched \(c) time" + (c > 1 ? "s" : "")
+            // 措辞照 Claude Code 自己那段（CLI 里拼「Searched for N patterns, read N files, listed N directories」的函数）
+            case "search": return "searched for \(c) pattern" + (c > 1 ? "s" : "")
+            case "list": return "listed \(c) director" + (c > 1 ? "ies" : "y")
             case "web": return "fetched \(c) page" + (c > 1 ? "s" : "")
             default: return "used \(k)" + (c > 1 ? " ×\(c)" : "")
             }
@@ -1123,6 +1125,7 @@ struct CCToolGroup: View {
         case "Edit", "MultiEdit", "NotebookEdit": return "edit"
         case "Write": return "write"
         case "Grep", "Glob": return "search"
+        case "LS": return "list"
         case "WebFetch", "WebSearch": return "web"
         default: return name.replacingOccurrences(of: "mcp__", with: "")
         }
