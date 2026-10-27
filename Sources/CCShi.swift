@@ -581,16 +581,19 @@ struct CCShiSessionScreen: View {
                 }
             }
             if !usageLine.isEmpty { Text("额度 " + usageLine).font(Theme.round(12)).foregroundColor(Theme.muted) }
-            // 换模型（不常用，收在这张卡里）
-            HStack(spacing: 6) {
-                ForEach(CCFmt.models, id: \.0) { mm in
-                    let on = (m.meta?.model ?? "") == mm.0
-                    Button { m.setModel(mm.0) } label: {
-                        Text(mm.0.isEmpty ? (modelLabel.isEmpty ? "默认" : "默认") : mm.1.replacingOccurrences(of: "Opus ", with: "O ").replacingOccurrences(of: "Sonnet ", with: "S "))
-                            .font(Theme.round(12)).foregroundColor(on ? .white : Theme.text)
-                            .padding(.horizontal, 9).frame(height: 26)
-                            .background(on ? Theme.accent : Theme.userBubble, in: Capsule())
-                    }.buttonStyle(.plain)
+            // 换模型（不常用，收在这张卡里）：两行两个、写全名（「O 5.5」看不懂，截图 442）
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach([0, 2], id: \.self) { r in
+                    HStack(spacing: 6) {
+                        ForEach(CCFmt.models[r..<r + 2], id: \.0) { mm in
+                            let on = (m.meta?.model ?? "") == mm.0
+                            Button { m.setModel(mm.0) } label: {
+                                Text(mm.1).font(Theme.round(12.5)).foregroundColor(on ? .white : Theme.text)
+                                    .frame(maxWidth: .infinity).frame(height: 28)
+                                    .background(on ? Theme.accent : Theme.userBubble, in: Capsule())
+                            }.buttonStyle(.plain)
+                        }
+                    }
                 }
             }
             Text("现在：" + (modelLabel.isEmpty ? "—" : modelLabel) + "（换了从下一轮起生效）").font(Theme.round(11.5)).foregroundColor(Theme.muted)
@@ -1154,9 +1157,9 @@ struct CCAskPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if qs.count > 1 {
                         HStack(spacing: 2) {
-                            Button { if step > 0 { step -= 1; multi = [] } } label: { pagerArrow(-90).opacity(step > 0 ? 1 : 0.3) }.buttonStyle(.plain)
+                            Button { if step > 0 { step -= 1; multi = [] } } label: { pagerArrow(90).opacity(step > 0 ? 1 : 0.3) }.buttonStyle(.plain)
                             Text("\(step + 1)/\(qs.count)").font(Theme.mono(12)).foregroundColor(Theme.muted)
-                            Button { if step + 1 < qs.count { step += 1; multi = [] } } label: { pagerArrow(90).opacity(step + 1 < qs.count ? 1 : 0.3) }.buttonStyle(.plain)
+                            Button { if step + 1 < qs.count { step += 1; multi = [] } } label: { pagerArrow(-90).opacity(step + 1 < qs.count ? 1 : 0.3) }.buttonStyle(.plain)
                         }
                         .padding(.trailing, 2)
                     }
