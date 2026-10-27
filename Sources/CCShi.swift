@@ -1014,6 +1014,14 @@ struct CCLiveRow: View {
         case "thinking": parts.append(thinkFor >= 8 ? "still thinking" : "thinking")
         case "compacting": parts.append("compacting")
         case "", "writing": if let t = thought { parts.append("thought for " + (t < 10 ? String(format: "%.1fs", t) : "\(Int(t))s")) }
+        case "Bash": parts.append("running 1 shell command")     // 照 Claude Code 的说法
+        case "Read": parts.append("reading")
+        case "Edit", "MultiEdit", "Write", "NotebookEdit": parts.append("editing")
+        case "Grep", "Glob": parts.append("searching")
+        case "WebFetch", "WebSearch": parts.append("fetching")
+        case "TodoWrite": parts.append("planning")
+        case let d where d.hasSuffix("__ask"): parts.append("asking you")
+        case let d where d.hasSuffix("__show"): parts.append("showing you")
         case let d: parts.append(d)
         }
         return "(" + parts.joined(separator: " · ") + ")"
@@ -1058,8 +1066,9 @@ struct CCToolRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Image(Self.icon(call.name)).renderingMode(.template).resizable().frame(width: 14, height: 14)
-                Text((call.name ?? "?") + (result == nil ? "…" : "")).font(Theme.mono(12.5))
+                Text(call.name ?? "?").font(Theme.mono(12.5))
                 Text(Self.brief(j)).font(Theme.mono(12)).lineLimit(1).truncationMode(.tail)
+                if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }   // 还没回来
                 if result?.error == true { Text("失败").font(Theme.round(12)).foregroundColor(Theme.knockText) }
             }
             .foregroundColor(Theme.muted)
