@@ -475,7 +475,7 @@ struct ChatScreen: View {
         case "mem", "askpick", "memword", "memday", "memedit", "memdayadd", "membk", "membkopen", "membkmon", "membkq", "memmf", "memmfdoc", "memmfpeek", "memrecent", "memchanges": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
         case "places", "tripsheet": return [.places]
         case "ccshi": return [.ccshi]
-        case "ccshisess", "ccshirun", "ccshitop": return [.ccshi, .ccshiSession("p1")]
+        case "ccshisess", "ccshirun", "ccshitop", "ccshiinfo": return [.ccshi, .ccshiSession("p1")]
         case "ccshifiles": return [.ccshi, .ccshiFiles(""), .ccshiFiles("项目")]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）

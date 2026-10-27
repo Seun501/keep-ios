@@ -35,6 +35,7 @@ struct CCEvent: Decodable {
     var secs: Double?
     var state: String?
     var images: [String]?
+    var interject: Bool?
     var file: String?
     var type: String?
     var title: String?
@@ -485,7 +486,7 @@ struct CCShiSessionScreen: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 ForEach(CCBlock.build(m.events)) { b in row(b) }
-                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset).padding(.top, 6) }
+                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset).padding(.top, 6).padding(.bottom, 4) }
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
@@ -524,6 +525,15 @@ struct CCShiSessionScreen: View {
                 .zIndex(50)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if infoOpen {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(0.001).ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.15)) { infoOpen = false } }
+                    infoCard.padding(.top, 52).padding(.trailing, 14)
+                        .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
+                }
+            }
+        }
         .sheet(item: $webDoc) { d in CCWebSheet(doc: d) }
         .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start() }
         .onDisappear { m.markRead(); m.stopStream() }
@@ -542,41 +552,60 @@ struct CCShiSessionScreen: View {
         let a = CCFmt.modelShort(m.meta?.model)
         return a.isEmpty ? CCFmt.modelShort(m.meta?.model_actual) : a
     }
+    @State private var infoOpen = Preview.on && Preview.screen == "ccshiinfo"
+    @State private var usageLine = ""
     private var header: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 12) {
-                Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
-                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
-                Spacer()
-                Menu {
-                    ForEach(CCFmt.models, id: \.0) { mm in
-                        Button { m.setModel(mm.0) } label: {
-                            if (m.meta?.model ?? "") == mm.0 { Label(mm.1, systemImage: "checkmark") } else { Text(mm.1) }
-                        }
-                    }
-                } label: {
-                    Text(modelLabel.isEmpty ? "模型" : modelLabel)
-                        .font(Theme.round(12)).foregroundColor(Theme.muted)
-                        .padding(.horizontal, 10).frame(height: 26)
-                        .background(Theme.userBubble, in: Capsule())
-                }
-            }
-            .padding(.horizontal, 16).padding(.top, 12).frame(minHeight: 44)
+        HStack(spacing: 12) {
+            Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+            Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+            Spacer()
             if let c = m.meta?.ctx, c > 0 {
-                let full = c >= 150_000
-                HStack(spacing: 10) {
-                    Text("上下文 \(CCFmt.tok(c)) / 20 万").font(Theme.round(12)).foregroundColor(full ? Theme.accent : Theme.muted)
-                    if !m.running && c >= 20_000 {
-                        Button { m.compact() } label: {
-                            Text("压缩").font(Theme.round(12)).foregroundColor(full ? .white : Theme.text)
-                                .padding(.horizontal, 10).frame(height: 22)
-                                .background(full ? Theme.accent : Theme.userBubble, in: Capsule())
-                        }.buttonStyle(.plain)
+                Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: c) }.buttonStyle(.plain)
+            }
+            Menu {
+                ForEach(CCFmt.models, id: \.0) { mm in
+                    Button { m.setModel(mm.0) } label: {
+                        if (m.meta?.model ?? "") == mm.0 { Label(mm.1, systemImage: "checkmark") } else { Text(mm.1) }
                     }
                 }
-                .frame(maxWidth: .infinity).padding(.bottom, 6)
+            } label: {
+                Text(modelLabel.isEmpty ? "模型" : modelLabel)
+                    .font(Theme.round(12)).foregroundColor(Theme.muted)
+                    .padding(.horizontal, 10).frame(height: 26)
+                    .background(Theme.userBubble, in: Capsule())
             }
         }
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6).frame(minHeight: 44)
+        .task { if let u = await CCShiAPI.usage() { usageLine = u.line } else if Preview.on { usageLine = "5h 36% · week 6% · Sat" } }
+    }
+    /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
+    private var infoCard: some View {
+        let c = m.meta?.ctx ?? 0
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                CCRing(used: c, size: 34)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("上下文 \(CCFmt.tok(c)) / 20 万").font(Theme.round(14, weight: .medium)).foregroundColor(Theme.text)
+                    Text("用了 \(Int(Double(c) / 2000))%" + (c >= 150_000 ? "，快满了，压一下吧" : "")).font(Theme.round(12)).foregroundColor(c >= 150_000 ? Theme.accent : Theme.muted)
+                }
+            }
+            if !usageLine.isEmpty { Text("额度 " + usageLine).font(Theme.round(12)).foregroundColor(Theme.muted) }
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { infoOpen = false }
+                m.compact()
+            } label: {
+                Text(m.running ? "干完这轮再压缩" : "压缩上下文").font(Theme.round(14)).foregroundColor(m.running ? Theme.muted : .white)
+                    .frame(maxWidth: .infinity).frame(height: 38)
+                    .background(m.running ? Theme.userBubble : Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }.buttonStyle(.plain).disabled(m.running)
+        }
+        .padding(16)
+        .frame(width: 250)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.regularMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.bg.opacity(0.6)))
+        }
+        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
     }
 
     // MARK: 一块
@@ -587,7 +616,7 @@ struct CCShiSessionScreen: View {
                 if let imgs = e.images, !imgs.isEmpty {
                     HStack(spacing: 6) { ForEach(imgs, id: \.self) { n in CCFileImage(sid: m.id, name: n, maxW: 120, maxH: 120) } }
                 }
-                UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: [])
+                UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: [], pick: e.interject == true ? "插话" : nil)   // 干活时发的话＝插进那一轮
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.vertical, 12)
@@ -596,7 +625,12 @@ struct CCShiSessionScreen: View {
         case .tool(let call, let res):
             CCToolRow(call: call, result: res).padding(.vertical, 3)
         case .ask(let e, let answered):
-            CCAskCard(event: e, answered: answered, onAnswer: { t in Task { _ = await m.send(t) } }).padding(.vertical, 8)
+            HStack(spacing: 7) {
+                Image("askxun").renderingMode(.template).resizable().frame(width: 14, height: 14)
+                Text((answered ? "问过你：" : "在问你：") + CCAsk.parse(e).map { $0.header.isEmpty ? $0.question : $0.header }.joined(separator: " · "))
+                    .font(Theme.mono(12.5)).lineLimit(1)
+            }
+            .foregroundColor(answered ? Theme.muted : Theme.accent).padding(.vertical, 3)
         case .todo(let e, let latest):
             CCTodoCard(event: e, open: latest).padding(.vertical, 6)
         case .text(let e):
@@ -619,6 +653,12 @@ struct CCShiSessionScreen: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
+            if let a = activeAsk {
+                CCAskPanel(qs: CCAsk.parse(a), step: $askStep, answers: $askAnswers, multi: $askMulti, onDone: { t in
+                    askStep = 0; askAnswers = []; askMulti = []
+                    Task { _ = await m.send(t) }
+                })
+            }
             if !files.isEmpty || uploading > 0 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -654,7 +694,7 @@ struct CCShiSessionScreen: View {
                 }
             }
             ZStack {
-                Composer(text: $draft, focused: $focused, placeholder: m.running ? "接着说（排在这轮后面）…" : "Chat with CC师…")
+                Composer(text: $draft, focused: $focused, placeholder: activeAsk != nil ? "其他（自己写）…" : (m.running ? "插一句…" : "Chat with CC师…"))
                     .opacity(rec.recording ? 0 : 1)
                     .overlay {
                         if !focused && draft.isEmpty {
@@ -776,7 +816,30 @@ struct CCShiSessionScreen: View {
         .buttonStyle(.plain)
     }
 
+    /// 还没答的那张问题卡：最后一次 ask 之后她还没说过话
+    private var activeAsk: CCEvent? {
+        guard let a = m.events.last(where: { $0.kind == "tool" && ($0.name ?? "").hasSuffix("__ask") }) else { return nil }
+        return m.events.contains(where: { $0.kind == "user" && $0.seq > a.seq }) ? nil : a
+    }
+    @State private var askStep = 0
+    @State private var askAnswers: [String] = []
+    @State private var askMulti: Set<Int> = []
+
     private func sendNow() {
+        if let a = activeAsk {   // 问题卡开着时打的字＝这一题的「其他」
+            let qs = CCAsk.parse(a)
+            let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty, askStep < qs.count else { return }
+            let q = qs[askStep]
+            let picked = askMulti.sorted().map { q.options[$0].label }
+            askAnswers.append((q.header.isEmpty ? q.question : q.header) + "：" + (picked + [typed]).joined(separator: "、"))
+            draft = ""; askMulti = []
+            if askStep + 1 < qs.count { askStep += 1 } else {
+                let t = askAnswers.joined(separator: "\n"); askStep = 0; askAnswers = []
+                Task { _ = await m.send(t) }
+            }
+            return
+        }
         var t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if !files.isEmpty {
             t += (t.isEmpty ? "" : "\n\n") + files.map { "[寻放进 ~/Claude/\($0) 了]" }.joined(separator: "\n")
@@ -842,44 +905,63 @@ struct CCTextRow: View {
     }
 }
 
-// MARK: - 干活中的那一行（照 Claude Code 的「✻ Clauding… (1m 23s · ↓5.7k tokens)」，前面坐一只小 Clawd）
+// MARK: - 干活中的那一行（照 Claude Code：「✻ Clauding… (1m 23s · ↓5.7k tokens · thinking)」，左顶格）
+// ✻ 在 ·✢✳✶✻✽ 之间来回换（同 CC 的转星），动词上一道浅光从左往右扫；括号里跟着在干什么
 
 struct CCLiveRow: View {
     let live: CCEvent
     let offset: Double
+    static let stars = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-            let now = ctx.date.timeIntervalSince1970 + offset
+        TimelineView(.animation(minimumInterval: 0.12)) { ctx in
+            let t = ctx.date.timeIntervalSince1970
+            let now = t + offset
             let el = Int(max(0, now - (live.started ?? now)))
             let thinkFor = Int(max(0, now - (live.since ?? now)))
-            let out = live.out ?? 0
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    // 小 Clawd：素材四周自带留白，框给大、再用负边距收回（34 框只画出一个点）
-                    ClawdWeb(state: Self.clawd(live.doing), flip: false).frame(width: 64, height: 64).padding(-14).allowsHitTesting(false)
-                    let verb: String = (live.verb ?? "Clauding") + "… "
-                    let tail: String = CCFmt.liveTail(el, out)
-                    (Text("✻ ").font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.accent)   // Cascadia 没有 ✻，画成了 *
-                     + Text(verb).font(Theme.mono(12.5)).foregroundColor(Theme.accent)
-                     + Text(tail).font(Theme.mono(12.5)).foregroundColor(Theme.muted))
-                }
-                if live.doing == "thinking" {
-                    Text(thinkFor >= 8 ? "still thinking…" : "thinking…").font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.leading, 42)
-                } else if let d = live.doing, !d.isEmpty, d != "writing" {
-                    Text(d == "compacting" ? "compacting…" : d + "…").font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.leading, 42)
-                }
+            let star = Self.stars[Int(t / 0.12) % Self.stars.count]
+            let phase = CGFloat((t.truncatingRemainder(dividingBy: 2.0)) / 2.0) * 1.6 - 0.3   // -0.3 → 1.3，两秒扫一趟
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(star).font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.accent).frame(width: 18, alignment: .leading)
+                Text((live.verb ?? "Clauding") + "… ").font(Theme.mono(12.5))
+                    .foregroundStyle(LinearGradient(stops: [.init(color: Theme.accent, location: 0),
+                                                            .init(color: Theme.accent, location: max(0, phase - 0.15)),
+                                                            .init(color: Theme.accent.opacity(0.35), location: min(1, max(0, phase))),
+                                                            .init(color: Theme.accent, location: min(1, phase + 0.15)),
+                                                            .init(color: Theme.accent, location: 1)],
+                                                    startPoint: .leading, endPoint: .trailing))
+                Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                    .lineLimit(1).truncationMode(.tail)
             }
         }
     }
-    /// 小 Clawd 的动作随我在干的事换：想＝巫师、读写文件＝搬箱子、压缩＝晕、其余＝敲代码
-    static func clawd(_ doing: String?) -> String {
+    /// (1m 23s · ↓5.7k tokens · still thinking)
+    static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int) -> String {
+        var parts = [CCFmt.dur(el)]
+        if out > 0 { parts.append("↓" + CCFmt.k(out) + " tokens") }
         switch doing ?? "" {
-        case "thinking": return "wizard"
-        case "compacting": return "dizzy"
-        case "Read", "Write", "Edit", "Glob", "Grep": return "carry"
-        case "", "writing": return "typing"
-        default: return "code"
+        case "thinking": parts.append(thinkFor >= 8 ? "still thinking" : "thinking")
+        case "compacting": parts.append("compacting")
+        case "", "writing": break
+        case let d: parts.append(d)
         }
+        return "(" + parts.joined(separator: " · ") + ")"
+    }
+}
+
+/// 上下文圆环：20 万为满，75% 起变赤陶
+struct CCRing: View {
+    let used: Int
+    var size: CGFloat = 20
+    var body: some View {
+        let f = min(1, Double(used) / 200_000)
+        ZStack {
+            Circle().stroke(Theme.userBubble, lineWidth: size / 7)
+            Circle().trim(from: 0, to: f).stroke(f >= 0.75 ? Theme.accent : Theme.muted, style: StrokeStyle(lineWidth: size / 7, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+        .frame(width: max(size, 30), height: max(size, 30))
+        .contentShape(Rectangle())
     }
 }
 
@@ -1031,19 +1113,15 @@ struct CCTodoCard: View {
     }
 }
 
-// MARK: - 问题卡（我用 mcp__ccshi__ask 问她）：标题胶囊＋问句＋选项；可多题、可多选、总有「其他」自己写；答完作为下一句发回来
+// MARK: - 问题卡（我用 mcp__ccshi__ask 问她）：照克那边的选项卡，从输入卡上方长出来、和输入框同一张卡
+// 一次一题：标题胶囊＋问句＋「1/2」；选项一行一个，序号坐在她气泡底色的小圆上；单选点一下就答、跳下一题；
+// 多选打勾、右下「好了」；「其他」＝直接在下面输入框里打字发出。答完整张卡收起，流里只留一行「问过你：…」。
 
-struct CCAskCard: View {
-    let event: CCEvent
-    let answered: Bool
-    let onAnswer: (String) -> Void
-    private struct Opt { let label: String; let desc: String }
-    private struct Q { let header: String; let question: String; let options: [Opt]; let multi: Bool }
-    @State private var picks: [Int: Set<Int>] = [:]
-    @State private var other: [Int: String] = [:]
-    @State private var sent = false
-    private var qs: [Q] {
-        guard let s = event.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+enum CCAsk {
+    struct Opt { let label: String; let desc: String }
+    struct Q { let header: String; let question: String; let options: [Opt]; let multi: Bool }
+    static func parse(_ e: CCEvent) -> [Q] {
+        guard let s = e.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let arr = j["questions"] as? [[String: Any]] else { return [] }
         return arr.map { q in
             Q(header: q["header"] as? String ?? "", question: q["question"] as? String ?? "",
@@ -1051,77 +1129,77 @@ struct CCAskCard: View {
               multi: q["multiSelect"] as? Bool ?? false)
         }
     }
+}
+
+struct CCAskPanel: View {
+    let qs: [CCAsk.Q]
+    @Binding var step: Int
+    @Binding var answers: [String]
+    @Binding var multi: Set<Int>
+    let onDone: (String) -> Void
     var body: some View {
-        let list = qs
-        let locked = answered || sent
-        VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(list.enumerated()), id: \.offset) { qi, q in
-                question(qi, q, locked)
-            }
-            if !locked {
-                HStack {
-                    Spacer()
-                    Button { submit(list) } label: {
-                        Text("回答").font(Theme.round(14, weight: .medium)).foregroundColor(.white)
-                            .padding(.horizontal, 20).frame(height: 36)
-                            .background(ready(list) ? Theme.accent : Theme.sendIdle, in: Capsule())
-                    }.buttonStyle(.plain).disabled(!ready(list))
-                }
-            } else {
-                Text(answered ? "答过了" : "已发出").font(Theme.round(12)).foregroundColor(Theme.muted)
-            }
-        }
-        .padding(16)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .opacity(locked ? 0.75 : 1)
-    }
-    @ViewBuilder private func question(_ qi: Int, _ q: Q, _ locked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                if !q.header.isEmpty {
-                    Text(q.header).font(Theme.round(11.5)).foregroundColor(Theme.accent)
-                        .padding(.horizontal, 8).frame(height: 20).background(Theme.knockBg, in: Capsule())
-                }
-                if q.multi { Text("可多选").font(Theme.round(11.5)).foregroundColor(Theme.muted) }
-            }
-            Text(q.question).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text)
-            ForEach(Array(q.options.enumerated()), id: \.offset) { oi, o in
-                let on = picks[qi]?.contains(oi) == true
-                Button {
-                    guard !locked else { return }
-                    var s = picks[qi] ?? []
-                    if q.multi { if on { s.remove(oi) } else { s.insert(oi) } } else { s = [oi]; other[qi] = nil }
-                    picks[qi] = s
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(o.label).font(Theme.round(14.5)).foregroundColor(on ? .white : Theme.text)
-                        if !o.desc.isEmpty { Text(o.desc).font(Theme.round(12)).foregroundColor(on ? Color.white.opacity(0.85) : Theme.muted) }
+        if step < qs.count {
+            let q = qs[step]
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if !q.header.isEmpty {
+                        Text(q.header).font(Theme.round(11.5)).foregroundColor(Theme.knockText)
+                            .padding(.horizontal, 8).frame(height: 20).background(Theme.knockBg, in: Capsule())
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(on ? Theme.accent : Theme.userBubble, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }.buttonStyle(.plain)
+                    Text(q.question).font(Font(Theme.uiUser(16))).foregroundColor(Theme.text).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    if qs.count > 1 { Text("\(step + 1)/\(qs.count)").font(Theme.mono(12)).foregroundColor(Theme.muted) }
+                }
+                .padding(.bottom, 4)
+                ForEach(Array(q.options.enumerated()), id: \.offset) { i, o in
+                    let on = multi.contains(i)
+                    HStack(alignment: .center, spacing: 12) {
+                        Group {
+                            if q.multi && on {
+                                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                                    .frame(width: 26, height: 26).background(Theme.accent, in: Circle())
+                            } else {
+                                Text(Replies.mark(i)).font(Theme.mono(12.5, weight: .medium)).foregroundColor(Theme.text)
+                                    .frame(width: 26, height: 26).background(Theme.userBubble, in: Circle())
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(o.label).font(Font(Theme.uiUser(16))).foregroundColor(Theme.text)
+                            if !o.desc.isEmpty { Text(o.desc).font(Theme.round(12)).foregroundColor(Theme.muted) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if !q.multi {
+                            Image("chev").renderingMode(.template).resizable().frame(width: 13, height: 13).rotationEffect(.degrees(-90))
+                                .foregroundColor(Theme.muted.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 2).padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if q.multi { if on { multi.remove(i) } else { multi.insert(i) } }
+                        else { answer(q, [o.label]) }
+                    }
+                }
+                if q.multi {
+                    HStack {
+                        Spacer()
+                        Button { answer(q, multi.sorted().map { q.options[$0].label }) } label: {
+                            Text(step + 1 < qs.count ? "下一题 →" : "好了").font(Theme.round(13.5, weight: .medium))
+                                .foregroundColor(multi.isEmpty ? Theme.muted : Theme.accent)
+                        }.buttonStyle(.plain).disabled(multi.isEmpty)
+                    }
+                }
             }
-            if !locked {
-                TextField("其他（自己写）", text: Binding(get: { other[qi] ?? "" },
-                                                     set: { v in other[qi] = v; if !v.isEmpty && !q.multi { picks[qi] = [] } }))
-                    .font(Theme.round(14)).padding(.horizontal, 14).frame(height: 40)
-                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
+            .padding(.top, -4).padding(.bottom, 4)
         }
     }
-    private func ready(_ list: [Q]) -> Bool {
-        list.indices.allSatisfy { i in !(picks[i] ?? []).isEmpty || !(other[i] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-    private func submit(_ list: [Q]) {
-        var lines: [String] = []
-        for (qi, q) in list.enumerated() {
-            var a = (picks[qi] ?? []).sorted().map { q.options[$0].label }
-            if let o = other[qi]?.trimmingCharacters(in: .whitespaces), !o.isEmpty { a.append(o) }
-            lines.append((q.header.isEmpty ? q.question : q.header) + "：" + a.joined(separator: "、"))
+    private func answer(_ q: CCAsk.Q, _ picked: [String]) {
+        answers.append((q.header.isEmpty ? q.question : q.header) + "：" + picked.joined(separator: "、"))
+        multi = []
+        if step + 1 < qs.count { step += 1 } else {
+            let t = answers.joined(separator: "\n")
+            onDone(t)
         }
-        sent = true
-        onAnswer(lines.joined(separator: "\n"))
     }
 }
 
