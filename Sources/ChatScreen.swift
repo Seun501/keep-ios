@@ -474,6 +474,8 @@ struct ChatScreen: View {
         case "album", "albumbook", "albumlb": return [.album]
         case "mem", "askpick", "memword", "memday", "memedit", "memdayadd", "membk", "membkopen", "membkmon", "membkq", "memmf", "memmfdoc", "memmfpeek", "memrecent", "memchanges": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
         case "places", "tripsheet": return [.places]
+        case "ccshi": return [.ccshi]
+        case "ccshisess", "ccshirun": return [.ccshi, .ccshiSession("p1")]
         case "arch": return [.arch(day: "2026-09-02", q: nil, no: nil)]
         case "archhits": return [.arch(day: nil, q: "克", no: nil)]   // 检索命中页（像素字名字标签，09-15）
         case "archq": return [.arch(day: "2026-09-02", q: "安静", no: nil)]   // 带关键词进天页：右下角命中跳转胶囊（09-21）
@@ -500,12 +502,19 @@ struct ChatScreen: View {
                     case .places: PlacesScreen(onBack: pop)
                     case .arch(let day, let q, let no): ArchiveScreen(onBack: pop, day: day, query: q, focusNo: no)
                     case .web(let link): WebShellScreen(onLogout: onLogout, onBack: pop, openDrawer: false, deepLink: link)
+                    case .ccshi: CCShiListScreen(onBack: pop, onOpen: { path.append(.ccshiSession($0)) })
+                    case .ccshiSession(let id): CCShiSessionScreen(id: id, onBack: pop).id(id)
                     }
                 }
                 .zIndex(Double(100 + i))
                 .background(EdgeSwipe(onBack: pop))
                 .transaction { $0.animation = nil }
             }
+            Color.clear.frame(width: 0, height: 0)
+                .onReceive(NotificationCenter.default.publisher(for: .keepOpenCCShi)) { n in   // 点了「CC师」推送：直达那个会话
+                    let sid = n.object as? String ?? ""
+                    path = sid.isEmpty ? [.ccshi] : [.ccshi, .ccshiSession(sid)]
+                }
             if let img = viewer.image {
                 ImageViewerView(image: img, onClose: { viewer.image = nil }).zIndex(300).transaction { $0.animation = nil }
             }

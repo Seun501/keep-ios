@@ -9,6 +9,8 @@ enum Route: Hashable {
     case places                          // 常去的地方（09-10）
     case arch(day: String?, q: String?, no: Int?)   // 档案馆：某一天 / 搜一个词 / #N 直跳
     case web(String)
+    case ccshi                           // 手机上的 CC师（10-27）：会话列表
+    case ccshiSession(String)            // 某个会话
 }
 
 /// 抽屉（照网页 #drawerPanel）：左侧 78%（最宽 300）、暖白底、右缘细线；
@@ -68,6 +70,8 @@ struct DrawerView: View {
                     row("记忆") { onNavigate(.mem) }
                     hair
                     row("位置") { onNavigate(.places) }   // 09-12 寻改名
+                    hair
+                    row("CC师") { onNavigate(.ccshi) }      // 10-27 寻定：手机上和 CC师 干活
                 }
                 .padding(.top, 10)
 

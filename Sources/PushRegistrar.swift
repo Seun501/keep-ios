@@ -108,6 +108,20 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         #endif
     }
 
+    /// 点开推送：「CC师」那条（payload keep.ccshi＝会话号）直达 CC师 页（10-27）；其余照旧只是打开 App
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
+        if let keep = info["keep"] as? [String: Any], let sid = keep["ccshi"] as? String {
+            let phone = (keep["ccshi_kind"] as? String ?? "phone") == "phone"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {   // 冷启动时等聊天页先立起来
+                NotificationCenter.default.post(name: .keepOpenCCShi, object: phone ? sid : "")
+            }
+        }
+        completionHandler()
+    }
+
     // 前台也显示
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,

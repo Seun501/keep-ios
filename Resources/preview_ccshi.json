@@ -1,0 +1,123 @@
+{
+ "sessions": [
+  {
+   "id": "p1",
+   "title": "Keep 加 CC师 页",
+   "updated": "2026-10-27T20:41:00+08:00",
+   "status": "idle",
+   "last_text": "截图班派出去了，大约五分半出图。出来我把 ccshi 和 ccshisess 两张放给你看。"
+  },
+  {
+   "id": "p2",
+   "title": "10-28 早核",
+   "updated": "2026-10-27T19:12:00+08:00",
+   "status": "running",
+   "last_text": "在数昨天一整天的思考比例……"
+  },
+  {
+   "id": "p3",
+   "title": "时区第四步预演",
+   "updated": "2026-10-26T23:05:00+08:00",
+   "status": "idle",
+   "last_text": "两台机的 timer 清单对完了，共 14 条，脚本里都列上了。"
+  },
+  {
+   "id": "p4",
+   "title": "书架 OCR 那个报错",
+   "updated": "2026-10-24T15:30:00+08:00",
+   "status": "idle",
+   "last_text": "修好了，是 PDF 里嵌的字体没声明编码。",
+   "archived": true
+  }
+ ],
+ "events": [
+  {
+   "seq": 1,
+   "ts": "2026-10-27T20:36:10+08:00",
+   "kind": "user",
+   "text": "帮我看看小服务现在活着没，然后派一个截图班"
+  },
+  {
+   "seq": 2,
+   "ts": "2026-10-27T20:36:11+08:00",
+   "kind": "status",
+   "state": "running"
+  },
+  {
+   "seq": 3,
+   "ts": "2026-10-27T20:36:14+08:00",
+   "kind": "thinking",
+   "text": "先看小服务和隧道两个进程，再确认 DMIT 那头的 8291 通不通，最后派截图班。"
+  },
+  {
+   "seq": 4,
+   "ts": "2026-10-27T20:36:15+08:00",
+   "kind": "tool",
+   "id": "t1",
+   "name": "Bash",
+   "input": "{\"command\": \"pgrep -u ccx -af 'ccshi/server.py|8291:'\", \"description\": \"Check service and tunnel processes\"}"
+  },
+  {
+   "seq": 5,
+   "ts": "2026-10-27T20:36:16+08:00",
+   "kind": "tool_result",
+   "id": "t1",
+   "text": "211867 python3 /home/ccx/ccshi/server.py\n211868 ssh -N … -R 127.0.0.1:8291:/home/ccx/ccshi/ccshi.sock root@DMIT"
+  },
+  {
+   "seq": 6,
+   "ts": "2026-10-27T20:36:18+08:00",
+   "kind": "tool",
+   "id": "t2",
+   "name": "Bash",
+   "input": "{\"command\": \"ssh dmit 'curl -s 127.0.0.1:8291/ccshi/api/health'\", \"description\": \"Probe service from DMIT\"}"
+  },
+  {
+   "seq": 7,
+   "ts": "2026-10-27T20:36:19+08:00",
+   "kind": "tool_result",
+   "id": "t2",
+   "text": "{\"ok\": true}"
+  },
+  {
+   "seq": 8,
+   "ts": "2026-10-27T20:36:22+08:00",
+   "kind": "text",
+   "text": "两个都活着，DMIT 那头也连得到。\n\n现在派截图班，只截 `ccshi` 和 `ccshisess` 两页。"
+  },
+  {
+   "seq": 9,
+   "ts": "2026-10-27T20:36:25+08:00",
+   "kind": "tool",
+   "id": "t3",
+   "name": "Bash",
+   "input": "{\"command\": \"gh workflow run iOS -f screens=\\\"ccshi ccshisess\\\"\", \"description\": \"Dispatch screenshot build\"}"
+  },
+  {
+   "seq": 10,
+   "ts": "2026-10-27T20:36:27+08:00",
+   "kind": "tool_result",
+   "id": "t3",
+   "text": "✓ Created workflow_dispatch event for ios.yml at main"
+  },
+  {
+   "seq": 11,
+   "ts": "2026-10-27T20:36:29+08:00",
+   "kind": "text",
+   "text": "截图班派出去了，大约五分半出图。出来我把 **ccshi** 和 **ccshisess** 两张放给你看。"
+  },
+  {
+   "seq": 12,
+   "ts": "2026-10-27T20:36:29+08:00",
+   "kind": "result",
+   "secs": 19,
+   "turns": 4
+  },
+  {
+   "seq": 13,
+   "ts": "2026-10-27T20:36:29+08:00",
+   "kind": "status",
+   "state": "idle"
+  }
+ ]
+}
