@@ -431,7 +431,8 @@ struct CCBadge: View {
 private enum CCBlock: Identifiable {
     case user(CCEvent)
     case thinking(CCEvent)
-    case tool(CCEvent, CCEvent?)
+    case tools([CCToolPair])
+    case bgdone(CCEvent)
     case ask(CCEvent, Bool)
     case todo(CCEvent, Bool)
     case text(CCEvent)
@@ -442,7 +443,8 @@ private enum CCBlock: Identifiable {
     var id: Int {
         switch self {
         case .user(let e), .thinking(let e), .text(let e), .show(let e), .compact(let e), .end(let e), .error(let e): return e.seq
-        case .tool(let e, _): return e.seq
+        case .tools(let ps): return ps.first?.call.seq ?? 0
+        case .bgdone(let e): return e.seq
         case .ask(let e, _), .todo(let e, _): return e.seq
         }
     }
@@ -462,10 +464,14 @@ private enum CCBlock: Identifiable {
                 if hidden.contains(n) { continue }
                 if n.hasSuffix("__ask") { out.append(.ask(e, e.seq < lastUser)) }
                 else if n == "TodoWrite" { out.append(.todo(e, e.seq == lastTodo)) }
-                else { out.append(.tool(e, e.id.flatMap { results[$0] })) }
+                else {
+                    let pair = CCToolPair(call: e, result: e.id.flatMap { results[$0] })
+                    if case .tools(let ps)? = out.last { out[out.count - 1] = .tools(ps + [pair]) } else { out.append(.tools([pair])) }
+                }
             case "text": out.append(.text(e))
             case "show": out.append(.show(e))
             case "compact": out.append(.compact(e))
+            case "bgdone": out.append(.bgdone(e))
             case "result": out.append(.end(e))
             case "error": out.append(.error(e))
             default: break
@@ -673,8 +679,15 @@ struct CCShiSessionScreen: View {
             .padding(.vertical, 12)
         case .thinking(let e):
             ThinkView(text: e.text ?? "", label: e.secs.map { "Thought for \(String(format: "%.1f", $0))s" } ?? "Thought").padding(.vertical, 3)
-        case .tool(let call, let res):
-            CCToolRow(call: call, result: res).padding(.vertical, 3)
+        case .tools(let ps):
+            CCToolGroup(pairs: ps).padding(.vertical, 3)
+        case .bgdone(let e):
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Circle().fill(e.status == "completed" ? Theme.dyn(0x7FA36B, 0x8DB57A) : Theme.knockText).frame(width: 7, height: 7)
+                Text(e.text?.isEmpty == false ? e.text! : "Background command \"\(e.desc ?? "")\" \(e.status ?? "")")
+                    .font(Theme.mono(12)).foregroundColor(Theme.text)
+            }
+            .padding(.vertical, 5)
         case .ask:
             EmptyView()   // 寻 10-27：问题卡长在输入卡上，流里那行多余；她的回答气泡就是痕迹
         case .todo(let e, let latest):
@@ -687,8 +700,8 @@ struct CCShiSessionScreen: View {
             Text("上下文压缩过了：\(CCFmt.tok(e.pre ?? 0)) → \(CCFmt.tok(e.post ?? 0))")
                 .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
         case .end(let e):
-            Text(CCFmt.endLine(e))
-                .font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.top, 2).padding(.bottom, 10)
+            Text(CCFmt.endLine(e))   // 照 Claude Code：整行灰，✻ 也灰
+                .font(Theme.mono(12)).foregroundColor(Theme.muted.opacity(0.85)).padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
         }
@@ -1012,10 +1025,6 @@ struct CCLiveRow: View {
     static func tail(_ el: Int, _ out: Int, _ doing: String?, _ thinkFor: Int, thought: Double? = nil, desc: String? = nil) -> String {
         var parts = [CCFmt.dur(el)]
         if out > 0 { parts.append("↓" + CCFmt.k(out)) }
-        if let d = desc, !d.isEmpty, doing != "thinking" {   // 命令自带的说明（「Check service and tunnel processes」）比工具名好懂
-            parts.append(d)
-            return "(" + parts.joined(separator: " · ") + ")"
-        }
         switch doing ?? "" {
         case "thinking": parts.append(thinkFor >= 8 ? "still thinking" : "thinking")
         case "compacting": parts.append("compacting")
@@ -1057,6 +1066,69 @@ struct CCRing: View {
     }
 }
 
+// MARK: - 工具组（照 Claude Code：跑完收成一行灰字「Read 1 file, ran 2 shell commands」，点开看每一条；
+// 还在跑的那条照 CC 画：「● 在干嘛 · 45s」下一行「⎿ $ 命令」）
+
+struct CCToolPair { let call: CCEvent; let result: CCEvent? }
+
+struct CCToolGroup: View {
+    let pairs: [CCToolPair]
+    @State private var open = false
+    var body: some View {
+        let running = pairs.filter { $0.result == nil }
+        VStack(alignment: .leading, spacing: 6) {
+            if running.isEmpty {
+                Text(Self.summary(pairs))
+                    .font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } }
+                if open { ForEach(Array(pairs.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: p.result) } }
+            } else {
+                // 跑完的几条先收成一行，正在跑的那条摊开
+                let done = pairs.filter { $0.result != nil }
+                if !done.isEmpty { Text(Self.summary(done)).font(Theme.mono(12.5)).foregroundColor(Theme.muted) }
+                ForEach(Array(running.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: nil) }
+            }
+        }
+    }
+    /// Read 1 file, ran 2 shell commands（按第一次出现的顺序；首字母大写）
+    static func summary(_ ps: [CCToolPair]) -> String {
+        var order: [String] = []
+        var n: [String: Int] = [:]
+        for p in ps {
+            let k = kind(p.call.name ?? "")
+            if n[k] == nil { order.append(k) }
+            n[k, default: 0] += 1
+        }
+        let parts = order.map { k -> String in
+            let c = n[k] ?? 0
+            switch k {
+            case "bash": return "ran \(c) shell command" + (c > 1 ? "s" : "")
+            case "read": return "read \(c) file" + (c > 1 ? "s" : "")
+            case "edit": return "edited \(c) file" + (c > 1 ? "s" : "")
+            case "write": return "wrote \(c) file" + (c > 1 ? "s" : "")
+            case "search": return "searched \(c) time" + (c > 1 ? "s" : "")
+            case "web": return "fetched \(c) page" + (c > 1 ? "s" : "")
+            default: return "used \(k)" + (c > 1 ? " ×\(c)" : "")
+            }
+        }
+        let t = parts.joined(separator: ", ")
+        return t.prefix(1).uppercased() + t.dropFirst()
+    }
+    static func kind(_ name: String) -> String {
+        switch name {
+        case "Bash": return "bash"
+        case "Read": return "read"
+        case "Edit", "MultiEdit", "NotebookEdit": return "edit"
+        case "Write": return "write"
+        case "Grep", "Glob": return "search"
+        case "WebFetch", "WebSearch": return "web"
+        default: return name.replacingOccurrences(of: "mcp__", with: "")
+        }
+    }
+}
+
 // MARK: - 工具行（同克那边的工具行一族：线图标＋原名小字）；点开看传了什么、回来了什么；改文件画红绿对比
 
 struct CCToolRow: View {
@@ -1070,6 +1142,20 @@ struct CCToolRow: View {
     var body: some View {
         let j = input
         VStack(alignment: .leading, spacing: 6) {
+            if call.name == "Bash" {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Circle().fill(result == nil ? Theme.muted.opacity(0.6) : (result?.error == true ? Theme.knockText : Theme.dyn(0x7FA36B, 0x8DB57A)))
+                            .frame(width: 7, height: 7)
+                        Text((j["description"] as? String) ?? "Bash").font(Theme.mono(12.5)).foregroundColor(Theme.text).lineLimit(2)
+                        if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }
+                    }
+                    Text("⎿  $ " + ((j["command"] as? String) ?? "")).font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                        .lineLimit(open ? nil : 2).padding(.leading, 14)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { open.toggle() }
+            } else {
             HStack(spacing: 7) {
                 Image(Self.icon(call.name)).renderingMode(.template).resizable().frame(width: 14, height: 14)
                 Text(call.name ?? "?").font(Theme.mono(12.5))
@@ -1081,9 +1167,12 @@ struct CCToolRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { open.toggle() }
+            }
             if open {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let old = j["old_string"] as? String, let new = j["new_string"] as? String {
+                    if call.name == "Bash" {
+                        EmptyView()
+                    } else if let old = j["old_string"] as? String, let new = j["new_string"] as? String {
                         CCDiff(old: old, new: new)
                     } else if call.name == "Write", let c = j["content"] as? String {
                         CCDiff(old: "", new: c)
