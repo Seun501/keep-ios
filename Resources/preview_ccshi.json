@@ -10,7 +10,14 @@
    "model": "",
    "model_actual": "claude-opus-5-5",
    "unread": 2,
-   "ctx_max": 1000000
+   "ctx_max": 1000000,
+   "bg": [
+    {
+     "id": "b1",
+     "type": "local_bash",
+     "desc": "Wait for screenshot build"
+    }
+   ]
   },
   {
    "id": "p2",

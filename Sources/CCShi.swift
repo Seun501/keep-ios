@@ -21,8 +21,11 @@ struct CCSession: Decodable, Identifiable, Hashable {
     var model: String?
     var model_actual: String?
     var seq: Int?
+    var bg: [CCBgTask]?        // 后台还在跑的任务
     var running: Bool { status == "running" }
 }
+
+struct CCBgTask: Decodable, Hashable { var id: String?; var type: String?; var desc: String? }
 
 struct CCEvent: Decodable {
     var seq: Int
@@ -49,6 +52,7 @@ struct CCEvent: Decodable {
     var doing: String?
     var since: Double?
     var now: Double?
+    var tasks: [CCBgTask]?
     var thought: Double?       // 刚想完的那段秒数（亮几秒「thought for Xs」）
     var thought_at: Double?
     var ctx: Int?
@@ -390,6 +394,7 @@ struct CCBadge: View {
             events.append(e); last = e.seq; grew = true
             if e.kind == "status" { meta?.status = e.state; if e.state == "idle" { live = nil } }
             if e.kind == "compact", let p = e.post { meta?.ctx = p }
+            if e.kind == "bg" { meta?.bg = e.tasks ?? [] }
         }
         if grew { onNew?() }
     }
@@ -692,6 +697,7 @@ struct CCShiSessionScreen: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
+            if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }
             if let a = activeAsk {
                 CCAskPanel(qs: CCAsk.parse(a), step: $askStep, answers: $askAnswers, multi: $askMulti, onDone: { t in
                     askStep = 0; askAnswers = [:]; askMulti = []
@@ -853,6 +859,28 @@ struct CCShiSessionScreen: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    @State private var bgOpen = false
+    /// 照 Claude Code「1 shell still running」：后台还有任务在跑；点开看是哪几个
+    private func bgRow(_ bg: [CCBgTask]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { bgOpen.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
+                    Text("\(bg.count) \(bg.count == 1 ? "shell" : "shells") still running").font(Theme.mono(12)).foregroundColor(Theme.muted)
+                    Image("chev").renderingMode(.template).resizable().frame(width: 11, height: 11)
+                        .rotationEffect(.degrees(bgOpen ? 180 : 0)).foregroundColor(Theme.muted)
+                    Spacer()
+                }.contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if bgOpen {
+                ForEach(bg, id: \.self) { t in
+                    Text("· " + (t.desc ?? t.id ?? "")).font(Theme.mono(11.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.leading, 12)
+                }
+            }
+        }
+        .padding(.top, -6).padding(.bottom, 2)
     }
 
     /// 还没答的那张问题卡：最后一次 ask 之后她还没说过话
