@@ -176,6 +176,19 @@ enum CCFmt {
     /// ↓5.7k（同 Claude Code 那行）
     static func k(_ n: Int) -> String { n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n) }
     static func dur(_ s: Int) -> String { s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s" }
+    /// 一轮收尾那行：时间 · 用时 · ↓输出 token（拆开写：一行拼完编译器类型推断超时，构建 431）
+    static func endLine(_ e: CCEvent) -> String {
+        var parts: [String] = [TimeFmt.stamp(e.ts)]
+        if let s = e.secs { parts.append(dur(Int(s))) }
+        if let o = e.out { parts.append("↓" + k(o) + " tokens") }
+        return parts.joined(separator: "  ·  ")
+    }
+    /// 干活行括号里那截：(1m 23s · ↓5.7k tokens)
+    static func liveTail(_ el: Int, _ out: Int) -> String {
+        var t = "(" + dur(el)
+        if out > 0 { t += " · ↓" + k(out) + " tokens" }
+        return t + ")"
+    }
     static let models: [(String, String)] = [("", "默认"), ("claude-opus-5-5", "Opus 5.5"), ("claude-opus-4-6", "Opus 4.6"), ("claude-sonnet-5-5", "Sonnet 5.5")]
     static func modelShort(_ m: String?) -> String {
         guard let m, !m.isEmpty else { return "" }
@@ -579,7 +592,7 @@ struct CCShiSessionScreen: View {
             Text("上下文压缩过了：\(CCFmt.tok(e.pre ?? 0)) → \(CCFmt.tok(e.post ?? 0))")
                 .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
         case .end(let e):
-            Text(TimeFmt.stamp(e.ts) + (e.secs.map { "  ·  " + CCFmt.dur(Int($0)) } ?? "") + (e.out.map { "  ·  ↓" + CCFmt.k($0) + " tokens" } ?? ""))
+            Text(CCFmt.endLine(e))
                 .font(Theme.round(12)).foregroundColor(Theme.muted).padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
@@ -793,8 +806,9 @@ struct CCLiveRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     ClawdWeb(state: Self.clawd(live.doing), flip: false).frame(width: 34, height: 34).allowsHitTesting(false)
-                    (Text("✻ " + (live.verb ?? "Clauding") + "… ").foregroundColor(Theme.accent)
-                     + Text("(" + CCFmt.dur(el) + (out > 0 ? " · ↓" + CCFmt.k(out) + " tokens" : "") + ")").foregroundColor(Theme.muted))
+                    let verb: String = "✻ " + (live.verb ?? "Clauding") + "… "
+                    let tail: String = CCFmt.liveTail(el, out)
+                    (Text(verb).foregroundColor(Theme.accent) + Text(tail).foregroundColor(Theme.muted))
                         .font(Theme.mono(12.5))
                 }
                 if live.doing == "thinking" {
