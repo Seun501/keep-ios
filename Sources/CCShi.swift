@@ -53,6 +53,7 @@ struct CCEvent: Decodable {
     var since: Double?
     var now: Double?
     var tasks: [CCBgTask]?
+    var status: String?        // bgdone：completed / failed …
     var desc: String?          // 正在跑的那条命令「在干嘛」
     var desc_tool: String?
     var thought: Double?       // 刚想完的那段秒数（亮几秒「thought for Xs」）
