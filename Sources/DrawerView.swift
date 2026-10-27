@@ -11,6 +11,7 @@ enum Route: Hashable {
     case web(String)
     case ccshi                           // 手机上的 CC师（10-27）：会话列表
     case ccshiSession(String)            // 某个会话
+    case ccshiFiles(String)              // 文件页（记忆/项目/给CC师读/临时给寻），空串＝四个根
 }
 
 /// 抽屉（照网页 #drawerPanel）：左侧 78%（最宽 300）、暖白底、右缘细线；

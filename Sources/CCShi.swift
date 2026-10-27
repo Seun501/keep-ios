@@ -221,6 +221,7 @@ struct CCShiPreview: Decodable { var sessions: [CCSession]; var events: [CCEvent
 struct CCShiListScreen: View {
     var onBack: () -> Void
     var onOpen: (String) -> Void
+    var onFiles: () -> Void = {}
     @StateObject private var m = CCShiListModel()
     @State private var renaming: CCSession? = nil
     @State private var newTitle = ""
@@ -234,6 +235,9 @@ struct CCShiListScreen: View {
                     Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
                     Text("CC师").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
+                    Button(action: onFiles) {   // 文件：我的记忆、项目文档、给CC师读、临时给寻
+                        Image("tool-archive").renderingMode(.template).resizable().frame(width: 19, height: 19).foregroundColor(Theme.text).frame(width: 34, height: 34)
+                    }.buttonStyle(.plain)
                     Button { Task { await newSession() } } label: {
                         Text("+").font(Theme.ui(27, weight: .light)).foregroundColor(Theme.text).frame(width: 34, height: 34)
                     }.buttonStyle(.plain)
@@ -454,6 +458,8 @@ struct CCShiSessionScreen: View {
     @State private var draft = ""
     @State private var focused = false
     @State private var pending: [UIImage] = []
+    @State private var files: [String] = []        // 已传进 给CC师读/ 的文件（发的时候附在话末尾告诉我）
+    @State private var uploading = 0
     @State private var plusOpen = false
     @State private var holdStarted = false
     @State private var webDoc: CCWebDoc? = nil
@@ -484,7 +490,7 @@ struct CCShiSessionScreen: View {
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: m.events.count) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
                         .onChange(of: m.running) { _ in withAnimation(nil) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                        .onAppear { if !(Preview.on && Preview.screen == "ccshitop") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("bottom", anchor: .bottom) } } }
                     }
                     if rec.recording {
                         VStack(spacing: 0) {
@@ -600,10 +606,28 @@ struct CCShiSessionScreen: View {
     }
 
     // MARK: 输入卡（照搬克那边：同一张卡、投影、长按说话、+ 菜单、↑/■/声波钮）
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
+    private var canSend: Bool { uploading == 0 && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty || !files.isEmpty) }
 
     private var composer: some View {
         VStack(spacing: 6) {
+            if !files.isEmpty || uploading > 0 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(files.enumerated()), id: \.offset) { i, f in
+                            HStack(spacing: 6) {
+                                Image("tool-notebook").renderingMode(.template).resizable().frame(width: 12, height: 12).foregroundColor(Theme.text)
+                                Text((f as NSString).lastPathComponent).font(Theme.round(12.5)).foregroundColor(Theme.text).lineLimit(1)
+                                Button { files.remove(at: i) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted).frame(width: 18, height: 18)
+                                }.buttonStyle(.plain)
+                            }
+                            .padding(.leading, 10).padding(.trailing, 4).frame(height: 28)
+                            .background(Theme.userBubble, in: Capsule())
+                        }
+                        if uploading > 0 { Text("上传中…").font(Theme.round(12)).foregroundColor(Theme.muted) }
+                    }.padding(.top, 4)
+                }
+            }
             if !pending.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -707,6 +731,20 @@ struct CCShiSessionScreen: View {
                 withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
                 CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
             }
+            plusRow("文件", "doc") {   // 任意文件，放进 给CC师读/（寻 10-27：和电脑上那个夹子同一个）
+                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                DocPickerBridge.shared.present { urls in
+                    for u in urls {
+                        guard let d = try? Data(contentsOf: u) else { continue }
+                        uploading += 1
+                        Task {
+                            if let p = await CCShiAPI.fsUpload(name: u.lastPathComponent, data: d) { files.append(p) }
+                            else { m.err = "\(u.lastPathComponent) 没传上去" }
+                            uploading -= 1
+                        }
+                    }
+                }
+            }
         }
         .padding(.vertical, 4)
         .frame(width: 176)
@@ -730,11 +768,14 @@ struct CCShiSessionScreen: View {
     }
 
     private func sendNow() {
-        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !files.isEmpty {
+            t += (t.isEmpty ? "" : "\n\n") + files.map { "[寻放进 ~/Claude/\($0) 了]" }.joined(separator: "\n")
+        }
         let imgs = pending.compactMap { Self.jpeg($0) }
-        let keepText = draft, keepImgs = pending
-        draft = ""; pending = []; focused = false
-        Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs } }
+        let keepText = draft, keepImgs = pending, keepFiles = files
+        draft = ""; pending = []; files = []; focused = false
+        Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs; files = keepFiles } }
     }
     /// 长边 1568 的 jpeg（同克那边：Anthropic 最优尺寸）
     private static func jpeg(_ ui: UIImage) -> Data? {
@@ -805,11 +846,13 @@ struct CCLiveRow: View {
             let out = live.out ?? 0
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    ClawdWeb(state: Self.clawd(live.doing), flip: false).frame(width: 34, height: 34).allowsHitTesting(false)
-                    let verb: String = "✻ " + (live.verb ?? "Clauding") + "… "
+                    // 小 Clawd：素材四周自带留白，框给大、再用负边距收回（34 框只画出一个点）
+                    ClawdWeb(state: Self.clawd(live.doing), flip: false).frame(width: 64, height: 64).padding(-14).allowsHitTesting(false)
+                    let verb: String = (live.verb ?? "Clauding") + "… "
                     let tail: String = CCFmt.liveTail(el, out)
-                    (Text(verb).foregroundColor(Theme.accent) + Text(tail).foregroundColor(Theme.muted))
-                        .font(Theme.mono(12.5))
+                    (Text("✻ ").font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.accent)   // Cascadia 没有 ✻，画成了 *
+                     + Text(verb).font(Theme.mono(12.5)).foregroundColor(Theme.accent)
+                     + Text(tail).font(Theme.mono(12.5)).foregroundColor(Theme.muted))
                 }
                 if live.doing == "thinking" {
                     Text(thinkFor >= 8 ? "still thinking…" : "thinking…").font(Theme.mono(12)).foregroundColor(Theme.muted).padding(.leading, 42)
@@ -1160,4 +1203,184 @@ struct CCWeb: UIViewRepresentable {
         return w
     }
     func updateUIView(_ w: WKWebView, context: Context) {}
+}
+
+// MARK: - 文件页（寻 10-27：看我的记忆、项目文档；「给CC师读」「临时给寻」一来一回）
+
+struct CCFsItem: Decodable, Identifiable { var name: String; var dir: Bool; var size: Int?; var mtime: String?; var id: String { name } }
+struct CCFsList: Decodable { var path: String; var items: [CCFsItem] }
+
+extension CCShiAPI {
+    static func fsList(_ path: String) async -> CCFsList? {
+        if Preview.on {
+            return path.isEmpty ? CCFsList(path: "", items: ["记忆", "项目", "给CC师读", "临时给寻"].map { CCFsItem(name: $0, dir: true) })
+                : CCFsList(path: path, items: [CCFsItem(name: "工程日志", dir: true), CCFsItem(name: "项目总纲.md", dir: false, size: 30210, mtime: "2026-10-27T20:10:00+08:00"),
+                                               CCFsItem(name: "项目维护手册.md", dir: false, size: 24876, mtime: "2026-10-27T20:10:00+08:00")])
+        }
+        let q = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? ""
+        return try? await get("fs/list?path=" + q)
+    }
+    static func fsFile(_ path: String) async -> Data? {
+        guard let token = Keychain.token else { return nil }
+        let q = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+"))) ?? ""
+        var r = URLRequest(url: url("fs/file?path=" + q))
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0) else { return nil }
+        return d
+    }
+    /// 传文件给我：原样落进 给CC师读/，回「给CC师读/名字」
+    static func fsUpload(name: String, data: Data) async -> String? {
+        guard let token = Keychain.token else { return nil }
+        var r = URLRequest(url: url("fs/upload"))
+        r.httpMethod = "POST"
+        r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        r.setValue(name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "file", forHTTPHeaderField: "X-Filename")
+        r.httpBody = data
+        r.timeoutInterval = 120
+        guard let (d, resp) = try? await URLSession.shared.data(for: r), (200..<300).contains((resp as? HTTPURLResponse)?.statusCode ?? 0),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+        return j["path"] as? String
+    }
+}
+
+struct CCFilesScreen: View {
+    let path: String
+    var onBack: () -> Void
+    var onOpenDir: (String) -> Void
+    @State private var list: CCFsList? = nil
+    @State private var doc: CCWebDoc? = nil
+    @State private var err = ""
+    var body: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+                    Text(path.isEmpty ? "文件" : path).font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1).truncationMode(.head)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).frame(minHeight: 52)
+                OrangeScroll(name: "ccfs") {
+                    VStack(spacing: 0) {
+                        if !err.isEmpty { Text(err).font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 20) }
+                        ForEach(list?.items ?? []) { it in
+                            Button { tap(it) } label: {
+                                HStack(spacing: 12) {
+                                    Image(it.dir ? "tool-archive" : (it.name.hasSuffix(".md") ? "tool-scroll" : "tool-notebook"))
+                                        .renderingMode(.template).resizable().frame(width: 16, height: 16).foregroundColor(it.dir ? Theme.accent : Theme.muted)
+                                    Text(it.name).font(Theme.cjk(15)).foregroundColor(Theme.text).lineLimit(1)
+                                    Spacer()
+                                    if !it.dir { Text(TimeFmt.stamp(it.mtime)).font(Theme.round(11.5)).foregroundColor(Theme.muted) }
+                                }
+                                .padding(.vertical, 15).padding(.horizontal, 6)
+                                .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1)
+                        }
+                    }
+                    .padding(.horizontal, 18).padding(.bottom, 28)
+                }
+            }
+        }
+        .background(EdgeSwipe(onBack: onBack))
+        .sheet(item: $doc) { d in CCWebSheet(doc: d) }
+        .task {
+            list = await CCShiAPI.fsList(path)
+            if list == nil { err = "打不开这个夹子" }
+        }
+    }
+    private func tap(_ it: CCFsItem) {
+        let p = path.isEmpty ? it.name : path + "/" + it.name
+        if it.dir { onOpenDir(p); return }
+        Task {
+            guard let d = await CCShiAPI.fsFile(p) else { err = "看不了 \(it.name)"; return }
+            let ext = (it.name as NSString).pathExtension.lowercased()
+            if ext == "md", let s = String(data: d, encoding: .utf8) {
+                doc = CCWebDoc(title: it.name, data: Data(CCMdHTML.page(s).utf8), mime: "text/html")
+            } else {
+                let mime = ["html": "text/html", "htm": "text/html", "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
+                            "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml"][ext] ?? "text/plain"
+                doc = CCWebDoc(title: it.name, data: d, mime: mime)
+            }
+        }
+    }
+}
+
+/// md 在手机上排版看：最小 md→HTML（标题/列表/引用/代码/表格/粗体/行内代码），淡底同 App 配色；够读就行，不求全
+enum CCMdHTML {
+    static func esc(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+    static func inline(_ s: String) -> String {
+        var t = esc(s)
+        t = t.replacingOccurrences(of: "`([^`]+)`", with: "<code>$1</code>", options: .regularExpression)
+        t = t.replacingOccurrences(of: "\\*\\*([^*]+)\\*\\*", with: "<b>$1</b>", options: .regularExpression)
+        t = t.replacingOccurrences(of: "\\[\\[([^\\]]+)\\]\\]", with: "<span class=l>$1</span>", options: .regularExpression)
+        return t
+    }
+    static func page(_ md: String) -> String {
+        var out: [String] = []
+        var inCode = false, inList = false, inTable = false
+        func close() {
+            if inList { out.append("</ul>"); inList = false }
+            if inTable { out.append("</table>"); inTable = false }
+        }
+        for raw in md.components(separatedBy: "\n") {
+            let line = raw.replacingOccurrences(of: "\r", with: "")
+            if line.hasPrefix("```") { close(); out.append(inCode ? "</pre>" : "<pre>"); inCode.toggle(); continue }
+            if inCode { out.append(esc(line)); continue }
+            let tr = line.trimmingCharacters(in: .whitespaces)
+            if tr.hasPrefix("|") {
+                if tr.replacingOccurrences(of: "[|:\\- ]", with: "", options: .regularExpression).isEmpty { continue }
+                if !inTable { close(); out.append("<table>"); inTable = true }
+                let cells = tr.trimmingCharacters(in: CharacterSet(charactersIn: "|")).components(separatedBy: "|")
+                out.append("<tr>" + cells.map { "<td>" + inline($0.trimmingCharacters(in: .whitespaces)) + "</td>" }.joined() + "</tr>")
+                continue
+            }
+            if let r = tr.range(of: "^(#{1,4}) ", options: .regularExpression) {
+                close(); let n = tr[r].count - 1
+                out.append("<h\(n)>" + inline(String(tr[r.upperBound...])) + "</h\(n)>"); continue
+            }
+            if let r = tr.range(of: "^([-*]|\\d+\\.) ", options: .regularExpression) {
+                if !inList { if inTable { out.append("</table>"); inTable = false }; out.append("<ul>"); inList = true }
+                let indent = line.prefix(while: { $0 == " " }).count
+                out.append("<li style='margin-left:\(indent * 8)px'>" + inline(String(tr[r.upperBound...])) + "</li>"); continue
+            }
+            close()
+            if tr.hasPrefix(">") { out.append("<blockquote>" + inline(String(tr.drop(while: { $0 == ">" || $0 == " " }))) + "</blockquote>"); continue }
+            if tr == "---" { out.append("<hr>"); continue }
+            if tr.isEmpty { continue }
+            out.append("<p>" + inline(tr) + "</p>")
+        }
+        close()
+        let css = """
+        body{font:15px/1.65 -apple-system,'PingFang SC';color:#302D27;background:#F9F9F7;padding:4px 18px 40px;word-wrap:break-word}
+        @media(prefers-color-scheme:dark){body{color:#E8E2D6;background:#20201F}code,pre,td{background:#2A2A27!important}}
+        h1,h2,h3,h4{line-height:1.35;margin:1.2em 0 .5em} h1{font-size:21px} h2{font-size:18px} h3{font-size:16px}
+        code{font:12.5px ui-monospace,Menlo;background:#F2EDE3;padding:1px 4px;border-radius:4px}
+        pre{font:12px/1.5 ui-monospace,Menlo;background:#F2EDE3;padding:10px;border-radius:10px;overflow-x:auto;white-space:pre}
+        blockquote{margin:.6em 0;padding-left:12px;border-left:2px solid #C96442;color:#9B9183}
+        table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto} td{border:1px solid #E4DDCF;padding:5px 8px;vertical-align:top}
+        ul{padding-left:18px} li{margin:.25em 0} .l{color:#C96442} hr{border:0;border-top:1px solid #E4DDCF}
+        """
+        return "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>\(css)</style>" + out.joined(separator: "\n")
+    }
+}
+
+/// 从「文件」App 挑任意文件（PDF、表格、文档……）
+@MainActor final class DocPickerBridge: NSObject, UIDocumentPickerDelegate {
+    static let shared = DocPickerBridge()
+    private var done: (([URL]) -> Void)? = nil
+    func present(done: @escaping ([URL]) -> Void) {
+        guard let top = PhotoPickerBridge.topVC() else { return }
+        let p = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        p.allowsMultipleSelection = true
+        p.delegate = self
+        p.view.tintColor = Theme.uiScrollTint
+        self.done = done
+        top.present(p, animated: true)
+    }
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { done?(urls); done = nil }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { done = nil }
 }
