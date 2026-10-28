@@ -537,12 +537,12 @@ private enum CCBlock: Identifiable {
     case todo(CCEvent, Bool)
     case text(CCEvent)
     case show(CCEvent)
-    case compact(CCEvent)
+    case compact(CCEvent, Int?)   // 压缩那轮用了几秒（那轮的收尾行并进分隔线）
     case end(CCEvent)
     case error(CCEvent)
     var id: Int {
         switch self {
-        case .user(let e), .thinking(let e), .text(let e), .show(let e), .compact(let e), .end(let e), .error(let e): return e.seq
+        case .user(let e), .thinking(let e), .text(let e), .show(let e), .compact(let e, _), .end(let e), .error(let e): return e.seq
         case .tools(let ps): return ps.first?.call.seq ?? 0
         case .bgdone(let e): return e.seq
         case .ask(let e, _), .todo(let e, _): return e.seq
@@ -555,9 +555,17 @@ private enum CCBlock: Identifiable {
         for e in evs where e.kind == "tool_result" { if let i = e.id { results[i] = e } }
         let lastTodo = evs.last(where: { $0.kind == "tool" && $0.name == "TodoWrite" })?.seq
         let lastUser = evs.last(where: { $0.kind == "user" })?.seq ?? 0
+        // 压缩那轮（10-28 寻：三截不好看）：「（压缩上下文）」气泡、压缩行、空收尾行并成一条分隔线，照 Claude Code 的「═══ Conversation compacted ═══」。
+        // 没压成（叫停、出错）的那次气泡照留
+        var folded = Set<Int>()
+        for (i, e) in evs.enumerated() where e.kind == "user" && (e.text ?? "").hasPrefix("（") && (e.text ?? "").contains("压缩上下文") {
+            if evs[(i + 1)...].first(where: { $0.kind == "user" || $0.kind == "compact" })?.kind == "compact" { folded.insert(e.seq) }
+        }
+        var afterCompact = false
         for e in evs {
+            if e.kind != "status" && e.kind != "result" { afterCompact = false }
             switch e.kind {
-            case "user": out.append(.user(e))
+            case "user": if !folded.contains(e.seq) { out.append(.user(e)) }
             case "thinking": out.append(.thinking(e))
             case "tool":
                 let n = e.name ?? ""
@@ -570,9 +578,12 @@ private enum CCBlock: Identifiable {
                 }
             case "text": out.append(.text(e))
             case "show": out.append(.show(e))
-            case "compact": out.append(.compact(e))
+            case "compact": out.append(.compact(e, nil)); afterCompact = true
             case "bgdone": out.append(.bgdone(e))
-            case "result": out.append(.end(e))
+            case "result":
+                if afterCompact, (e.out ?? 0) == 0, case .compact(let c, _)? = out.last {
+                    out[out.count - 1] = .compact(c, Int(e.secs ?? 0)); afterCompact = false
+                } else { out.append(.end(e)) }
             case "error": out.append(.error(e))
             default: break
             }
@@ -850,9 +861,8 @@ struct CCShiSessionScreen: View {
             CCTextRow(event: e, onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: e.seq) { onOpen(s.id) } } })
         case .show(let e):
             CCShowCard(sid: m.id, event: e, onOpen: { webDoc = $0 }).padding(.vertical, 8)
-        case .compact(let e):
-            Text("上下文压缩过了：\(CCFmt.tok(e.pre ?? 0)) → \(CCFmt.tok(e.post ?? 0))")
-                .font(Theme.round(12)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 10)
+        case .compact(let e, let secs):
+            CCCompactDivider(event: e, secs: secs).padding(.vertical, 14)
         case .end(let e):
             // 照 Claude Code：整行灰，✻ 也灰；✻ 单用系统字（Cascadia 没有这个字形，画成了 *，截图 452）
             (Text("✻ ").font(.system(size: 12.5, weight: .semibold)) + Text(String(CCFmt.endLine(e).dropFirst(2))).font(Theme.mono(12)))
@@ -1171,6 +1181,33 @@ struct CCTextRow: View {
 
 // MARK: - 干活中的那一行（照 Claude Code：「✻ Clauding… (1m 23s · ↓5.7k tokens · thinking)」，左顶格）
 // ✻ 在 ·✢✳✶✻✽ 之间来回换（同 CC 的转星），动词上一道浅光从左往右扫；括号里跟着在干什么
+
+/// 压缩分隔线：两边细线，中间一行灰字（照 Claude Code 的 ═══ Conversation compacted ═══）
+struct CCCompactDivider: View {
+    let event: CCEvent
+    let secs: Int?
+    var body: some View {
+        let line = Rectangle().fill(Theme.muted.opacity(0.28)).frame(height: 0.7)
+        VStack(spacing: 4) {
+            HStack(spacing: 10) {
+                line
+                Text("上下文已压缩").font(Theme.round(12.5, weight: .medium)).foregroundColor(Theme.muted).fixedSize()
+                line
+            }
+            Text(detail).font(Theme.mono(11)).foregroundColor(Theme.muted.opacity(0.75))
+        }
+        .frame(maxWidth: .infinity)
+    }
+    private var detail: String {
+        var t = CCFmt.k(event.pre ?? 0) + " → " + CCFmt.k(event.post ?? 0)
+        if let s = secs, s > 0 { t += " · " + CCFmt.dur(s) }
+        if let d = TimeFmt.parse(event.ts ?? "") {
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "HH:mm"
+            t += " · " + f.string(from: d)
+        }
+        return t
+    }
+}
 
 struct CCLiveRow: View {
     let live: CCEvent

@@ -171,6 +171,11 @@
    "ts": "2026-10-27T20:36:06+08:00",
    "kind": "status",
    "state": "idle"
-  }
+  },
+  {"seq": 18, "ts": "2026-10-27T20:40:00+08:00", "kind": "user", "text": "（压缩上下文）"},
+  {"seq": 19, "ts": "2026-10-27T20:40:00+08:00", "kind": "status", "state": "running"},
+  {"seq": 20, "ts": "2026-10-27T20:41:22+08:00", "kind": "compact", "pre": 496296, "post": 4090},
+  {"seq": 21, "ts": "2026-10-27T20:41:22+08:00", "kind": "result", "secs": 82, "out": 0, "turns": 0, "error": false},
+  {"seq": 22, "ts": "2026-10-27T20:41:22+08:00", "kind": "status", "state": "idle"}
  ]
 }
