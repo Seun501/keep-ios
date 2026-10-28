@@ -248,6 +248,7 @@ struct CCShiListScreen: View {
     var onFiles: () -> Void = {}
     @StateObject private var m = CCShiListModel()
     @State private var renaming: CCSession? = nil
+    @State private var swiped: String? = Preview.screen == "ccshiswipe" ? "p1" : nil   // 左滑开着的那张（同时只开一张）
     @State private var newTitle = ""
     private let tick = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
 
@@ -274,7 +275,7 @@ struct CCShiListScreen: View {
                         }
                         let live = m.sessions.filter { $0.archived != true }
                         let old = m.sessions.filter { $0.archived == true }
-                        ForEach(live) { s in card(s) }
+                        ForEach(live) { s in swipeCard(s) }
                         if live.isEmpty && m.err.isEmpty {
                             Text("还没有会话。点右上角 + 开一个。").font(Theme.round(13)).foregroundColor(Theme.muted).padding(.vertical, 30)
                         }
@@ -283,7 +284,7 @@ struct CCShiListScreen: View {
                                 Text(m.showArchived ? "收起归档的 \(old.count) 个" : "归档的 \(old.count) 个")
                                     .font(Theme.round(12.5)).foregroundColor(Theme.muted).padding(.vertical, 10)
                             }.buttonStyle(.plain)
-                            if m.showArchived { ForEach(old) { s in card(s) } }
+                            if m.showArchived { ForEach(old) { s in swipeCard(s) } }
                         }
                     }
                     .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
@@ -304,7 +305,7 @@ struct CCShiListScreen: View {
     }
 
     private func card(_ s: CCSession) -> some View {
-        Button { onOpen(s.id) } label: {
+        Button { if swiped != nil { withAnimation(.easeOut(duration: 0.2)) { swiped = nil } } else { onOpen(s.id) } } label: {   // 有卡开着时点卡片＝收起
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.5 } }   // 圆点＝在干活；中心对汉字中线（15 号字约基线上 5.5，10-28 寻）
@@ -324,16 +325,60 @@ struct CCShiListScreen: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button("改名") { newTitle = s.title; renaming = s }
-            Button(s.archived == true ? "移出归档" : "归档") { Task { await CCShiAPI.archive(s.id, s.archived != true); await m.load() } }
-        }
+    }
+
+    /// 左滑露出改名／归档（10-28 寻：长按的系统菜单不像 Keep）。图标 Lucide pencil／archive，淡底深色、不描边
+    private func swipeCard(_ s: CCSession) -> some View {
+        CCSwipe(open: Binding(get: { swiped == s.id }, set: { swiped = $0 ? s.id : nil }), content: { card(s) },
+                actions: [
+                    ("tool-pencil", "改名", { newTitle = s.title; renaming = s; swiped = nil }),
+                    ("tool-archive", s.archived == true ? "移出归档" : "归档",
+                     { swiped = nil; Task { await CCShiAPI.archive(s.id, s.archived != true); await m.load() } }),
+                ])
     }
 
     private func newSession() async {
         if Preview.on { return }
         let f = DateFormatter(); f.dateFormat = "M-d HH:mm"
         if let s = try? await CCShiAPI.create("新会话 " + f.string(from: Date())) { onOpen(s.id) }
+    }
+}
+
+/// 左滑露出一排圆钮（照记忆页 SwipeDelete 的手势：横向拖过一半就开，点卡片收起）
+struct CCSwipe<Content: View>: View {
+    @Binding var open: Bool
+    @ViewBuilder var content: () -> Content
+    var actions: [(String, String, () -> Void)]
+    @State private var drag: CGFloat = 0
+    private var w: CGFloat { CGFloat(actions.count) * 54 + 6 }
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            HStack(spacing: 10) {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, a in
+                    Button(action: a.2) {
+                        Image(a.0).renderingMode(.template).resizable().frame(width: 18, height: 18)
+                            .foregroundColor(Theme.text)
+                            .frame(width: 44, height: 44)
+                            .background(Theme.attachBg, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(a.1)
+                }
+            }
+            .padding(.trailing, 2)
+            .opacity(open || drag < 0 ? 1 : 0)
+            content()
+                .offset(x: min(0, max(-w - 20, (open ? -w : 0) + drag)))
+                .simultaneousGesture(DragGesture(minimumDistance: 14).onChanged { v in
+                    guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                    drag = v.translation.width
+                }.onEnded { v in
+                    if abs(v.translation.width) > abs(v.translation.height) {
+                        withAnimation(.easeOut(duration: 0.2)) { open = (open ? -w : 0) + v.translation.width < -w / 2; drag = 0 }
+                    } else { drag = 0 }
+                })
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
