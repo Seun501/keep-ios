@@ -495,6 +495,7 @@ struct CCShiSessionScreen: View {
     @State private var plusOpen = false
     @State private var holdStarted = false
     @State private var webDoc: CCWebDoc? = nil
+    @State private var pin = CCPin()   // 她在不在底部（不触发重绘）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
 
@@ -519,13 +520,13 @@ struct CCShiSessionScreen: View {
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
-                            .background(IndicatorTint())   // 指示条染赤陶，同克那边（10-28）
+                            .background(IndicatorTint(onBottom: { [pin] in pin.atBottom = $0 }))   // 指示条染赤陶，同克那边；顺带记她在不在底部（10-28）
                         }
                         .scrollIndicators(.visible)
                         .scrollDismissesKeyboard(.interactively)
-                        .onChange(of: m.events.count) { _ in toBottom(proxy) }
+                        .onChange(of: m.events.count) { _ in toBottom(proxy) }   // 她往上翻着看就不拽回底（10-28 寻）
                         .onChange(of: m.running) { _ in toBottom(proxy) }
-                        .onAppear { toBottom(proxy) }
+                        .onAppear { pin.atBottom = true; toBottom(proxy) }
                     }
                     if rec.recording {
                         VStack(spacing: 0) {
@@ -585,7 +586,9 @@ struct CCShiSessionScreen: View {
     /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次
     private func toBottom(_ proxy: ScrollViewProxy) {
         if Preview.on && Preview.screen == "ccshitop" { return }
-        for d in [0.05, 0.3, 0.8] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { proxy.scrollTo("bottom", anchor: .bottom) } }
+        let pin = self.pin
+        guard pin.atBottom else { return }
+        for d in [0.05, 0.3, 0.8] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { if pin.atBottom { proxy.scrollTo("bottom", anchor: .bottom) } } }
     }
 
     // MARK: 顶栏：返回、会话名、模型；下面一行上下文（居中）＋压缩
@@ -929,6 +932,7 @@ struct CCShiSessionScreen: View {
         }
         let imgs = pending.compactMap { Self.jpeg($0) }
         let keepText = draft, keepImgs = pending, keepFiles = files
+        pin.atBottom = true   // 自己发的话要看见
         draft = ""; pending = []; files = []; focused = false
         Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs; files = keepFiles } }
     }
@@ -971,6 +975,9 @@ struct CCShiSessionScreen: View {
         }
     }
 }
+
+/// 会话页「她在不在底部」：类而不是 @State 值——滚动时每帧都在写，不能让它带着整页重算
+final class CCPin { var atBottom = true }
 
 /// 我的一段正文：圆体；长按复制／从这里重来（新开一个分叉，原会话不动）
 struct CCTextRow: View {
