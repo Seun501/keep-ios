@@ -194,15 +194,15 @@ enum CCFmt {
     /// ↓5.7k（同 Claude Code 那行）
     static func k(_ n: Int) -> String { n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n) }
     static func dur(_ s: Int) -> String { s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s" }
-    /// 一轮收尾那行，照 Claude Code：「✻ Cooked for 43s · done 3:05 PM」（寻 10-27：token 数不放这儿，右上角有）
+    /// 一轮收尾那行，照 Claude Code：「✻ Cooked for 43s · done 15:05」（寻 10-27：token 数不放这儿，右上角有）
     static let doneVerbs = ["Baked", "Brewed", "Churned", "Cogitated", "Cooked", "Crunched", "Mulled", "Pondered",
                             "Simmered", "Noodled", "Percolated", "Sautéed", "Whisked", "Worked", "Marinated", "Kneaded"]
     static func endLine(_ e: CCEvent) -> String {
         let verb = doneVerbs[abs(e.seq) % doneVerbs.count]
         var t = "✻ " + verb + " for " + dur(Int(e.secs ?? 0))
         if let d = TimeFmt.parse(e.ts ?? "") {
-            let f = DateFormatter(); f.locale = Locale(identifier: "en_US")
-            f.dateFormat = Calendar.current.isDateInToday(d) ? "h:mm a" : "M/d h:mm a"
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = Calendar.current.isDateInToday(d) ? "HH:mm" : "M/d HH:mm"   // Keep 一律 24 小时制（10-28 寻）
             t += " · done " + f.string(from: d)
         }
         return t
