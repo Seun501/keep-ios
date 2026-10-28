@@ -433,6 +433,7 @@ struct CCBadge: View {
     @Published var events: [CCEvent] = []
     @Published var live: CCEvent? = nil
     @Published var liveOffset: Double = 0     // 服务端时钟 − 手机时钟（计时用服务端的起点）
+    var liveAt = Date()                       // 最近一次收到干活行更新（转星卡住变红用；不发布，TimelineView 自己每帧读）
     @Published var err = ""
     private(set) var last = 0
     private var streamTask: Task<Void, Never>? = nil
@@ -467,7 +468,7 @@ struct CCBadge: View {
         var grew = false
         for e in evs {
             if e.kind == "live" {
-                live = e
+                live = e; liveAt = Date()
                 if let n = e.now { liveOffset = n - Date().timeIntervalSince1970 }
                 if let c = e.ctx { meta?.ctx = c }
                 continue
@@ -605,7 +606,7 @@ struct CCShiSessionScreen: View {
                                     }.buttonStyle(.plain)
                                 }
                                 ForEach(blocks.suffix(shown)) { b in row(b) }
-                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset).padding(.top, 6).padding(.bottom, 4) }
+                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset, liveAt: { m.liveAt }, offline: !m.err.isEmpty).padding(.top, 6).padding(.bottom, 4) }
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
@@ -654,7 +655,7 @@ struct CCShiSessionScreen: View {
                         }
                     }
                 }
-                if !m.err.isEmpty {
+                if !m.err.isEmpty && !(m.running && m.live != nil) {   // 干活时断线由转星那行变红表示（同 Claude Code），这行只在闲着时出
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
                 }
                 composer
@@ -1152,6 +1153,13 @@ struct CCTextRow: View {
 struct CCLiveRow: View {
     let live: CCEvent
     let offset: Double
+    var liveAt: () -> Date = { Date() }
+    var offline = false
+    /// 卡住色（CLI 里读的 error rgb(171,43,63)）：离上次更新超过 10 秒，接下来 10 秒里从橙慢慢混成它；断线直接全红（10-28 寻）
+    static let stalled = (r: 171.0, g: 43.0, b: 63.0)
+    static func mix(_ k: Double) -> Color {
+        Color(red: (215 + (stalled.r - 215) * k) / 255, green: (119 + (stalled.g - 119) * k) / 255, blue: (87 + (stalled.b - 87) * k) / 255)
+    }
     // ✳ 后面要带 FE0E（文字样式）：不带的话 iOS 把它画成绿底 emoji ✳️（10-28 寻：绿绿的好突兀）。CLI 里它就是个橙色字
     static let stars = ["·", "✢", "✳\u{FE0E}", "✶", "✻", "✽", "✻", "✶", "✳\u{FE0E}", "✢"]
     /// Claude Code 主题里的两色（CLI 里读的：claude rgb(215,119,87)、claudeShimmer rgb(245,149,117)）
@@ -1165,17 +1173,23 @@ struct CCLiveRow: View {
             let thinkFor = Int(max(0, now - (live.since ?? now)))
             let star = Self.stars[Int(t / 0.12) % Self.stars.count]
             let phase = CGFloat((t.truncatingRemainder(dividingBy: 2.0)) / 2.0) * 1.6 - 0.3   // -0.3 → 1.3，两秒扫一趟
+            // 只在等模型时算卡住（想、写、或刚发出请求）；跑工具时 doing 是工具名、desc 是命令说明——那是在等工具，不算
+            let quiet = ctx.date.timeIntervalSince(liveAt())
+            let waitingModel = ["", "thinking", "writing"].contains(live.doing ?? "") && (live.desc ?? "").isEmpty
+            let k = offline ? 1.0 : (waitingModel ? min(1, max(0, (quiet - 10) / 10)) : 0)
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(star).font(.system(size: 14, weight: .semibold)).foregroundColor(Self.claude).frame(width: 18, alignment: .leading)
+                Text(star).font(.system(size: 14, weight: .semibold)).foregroundColor(Self.mix(k)).frame(width: 18, alignment: .leading)
                 Text((live.verb ?? "Clauding") + "… ").font(Theme.mono(12.5))
-                    .foregroundStyle(LinearGradient(stops: [.init(color: Self.claude, location: 0),
-                                                            .init(color: Self.claude, location: max(0, phase - 0.15)),
-                                                            .init(color: Self.shimmer, location: min(1, max(0, phase))),
-                                                            .init(color: Self.claude, location: min(1, phase + 0.15)),
-                                                            .init(color: Self.claude, location: 1)],
+                    .foregroundStyle(LinearGradient(stops: [.init(color: Self.mix(k), location: 0),
+                                                            .init(color: Self.mix(k), location: max(0, phase - 0.15)),
+                                                            .init(color: k > 0 ? Self.mix(k) : Self.shimmer, location: min(1, max(0, phase))),
+                                                            .init(color: Self.mix(k), location: min(1, phase + 0.15)),
+                                                            .init(color: Self.mix(k), location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
-                Text(Self.tail(el, live.out ?? 0, live.doing, thinkFor,
-                               thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil, desc: live.desc)).font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                Text(offline ? "(reconnecting… · check your network)"
+                     : Self.tail(el, live.out ?? 0, live.doing, thinkFor,
+                               thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil, desc: live.desc)).font(Theme.mono(12.5))
+                    .foregroundColor(offline ? Self.mix(1) : Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
             }
         }
