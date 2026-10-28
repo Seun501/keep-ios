@@ -40,6 +40,7 @@ struct CCEvent: Decodable {
     var state: String?
     var images: [String]?
     var interject: Bool?
+    var ref: Int?                 // kind=read：哪条插话被我读到了（10-28）
     var file: String?
     var type: String?
     var title: String?
@@ -441,6 +442,11 @@ struct CCBadge: View {
     init(id: String) { self.id = id }
 
     var running: Bool { meta?.running == true }
+    /// 插话里还没 read 回执的那几条（seq）
+    var unreadInterjects: Set<Int> {
+        let read = Set(events.compactMap { $0.kind == "read" ? $0.ref : nil })
+        return Set(events.filter { $0.kind == "user" && $0.interject == true && !read.contains($0.seq) }.map(\.seq))
+    }
 
     func start() {
         if Preview.on { loadPreview(); return }
@@ -605,8 +611,11 @@ struct CCShiSessionScreen: View {
                                             .frame(maxWidth: .infinity).padding(.vertical, 10)
                                     }.buttonStyle(.plain)
                                 }
-                                ForEach(blocks.suffix(shown)) { b in row(b) }
+                                // 还没被我读进去的插话排在转星那行下面，读到了（read 事件）才回到消息流里（10-28 寻：看得出我读没读）
+                                let unread = m.running && m.live != nil ? m.unreadInterjects : []
+                                ForEach(blocks.suffix(shown).filter { !unread.contains($0.id) }) { b in row(b) }
                                 if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset, liveAt: { m.liveAt }, offline: !m.err.isEmpty).padding(.top, 6).padding(.bottom, 4) }
+                                ForEach(blocks.suffix(shown).filter { unread.contains($0.id) }) { b in row(b) }
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
