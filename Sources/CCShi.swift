@@ -372,6 +372,7 @@ struct CCBadge: View {
                 do {
                     let e = try await CCShiAPI.events(self.id, after: self.last)
                     self.meta = e.meta; self.absorb(e.events)
+                    self.err = ""          // 接上了就收起「断线」——流一开就是一小时，不能等它结束才清
                     for try await ev in CCShiAPI.stream(self.id, after: self.last) { self.absorb([ev]) }
                     self.err = ""
                 } catch {
