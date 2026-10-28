@@ -307,10 +307,10 @@ struct CCShiListScreen: View {
         Button { onOpen(s.id) } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 } }
+                    if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.5 } }   // 圆点＝在干活；中心对汉字中线（15 号字约基线上 5.5，10-28 寻）
                     Text(s.title).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
                     Spacer()
-                    Text(s.running ? "在干活" : TimeFmt.stamp(s.updated)).font(Theme.round(12)).foregroundColor(s.running ? Theme.accent : Theme.muted)
+                    Text(TimeFmt.stamp(s.updated)).font(Theme.round(12)).foregroundColor(Theme.muted)   // 「在干活」由左边圆点表示（10-28 寻）
                 }
                 HStack(alignment: .top, spacing: 8) {
                     Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
