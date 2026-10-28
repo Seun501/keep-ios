@@ -666,7 +666,7 @@ struct ChatScreen: View {
         .fullScreenCover(isPresented: $showWeb) { WebShellScreen(onLogout: onLogout) }
         .overlay { DrawerView(shown: $drawerOn, unread: 0, onLogout: onLogout, onNavigate: { r in drawerOn = false; path.append(r) }).zIndex(50) }
         .overlay { if model.door?.closed == true { DoorView(model: model).zIndex(120) } }
-        .overlay { if let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }, onGo: stripGo(s)).zIndex(60) } }
+        .overlay { if !greetOn, let s = alerts.current { StripPop(icon: s.icon, title: s.title, en: s.en, msg: s.msg, onClose: { alerts.dismiss() }, onGo: stripGo(s)).zIndex(60) } }
         .task {
             await alerts.poll(); await alerts.uvOnce()
             // 健康原生化（09-08）：首开问一次授权，然后早上档 + 当下快照；推完了「今天还没传健康数据」自然不弹

@@ -353,28 +353,39 @@ struct CCShiListScreen: View {
     }
 }
 
-/// 改名白笺：一行输入＋保存，键盘一起来就聚焦（样子照记忆页 WordSheet）
+/// 改名小弹窗（10-28 寻：内容少，用小窗不用白笺）：暗幕＋纸色小卡，摆在上三分之一，键盘起来也挡不住
 struct CCRenameSheet: View {
     @Binding var title: String
     var onClose: () -> Void
     var onSave: () -> Void
     @State private var focused = false
     var body: some View {
-        MemSheet(title: "改名", onClose: onClose) {
-            VStack(alignment: .leading, spacing: 14) {
+        ZStack(alignment: .top) {
+            Color(red: 48/255, green: 45/255, blue: 39/255).opacity(0.32).ignoresSafeArea()
+                .onTapGesture { focused = false; onClose() }
+            VStack(spacing: 14) {
+                Text("改名").font(Theme.cjk(15, weight: .semibold)).foregroundColor(Theme.text)
                 PlainField(text: $title, focused: $focused, placeholder: "会话名", font: Theme.uiSys(15), returnKey: .done, onSubmit: onSave)
                     .frame(height: 20)
                     .padding(.vertical, 10).padding(.horizontal, 12)
                     .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Button(action: onSave) {
-                    Text("保存").font(Theme.cjk(14)).foregroundColor(Theme.card)
-                        .frame(maxWidth: .infinity).padding(.vertical, 11)
-                        .background(Theme.text, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                HStack(spacing: 0) {
+                    Button { focused = false; onClose() } label: {
+                        Text("取消").font(Theme.cjk(14)).foregroundColor(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }.buttonStyle(.plain)
+                    Button { focused = false; onSave() } label: {
+                        Text("保存").font(Theme.cjk(14, weight: .medium)).foregroundColor(Theme.accent).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }.buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(EdgeInsets(top: 18, leading: 18, bottom: 10, trailing: 18))
+            .frame(width: 280)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.top, UIScreen.main.bounds.height * 0.22)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } }
+        .ignoresSafeArea(.keyboard)
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focused = true } }
     }
 }
 
