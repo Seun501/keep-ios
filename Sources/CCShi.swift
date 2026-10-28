@@ -682,7 +682,7 @@ struct CCShiSessionScreen: View {
                 if let imgs = e.images, !imgs.isEmpty {
                     HStack(spacing: 6) { ForEach(imgs, id: \.self) { n in CCFileImage(sid: m.id, name: n, maxW: 120, maxH: 120) } }
                 }
-                UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: [], pick: e.interject == true ? "插话" : nil)   // 干活时发的话＝插进那一轮
+                UserRowView(text: e.text ?? "", stamp: TimeFmt.stamp(e.ts), images: [], pick: e.interject == true ? "插话" : nil, size: 16)   // 干活时发的话＝插进那一轮
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.vertical, 12)

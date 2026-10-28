@@ -99,6 +99,7 @@ struct UserRowView: View {
     var highlight = ""                // 检索关键词标黄
     var pick: String? = nil           // 这句是点了克给的哪个选项：时间前标「B」（寻 09-14）
     var voice: Voice? = nil           // 语音条：播放钮＋秒数＋转写的字（09-14）
+    var size: CGFloat = 18            // CC师 页用 16（10-28 寻：CC 小小的）
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {   // .meta.below margin-top 4
             // 照网页 .row.user > img.att：图站在气泡外上方、素着不加修饰、贴右、圆角 26 同她的气泡、点开看大图；图下空 6
@@ -110,7 +111,7 @@ struct UserRowView: View {
                 if let v = voice {
                     VoiceBubble(voice: v, text: text, highlight: highlight)
                 } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"))   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
+                    let attr = MD.xunNS(text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: "\n"), size: size)   // 段间靠 paragraphSpacing 8，不空整行（寻验：段间太宽）
                     RichText(attr: highlight.isEmpty ? attr : ArchiveScreen.highlight(attr, highlight))
                         .padding(.horizontal, 16).padding(.vertical, 10)   // 行框改自然高后上下对称，照网页 10/16
                         .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
