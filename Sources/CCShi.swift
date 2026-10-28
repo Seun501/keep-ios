@@ -496,6 +496,7 @@ struct CCShiSessionScreen: View {
     @State private var holdStarted = false
     @State private var webDoc: CCWebDoc? = nil
     @State private var pin = CCPin()   // 她在不在底部（不触发重绘）
+    @State private var far = false     // 离底了：亮回底钮（只在变化时写，10-28）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
 
@@ -520,13 +521,34 @@ struct CCShiSessionScreen: View {
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
-                            .background(IndicatorTint(onBottom: { [pin] in pin.atBottom = $0 }))   // 指示条染赤陶，同克那边；顺带记她在不在底部（10-28）
+                            .background(IndicatorTint(onBottom: { v in pin.atBottom = v; if far == v { far = !v } }))   // 指示条染赤陶，同克那边；顺带记她在不在底部（10-28）
                         }
                         .scrollIndicators(.visible)
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: m.events.count) { _ in toBottom(proxy) }   // 她往上翻着看就不拽回底（10-28 寻）
                         .onChange(of: m.running) { _ in toBottom(proxy) }
                         .onAppear { pin.atBottom = true; toBottom(proxy) }
+                        // 键盘起收：原本在底就跟着回底（10-28 寻：点开输入框再点外面收起，消息没降下来）
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in toBottom(proxy) }
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in toBottom(proxy) }
+                        .overlay(alignment: .bottom) {   // 回底钮：同克那边（10-28 寻）
+                            if far && !rec.recording {
+                                Button {
+                                    pin.atBottom = true; far = false
+                                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                                } label: {
+                                    Image("chev").renderingMode(.template).resizable().frame(width: 20, height: 20)
+                                        .foregroundColor(Theme.jumpArrow)
+                                        .frame(width: 38, height: 38)
+                                        .background(Theme.jumpBg, in: Circle())
+                                        .overlay(Circle().stroke(Theme.jumpRing, lineWidth: 1))
+                                        .shadow(color: Color.black.opacity(0.10), radius: 9, y: 6)
+                                        .shadow(color: Color.black.opacity(0.14), radius: 4, y: 2)
+                                }
+                                .padding(.bottom, 10)
+                                .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                            }
+                        }
                     }
                     if rec.recording {
                         VStack(spacing: 0) {
