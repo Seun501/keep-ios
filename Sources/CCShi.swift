@@ -297,11 +297,19 @@ struct CCShiListScreen: View {
         .background(EdgeSwipe(onBack: onBack))
         .task { await m.load() }
         .onReceive(tick) { _ in if !Preview.on { Task { await m.load() } } }
-        .alert("改名", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("会话名", text: $newTitle)
-            Button("好") { if let s = renaming { Task { await CCShiAPI.rename(s.id, newTitle); await m.load() } } }
-            Button("取消", role: .cancel) {}
+        // 改名：底下升起的白笺（10-28 寻：系统弹窗不像 Keep；同记忆页词条笺）
+        .overlay {
+            if let s = renaming {
+                CCRenameSheet(title: $newTitle, onClose: { withAnimation(.easeOut(duration: 0.22)) { renaming = nil } }, onSave: {
+                    let t = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    withAnimation(.easeOut(duration: 0.22)) { renaming = nil }
+                    if !t.isEmpty { Task { await CCShiAPI.rename(s.id, t); await m.load() } }
+                })
+                .zIndex(80)
+            }
         }
+        .animation(.easeOut(duration: 0.22), value: renaming?.id)
+        .onAppear { if Preview.screen == "ccshirename" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { newTitle = "Keep 加 CC师 页"; renaming = m.sessions.first } } }
     }
 
     private func card(_ s: CCSession) -> some View {
@@ -341,6 +349,31 @@ struct CCShiListScreen: View {
         if Preview.on { return }
         let f = DateFormatter(); f.dateFormat = "M-d HH:mm"
         if let s = try? await CCShiAPI.create("新会话 " + f.string(from: Date())) { onOpen(s.id) }
+    }
+}
+
+/// 改名白笺：一行输入＋保存，键盘一起来就聚焦（样子照记忆页 WordSheet）
+struct CCRenameSheet: View {
+    @Binding var title: String
+    var onClose: () -> Void
+    var onSave: () -> Void
+    @State private var focused = false
+    var body: some View {
+        MemSheet(title: "改名", onClose: onClose) {
+            VStack(alignment: .leading, spacing: 14) {
+                PlainField(text: $title, focused: $focused, placeholder: "会话名", font: Theme.uiSys(15), returnKey: .done, onSubmit: onSave)
+                    .frame(height: 20)
+                    .padding(.vertical, 10).padding(.horizontal, 12)
+                    .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button(action: onSave) {
+                    Text("保存").font(Theme.cjk(14)).foregroundColor(Theme.card)
+                        .frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .background(Theme.text, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { focused = true } }
     }
 }
 
@@ -542,6 +575,7 @@ struct CCShiSessionScreen: View {
     @State private var webDoc: CCWebDoc? = nil
     @State private var pin = CCPin()   // 她在不在底部（不触发重绘）
     @State private var far = false     // 离底了：亮回底钮（只在变化时写，10-28）
+    @State private var shown = 120     // 消息流只排最近这么多段（非懒列表，10-28）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
 
@@ -560,22 +594,40 @@ struct CCShiSessionScreen: View {
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(CCBlock.build(m.events)) { b in row(b) }
+                            // 非懒（10-28 寻：起键盘偶发整页抬到白屏）：懒列表行高是估的，scrollTo 底会冲过头——克主页 09-05 同一个坑。
+                            // 只排最近 shown 段，更早的点一下再往前加，长会话也不卡
+                            let blocks = CCBlock.build(m.events)
+                            VStack(alignment: .leading, spacing: 0) {
+                                if blocks.count > shown {
+                                    Button { shown += 120 } label: {
+                                        Text("更早的 \(blocks.count - shown) 段").font(Theme.round(12.5)).foregroundColor(Theme.muted)
+                                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                    }.buttonStyle(.plain)
+                                }
+                                ForEach(blocks.suffix(shown)) { b in row(b) }
                                 if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset).padding(.top, 6).padding(.bottom, 4) }
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
-                            .background(IndicatorTint(onBottom: { v in pin.atBottom = v; if far == v { far = !v } }))   // 指示条染赤陶，同克那边；顺带记她在不在底部（10-28）
+                            // 同克主页那只观察者（10-28 寻：键盘起收太硬）：染指示条、键盘动画里逐帧钉底；顺带记她在不在底部——只认她亲手滚的
+                            .background(ScrollObserver(name: "ccsess") { y, ch, vh in
+                                let near = ch - y - vh < 80
+                                let sv = ScrollObserver.view("ccsess")
+                                if sv?.isTracking == true || sv?.isDragging == true || sv?.isDecelerating == true || near {
+                                    pin.atBottom = near
+                                    if far == near { far = !near }
+                                }
+                            })
                         }
                         .scrollIndicators(.visible)
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: m.events.count) { _ in toBottom(proxy) }   // 她往上翻着看就不拽回底（10-28 寻）
                         .onChange(of: m.running) { _ in toBottom(proxy) }
                         .onAppear { pin.atBottom = true; toBottom(proxy) }
-                        // 键盘起收：原本在底就跟着回底（10-28 寻：点开输入框再点外面收起，消息没降下来）
-                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in toBottom(proxy) }
-                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in toBottom(proxy) }
+                        // 收键盘落定后补一次到底（同克主页 keyboardDidHide；起收途中由 ScrollObserver 逐帧钉底）
+                        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                            if pin.atBottom { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                        }
                         .overlay(alignment: .bottom) {   // 回底钮：同克那边（10-28 寻）
                             if far && !rec.recording {
                                 Button {
@@ -1563,8 +1615,12 @@ struct CCShowCard: View {
     }
     @MainActor private func open() async {
         guard let f = event.file, let d = await CCShiAPI.file(sid, f) else { return }
-        let mime = event.type == "html" ? "text/html" : (event.type == "pdf" ? "application/pdf" : "text/plain")
         let title = (event.title?.isEmpty == false ? event.title : event.name) ?? ""
+        // md 照文件页那样排版看（10-28 寻：递过来的 md 是裸字）；服务端把 .md/.txt 都记成 text，按文件名分
+        if (event.name ?? "").lowercased().hasSuffix(".md"), let s = String(data: d, encoding: .utf8) {
+            onOpen(CCWebDoc(title: title, data: Data(CCMdHTML.page(s).utf8), mime: "text/html")); return
+        }
+        let mime = event.type == "html" ? "text/html" : (event.type == "pdf" ? "application/pdf" : "text/plain")
         onOpen(CCWebDoc(title: title, data: d, mime: mime))
     }
 }

@@ -181,6 +181,7 @@ struct ScrollObserver: UIViewRepresentable {
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
+    static let followsKeyboard: Set<String> = ["chat", "ccsess"]   // 键盘起收时底边跟着走的滚动区
     static var note = ""               // 预览截图里的调试字（键盘跟随钩子跑没跑）
     static var trail: [String] = []    // 预览截图里：偏移跳动的轨迹（寻验 85：收键盘后一秒消息流往下挪一点）
     static func view(_ name: String) -> UIScrollView? { registry[name]?.sv }
@@ -269,7 +270,7 @@ struct ScrollObserver: UIViewRepresentable {
                     let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
                     let hiding = n == UIResponder.keyboardWillHideNotification
                     let showing = !hiding && (end.map { $0.minY < UIScreen.main.bounds.height - 1 } ?? false)
-                    if self.name == "chat", self.lastDist < 40, showing || hiding {
+                    if ScrollObserver.followsKeyboard.contains(self.name ?? ""), self.lastDist < 40, showing || hiding {   // CC师 会话页同一套（10-28 寻：那边太硬）
                         self.startFollow(dur)
                         ScrollObserver.note = String(format: "kb %@ dur=%.2f end=%.0f d=%.0f", hiding ? "hide" : "show", dur, end?.minY ?? -1, self.lastDist)
                         self.followPin()   // 视口若已经改了就当场钉一次（后面的每帧变化再由 KVO 接）
@@ -431,38 +432,6 @@ struct EdgeSwipe: UIViewRepresentable {
             case .changed:
                 if !fired, g.translation(in: g.view).x > 55 { fired = true; EdgeSwipe.stack.last?.fire() }
             default: break
-            }
-        }
-    }
-}
-
-/// 只染指示条、不碰别的（CC师 页用，10-28 寻：滚动条和克那边一个颜色）。
-/// ScrollObserver 会顺手改内边距、钉底、管键盘，CC师 页自己有一套滚动，套上去会打架——这里只听偏移、补染色。
-struct IndicatorTint: UIViewRepresentable {
-    /// 她在不在底部：手指拖离底部＝false（来新内容不再拽回去，10-28 寻），回到底部（手拖或程序滚）＝true
-    var onBottom: ((Bool) -> Void)? = nil
-    func makeUIView(context: Context) -> HookView {
-        let v = HookView(); v.isUserInteractionEnabled = false
-        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v) } }
-        return v
-    }
-    func updateUIView(_ uiView: HookView, context: Context) { context.coordinator.onBottom = onBottom }
-    func makeCoordinator() -> Coordinator { Coordinator(onBottom: onBottom) }
-    final class Coordinator {
-        var onBottom: ((Bool) -> Void)?
-        private var obs: NSKeyValueObservation?
-        init(onBottom: ((Bool) -> Void)?) { self.onBottom = onBottom }
-        func attach(from v: UIView) {
-            var s: UIView? = v
-            while let cur = s, !(cur is UIScrollView) { s = cur.superview }
-            guard obs == nil, let sv = s as? UIScrollView else { return }
-            sv.verticalScrollIndicatorInsets.bottom = 12
-            obs = sv.observe(\.contentOffset) { [weak self] sv, _ in
-                ScrollObserver.Coordinator.tintIndicator(sv)
-                let gap = sv.contentSize.height - sv.contentOffset.y - sv.bounds.height + sv.adjustedContentInset.bottom
-                let near = gap < 80
-                if sv.isTracking || sv.isDragging || sv.isDecelerating { self?.onBottom?(near) }   // 只认她亲手滚的
-                else if near { self?.onBottom?(true) }
             }
         }
     }

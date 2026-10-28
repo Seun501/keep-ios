@@ -177,7 +177,8 @@ struct WatchChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    // 非懒（10-28 寻：发完、他回话时界面猛抬到一片空白）：懒列表行高是估的，scrollTo 底会冲过头。最多 40 条，全排得起
+                    VStack(alignment: .leading, spacing: 10) {
                         // 健康中继的状态缩成一行小字（一期的页面），点一下＝现在同步
                         Text(link.hasToken || WatchChat.preview ? h.status : "等手机把登录票传过来")
                             .font(.system(size: 11)).foregroundStyle(.tertiary)
