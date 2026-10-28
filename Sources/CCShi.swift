@@ -455,8 +455,10 @@ struct CCBadge: View {
     var running: Bool { meta?.running == true }
     /// 插话里还没 read 回执的那几条（seq）
     var unreadInterjects: Set<Int> {
+        // 只看这一轮（最后一次 status=running 之后）发的插话：更早的轮早读过了（10-28 寻：旧插话没回执，全被排到了转星行下面）
+        let start = events.last(where: { $0.kind == "status" && $0.state == "running" })?.seq ?? 0
         let read = Set(events.compactMap { $0.kind == "read" ? $0.ref : nil })
-        return Set(events.filter { $0.kind == "user" && $0.interject == true && !read.contains($0.seq) }.map(\.seq))
+        return Set(events.filter { $0.seq > start && $0.kind == "user" && $0.interject == true && !read.contains($0.seq) }.map(\.seq))
     }
 
     func start() {
