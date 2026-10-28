@@ -974,10 +974,42 @@ struct CCShiSessionScreen: View {
 struct CCTextRow: View {
     let event: CCEvent
     let onRewind: () -> Void
+    enum Part { case text(String); case table([String], [[String]]) }
+    /// md 表格单拎出来画成格子（10-28 寻：表格要渲染），其余照旧一份富文本。判表格同 MD.parse：带 | 的行＋下一行是 |---| 分隔
+    static func split(_ t: String) -> [Part] {
+        let lines = t.components(separatedBy: "\n")
+        func isSep(_ l: String) -> Bool { l.contains("-") && l.contains("|") && l.allSatisfy { " |:-".contains($0) } }
+        func cells(_ l: String) -> [String] {
+            var r = l.trimmingCharacters(in: .whitespaces)
+            if r.hasPrefix("|") { r.removeFirst() }
+            if r.hasSuffix("|") { r.removeLast() }
+            return r.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        var out: [Part] = [], buf: [String] = [], i = 0
+        while i < lines.count {
+            if lines[i].contains("|"), i + 1 < lines.count, isSep(lines[i + 1]) {
+                if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] }
+                let head = cells(lines[i]); var rows: [[String]] = []; i += 2
+                while i < lines.count, lines[i].contains("|"), !lines[i].trimmingCharacters(in: .whitespaces).isEmpty { rows.append(cells(lines[i])); i += 1 }
+                out.append(.table(head, rows)); continue
+            }
+            buf.append(lines[i]); i += 1
+        }
+        if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))) }
+        return out
+    }
     var body: some View {
         let t = (event.text ?? "").replacingOccurrences(of: "\n[ \t]*\n+", with: "\n", options: .regularExpression)   // 空行不画成整行空白（截图 429）
-        RichText(attr: MD.ns(t, base: Theme.uiRound(16), bold: Theme.uiRound(16, weight: .semibold),
-                             mono: Theme.uiMono(13), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(Self.split(t).enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .text(let s):
+                    RichText(attr: MD.ns(s, base: Theme.uiRound(16), bold: Theme.uiRound(16, weight: .semibold),
+                                         mono: Theme.uiMono(13), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
+                case .table(let h, let r): MDTable(head: h, rows: r, round: true)
+                }
+            }
+        }
             .padding(.vertical, 8)
             .contextMenu {
                 Button { UIPasteboard.general.string = event.text ?? "" } label: { Label("复制", systemImage: "doc.on.doc") }

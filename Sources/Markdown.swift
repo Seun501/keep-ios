@@ -456,12 +456,22 @@ struct KeMarkdown: View {
 struct MDTable: View {
     let head: [String]
     let rows: [[String]]
+    var round = false   // CC师 页用圆体（10-28）；默认照克的宋体
+    private func cell(_ s: String, header: Bool) -> AttributedString {
+        guard round else { return MD.ke(s, size: 15, weight: header ? .semibold : .regular) }
+        return MD.styled(s, base: Theme.uiRound(14.5, weight: header ? .semibold : .regular), bold: Theme.uiRound(14.5, weight: .semibold),
+                         mono: Theme.uiMono(12.5), color: Theme.text)
+    }
+    private func cellW(_ s: String) -> CGFloat {
+        round ? NSAttributedString(string: s, attributes: [.font: Theme.uiRound(14.5, weight: .semibold)]).size().width
+              : MD.keNS(s, size: 15, weight: .semibold, lineHeight: 1.4).size().width
+    }
     private var cols: Int { max(head.count, rows.map(\.count).max() ?? 0) }
     private var widths: [CGFloat] {
         let all = [head] + rows
         return (0..<cols).map { c in
             var w: CGFloat = 0
-            for r in all where c < r.count { w = max(w, MD.keNS(r[c], size: 15, weight: .semibold, lineHeight: 1.4).size().width) }
+            for r in all where c < r.count { w = max(w, cellW(r[c])) }
             return min(220, ceil(w) + 20)   // 超过 220 的格子在格内折行
         }
     }
@@ -483,7 +493,7 @@ struct MDTable: View {
         HStack(spacing: 0) {
             ForEach(0..<cols, id: \.self) { c in
                 if c > 0 { Rectangle().fill(Theme.border).frame(width: 1) }
-                Text(MD.ke(c < r.count ? r[c] : "", size: 15, weight: header ? .semibold : .regular))
+                Text(cell(c < r.count ? r[c] : "", header: header))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 6).padding(.horizontal, 10)
                     .frame(width: ws[c], alignment: .topLeading)
