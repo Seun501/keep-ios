@@ -1187,11 +1187,12 @@ struct CCCompactDivider: View {
     let event: CCEvent
     let secs: Int?
     var body: some View {
-        let line = Rectangle().fill(Theme.muted.opacity(0.28)).frame(height: 0.7)
+        // 双细线＝CLI 里的 ═（寻 10-28：英文好看）
+        let line = VStack(spacing: 2) { ForEach(0..<2, id: \.self) { _ in Rectangle().fill(Theme.muted.opacity(0.35)).frame(height: 0.7) } }
         VStack(spacing: 4) {
             HStack(spacing: 10) {
                 line
-                Text("上下文已压缩").font(Theme.round(12.5, weight: .medium)).foregroundColor(Theme.muted).fixedSize()
+                Text("Conversation compacted").font(Theme.mono(12.5)).foregroundColor(Theme.muted).fixedSize()
                 line
             }
             Text(detail).font(Theme.mono(11)).foregroundColor(Theme.muted.opacity(0.75))
