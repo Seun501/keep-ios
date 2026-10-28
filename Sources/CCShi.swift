@@ -502,6 +502,7 @@ struct CCShiSessionScreen: View {
         self.onBack = onBack
         self.onOpen = onOpen
         _m = StateObject(wrappedValue: CCShiSessionModel(id: id))
+        _draft = State(initialValue: Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.ccshi.\(id)") ?? ""))   // 没发出去的字按会话留着，退出页面、App 被刷掉都还在（10-28 寻，同克那边）
     }
 
     var body: some View {
@@ -578,6 +579,7 @@ struct CCShiSessionScreen: View {
         .onDisappear { m.markRead(); m.stopStream() }
         .onChange(of: phase) { p in if p == .active { m.start() } }
         .onChange(of: focused) { on in if on { plusOpen = false } }
+        .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }
     }
 
     /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次
