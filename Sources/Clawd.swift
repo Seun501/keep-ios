@@ -435,3 +435,25 @@ struct EdgeSwipe: UIViewRepresentable {
         }
     }
 }
+
+/// 只染指示条、不碰别的（CC师 页用，10-28 寻：滚动条和克那边一个颜色）。
+/// ScrollObserver 会顺手改内边距、钉底、管键盘，CC师 页自己有一套滚动，套上去会打架——这里只听偏移、补染色。
+struct IndicatorTint: UIViewRepresentable {
+    func makeUIView(context: Context) -> HookView {
+        let v = HookView(); v.isUserInteractionEnabled = false
+        v.onWindow = { [weak v] in if let v { context.coordinator.attach(from: v) } }
+        return v
+    }
+    func updateUIView(_ uiView: HookView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator {
+        private var obs: NSKeyValueObservation?
+        func attach(from v: UIView) {
+            var s: UIView? = v
+            while let cur = s, !(cur is UIScrollView) { s = cur.superview }
+            guard obs == nil, let sv = s as? UIScrollView else { return }
+            sv.verticalScrollIndicatorInsets.bottom = 12
+            obs = sv.observe(\.contentOffset) { sv, _ in ScrollObserver.Coordinator.tintIndicator(sv) }
+        }
+    }
+}

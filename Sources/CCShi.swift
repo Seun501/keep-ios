@@ -518,7 +518,9 @@ struct CCShiSessionScreen: View {
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
+                            .background(IndicatorTint())   // 指示条染赤陶，同克那边（10-28）
                         }
+                        .scrollIndicators(.visible)
                         .scrollDismissesKeyboard(.interactively)
                         .onChange(of: m.events.count) { _ in toBottom(proxy) }
                         .onChange(of: m.running) { _ in toBottom(proxy) }
@@ -798,12 +800,6 @@ struct CCShiSessionScreen: View {
                 .anchorPreference(key: PlusAnchorKey.self, value: .bounds) { $0 }
                 .padding(.leading, -4)
                 Spacer()
-                if m.running && canSend {   // 干活时也能接着说：叫停钮让到左边
-                    Button { m.stop() } label: {
-                        RoundedRectangle(cornerRadius: 3).fill(Theme.text).frame(width: 12, height: 12)
-                            .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
-                    }.buttonStyle(.plain)
-                }
                 Button {
                     if canSend { sendNow() } else if m.running { m.stop() }
                 } label: {
@@ -996,7 +992,8 @@ struct CCTextRow: View {
 struct CCLiveRow: View {
     let live: CCEvent
     let offset: Double
-    static let stars = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]
+    // ✳ 后面要带 FE0E（文字样式）：不带的话 iOS 把它画成绿底 emoji ✳️（10-28 寻：绿绿的好突兀）。CLI 里它就是个橙色字
+    static let stars = ["·", "✢", "✳\u{FE0E}", "✶", "✻", "✽", "✻", "✶", "✳\u{FE0E}", "✢"]
     /// Claude Code 主题里的两色（CLI 里读的：claude rgb(215,119,87)、claudeShimmer rgb(245,149,117)）
     static let claude = Color(red: 215/255, green: 119/255, blue: 87/255)
     static let shimmer = Color(red: 245/255, green: 149/255, blue: 117/255)
