@@ -624,7 +624,10 @@ struct CCShiSessionScreen: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
-            Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
+            }
             Spacer()
             Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: m.meta?.ctx ?? 0, max: ctxMax) }
                 .buttonStyle(.plain)
@@ -744,7 +747,6 @@ struct CCShiSessionScreen: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
-            if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }
             if let a = activeAsk {
                 CCAskPanel(qs: CCAsk.parse(a), step: $askStep, answers: $askAnswers, multi: $askMulti, onDone: { t in
                     askStep = 0; askAnswers = [:]; askMulti = []
@@ -907,21 +909,19 @@ struct CCShiSessionScreen: View {
     private func bgRow(_ bg: [CCBgTask]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Button { withAnimation(.easeOut(duration: 0.15)) { bgOpen.toggle() } } label: {
-                HStack(spacing: 6) {
-                    Circle().fill(Theme.accent).frame(width: 6, height: 6)
-                    Text("\(bg.count) \(bg.count == 1 ? "shell" : "shells") still running").font(Theme.mono(12)).foregroundColor(Theme.muted)
-                    Image("chev").renderingMode(.template).resizable().frame(width: 11, height: 11)
+                HStack(spacing: 5) {
+                    Circle().fill(Theme.accent).frame(width: 5, height: 5)
+                    Text("\(bg.count) \(bg.count == 1 ? "shell" : "shells") still running").font(Theme.mono(10.5)).foregroundColor(Theme.muted)
+                    Image("chev").renderingMode(.template).resizable().frame(width: 9, height: 9)
                         .rotationEffect(.degrees(bgOpen ? 180 : 0)).foregroundColor(Theme.muted)
-                    Spacer()
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
             if bgOpen {
                 ForEach(bg, id: \.self) { t in
-                    Text("· " + (t.desc ?? t.id ?? "")).font(Theme.mono(11.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.leading, 12)
+                    Text("· " + (t.desc ?? t.id ?? "")).font(Theme.mono(10.5)).foregroundColor(Theme.muted).lineLimit(1).padding(.leading, 10)
                 }
             }
         }
-        .padding(.top, -6).padding(.bottom, 2)
     }
 
     /// 还没答的那张问题卡：最后一次 ask 之后她还没说过话
