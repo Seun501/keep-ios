@@ -658,6 +658,8 @@ struct CCShiSessionScreen: View {
     @State private var shown = 120     // 消息流只排最近这么多段（非懒列表，10-28）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
+    /// 正开着的会话：前台来的同会话推送不弹（PushRegistrar willPresent，10-30 寻）
+    static var openID: String? = nil
 
     init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }) {
         self.onBack = onBack
@@ -783,8 +785,8 @@ struct CCShiSessionScreen: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) { infoOpen = true; modelOpen = Preview.screen == "ccshimodel" }
             }
         }
-        .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start() }
-        .onDisappear { m.markRead(); m.stopStream() }
+        .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start(); Self.openID = m.id }
+        .onDisappear { m.markRead(); m.stopStream(); if Self.openID == m.id { Self.openID = nil } }
         .onChange(of: phase) { p in if p == .active { m.start() } }
         .onChange(of: focused) { on in if on { plusOpen = false } }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }

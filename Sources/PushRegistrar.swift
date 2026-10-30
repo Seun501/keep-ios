@@ -122,10 +122,15 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         completionHandler()
     }
 
-    // 前台也显示
+    // 前台也显示；正开着的那个 CC师 会话来的不弹（10-30 寻：人就在对话里，推送多余）
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if let keep = notification.request.content.userInfo["keep"] as? [String: Any],
+           let sid = keep["ccshi"] as? String, sid == CCShiSessionScreen.openID {
+            completionHandler([])
+            return
+        }
         completionHandler([.banner, .sound, .list])
     }
 }
