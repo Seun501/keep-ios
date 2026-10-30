@@ -432,7 +432,7 @@ struct KeMarkdown: View {
     var body: some View {
         let _ = JankMeter.shared.bodyEval(live: live)
         let blocks = live ? MD.parse(text) : MD.parseCached(text)
-        if !blocks.contains(where: { if case .table = $0 { return true }; return false }) {
+        if !blocks.contains(where: { switch $0 { case .table, .code: return true; default: return false } }) {
             // 直播段每帧的半截字不进缓存（09-25 夜）：一分钟回话往 400 格缓存里塞一千多条半截，正史那几百条排好的富文本全被挤掉，
             // 说完重拉时整页从头再合成一遍；也省掉 make 里再解析一遍
             rich(live ? MDWhole.build(blocks, size: 18) : MDWhole.make(text))
@@ -442,6 +442,7 @@ struct KeMarkdown: View {
                     switch g {
                     case .text(let bs): rich(live ? MDWhole.build(bs, size: 18) : MDWhole.make(blocks: bs, key: "\(text)|\(gi)"))
                     case .table(let h, let r): MDTable(head: h, rows: r)
+                    case .code(let c): MDCode(code: c)
                     }
                 }
             }
@@ -452,6 +453,21 @@ struct KeMarkdown: View {
     }
 }
 
+/// 围栏代码块：整块一张底色卡片（行再短底色也铺满），宽了横向滚；字可选。round＝CC师 页（Cascadia 360）
+struct MDCode: View {
+    let code: String
+    var round = false
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27)), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
 /// md 表格（照网页 .ai .bubble table：14px、格线 1px --border、格内 6/10、表头 --think-bg 底 600 字重；宽了横向滚）
 struct MDTable: View {
     let head: [String]
@@ -459,8 +475,8 @@ struct MDTable: View {
     var round = false   // CC师 页用圆体（10-28）；默认照克的宋体
     private func cell(_ s: String, header: Bool) -> AttributedString {
         guard round else { return MD.ke(s, size: 15, weight: header ? .semibold : .regular) }
-        return MD.styled(s, base: Theme.uiRound(14.5, weight: header ? .semibold : .regular), bold: Theme.uiRound(14.5, weight: .semibold),
-                         mono: Theme.uiMono(12.5), color: Theme.text)
+        return MD.styled(s, base: Theme.uiRound(14.5, weight: header ? .semibold : .regular, casW: header ? nil : 360), bold: Theme.uiRound(14.5, weight: .semibold),
+                         mono: Theme.uiMono(12.5, casW: 360), color: Theme.text)   // 字母数字 360 同正文（10-30 寻）
     }
     private func cellW(_ s: String) -> CGFloat {
         round ? NSAttributedString(string: s, attributes: [.font: Theme.uiRound(14.5, weight: .semibold)]).size().width
@@ -525,13 +541,17 @@ enum MDWhole {
         return r
     }
     /// 表格前后拆段：表格自己是一张 SwiftUI 格子（画线、表头底色），其余块照旧合成一份富文本
-    enum Group { case text([MD.Block]); case table(head: [String], rows: [[String]]) }
+    /// 代码块也拆出来（10-30 寻）：并在富文本里时底色只铺到每行字尾，长短不一的行右边参差；拆成一整块卡片底色才齐
+    enum Group { case text([MD.Block]); case table(head: [String], rows: [[String]]); case code(String) }
     static func groups(_ blocks: [MD.Block]) -> [Group] {
         var out: [Group] = []; var run: [MD.Block] = []
         for b in blocks {
             if case .table(let h, let r) = b {
                 if !run.isEmpty { out.append(.text(run)); run = [] }
                 out.append(.table(head: h, rows: r))
+            } else if case .code(let c) = b {
+                if !run.isEmpty { out.append(.text(run)); run = [] }
+                out.append(.code(c))
             } else { run.append(b) }
         }
         if !run.isEmpty { out.append(.text(run)) }

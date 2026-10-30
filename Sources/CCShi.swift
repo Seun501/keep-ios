@@ -1191,7 +1191,7 @@ final class CCPin { var atBottom = true }
 struct CCTextRow: View {
     let event: CCEvent
     let onRewind: () -> Void
-    enum Part { case text(String); case table([String], [[String]]) }
+    enum Part { case text(String); case table([String], [[String]]); case code(String) }
     /// md 表格单拎出来画成格子（10-28 寻：表格要渲染），其余照旧一份富文本。判表格同 MD.parse：带 | 的行＋下一行是 |---| 分隔
     static func split(_ t: String) -> [Part] {
         let lines = t.components(separatedBy: "\n")
@@ -1204,6 +1204,12 @@ struct CCTextRow: View {
         }
         var out: [Part] = [], buf: [String] = [], i = 0
         while i < lines.count {
+            // ``` 围栏代码（10-30 寻：原来不认，三个反引号原样印出来）；没收尾的围栏照普通字
+            if lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```"),
+               let end = lines[(i + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }) {
+                if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] }
+                out.append(.code(lines[(i + 1)..<end].joined(separator: "\n"))); i = end + 1; continue
+            }
             if lines[i].contains("|"), i + 1 < lines.count, isSep(lines[i + 1]) {
                 if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] }
                 let head = cells(lines[i]); var rows: [[String]] = []; i += 2
@@ -1224,6 +1230,7 @@ struct CCTextRow: View {
                     RichText(attr: MD.ns(s, base: Theme.uiRound(16, casW: 360), bold: Theme.uiRound(16, weight: .semibold),
                                          mono: Theme.uiMono(13, casW: 360), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
                 case .table(let h, let r): MDTable(head: h, rows: r, round: true)
+                case .code(let c): MDCode(code: c, round: true)
                 }
             }
         }
@@ -1622,7 +1629,7 @@ struct CCTodoCard: View {
 
 // MARK: - 问题卡（我用 mcp__ccshi__ask 问她）：照克那边的选项卡，从输入卡上方长出来、和输入框同一张卡
 // 一次一题：标题胶囊＋问句＋「1/2」；选项一行一个，序号坐在她气泡底色的小圆上；单选点一下就答、跳下一题；
-// 多选打勾、右下「好了」；「其他」＝直接在下面输入框里打字发出。答完整张卡收起，流里只留一行「问过你：…」。
+// 多选打勾、右下箭头（原「好了」）；「其他」＝直接在下面输入框里打字发出。答完整张卡收起，流里只留一行「问过你：…」。
 
 enum CCAsk {
     struct Opt { let label: String; let desc: String }
@@ -1696,7 +1703,8 @@ struct CCAskPanel: View {
                     HStack {
                         Spacer()
                         Button { answer(q, multi.sorted().map { q.options[$0].label }) } label: {
-                            Text("好了").font(Theme.round(13.5, weight: .medium)).foregroundColor(multi.isEmpty ? Theme.muted : Theme.accent)
+                            Image("arrow-right").renderingMode(.template).resizable().frame(width: 20, height: 20)   // 「好了」换 Lucide 箭头（10-30 寻）
+                                .foregroundColor(multi.isEmpty ? Theme.muted : Theme.accent).padding(6).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(multi.isEmpty)
                     }
                 }
