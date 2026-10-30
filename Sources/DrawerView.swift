@@ -31,6 +31,7 @@ struct DrawerView: View {
     @State private var usage = Preview.on ? "" : (UserDefaults.standard.string(forKey: "cache.usage") ?? "")
     @State private var notesBadge = 0
     @State private var ccBadge = 0
+    @State private var ccRunning = false   // 有会话在干活：册名旁一个小圆点，同 CC师 会话卡那枚（10-30 寻）
 
     var body: some View {
         let w = min(UIScreen.main.bounds.width * 0.78, 300)
@@ -73,7 +74,7 @@ struct DrawerView: View {
                     hair
                     row("位置") { onNavigate(.places) }   // 09-12 寻改名
                     hair
-                    row("CC师", badge: ccBadge) { onNavigate(.ccshi) }      // 10-27 寻定：手机上和 CC师 干活；没看的回复条数同留言板那枚
+                    row("CC师", badge: ccBadge, dot: ccRunning) { onNavigate(.ccshi) }      // 10-27 寻定：手机上和 CC师 干活；没看的回复条数同留言板那枚
                 }
                 .padding(.top, 10)
 
@@ -109,10 +110,11 @@ struct DrawerView: View {
 
     private var hair: some View { Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1) }
 
-    private func row(_ label: String, badge: Int = 0, action: @escaping () -> Void) -> some View {
+    private func row(_ label: String, badge: Int = 0, dot: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 8) {
                 Text(label).font(Theme.cjk(15, weight: .medium)).tracking(1.2).foregroundColor(Theme.text)   // 照网页 .nb-label letter-spacing .08em（寻验 44：字挤）
+                if dot { Circle().fill(Theme.accent).frame(width: 7, height: 7) }
                 Spacer()
                 if badge > 0 {   // 照网页 #notesBadge：20 高、最小 20 宽 → 一位数就是正圆（寻定：小圆圈）
                     Text("\(badge)").font(Theme.round(12)).foregroundColor(.white)
@@ -203,8 +205,9 @@ struct DrawerView: View {
     }
 
     private func load() async {
-        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5% · Fri"; notesBadge = 1; ccBadge = 2; return }
+        if Preview.on { days = ["2026-08-20", "2026-08-28", "2026-09-01", "2026-09-02"]; window = ["2026-09-01", "2026-09-02", "2026-09-03"]; ym = (2026, 9); usage = "5h 19% · week 5% · Fri"; notesBadge = 1; ccBadge = 2; ccRunning = true; return }
         Task { ccBadge = await CCShiAPI.unread() ?? ccBadge }
+        Task { if let ss = try? await CCShiAPI.sessions() { ccRunning = ss.contains { $0.running } } }
         guard let token = Keychain.token else { return }
         func get(_ path: String) async -> [String: Any]? {
             var r = URLRequest(url: Gateway.home.appendingPathComponent(path))
