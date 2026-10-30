@@ -676,7 +676,12 @@ struct CCShiSessionScreen: View {
                                 // 还没被我读进去的插话排在转星那行下面，读到了（read 事件）才回到消息流里（10-28 寻：看得出我读没读）
                                 let unread = m.running && m.live != nil ? m.unreadInterjects : []
                                 ForEach(blocks.suffix(shown).filter { !unread.contains($0.id) }) { b in row(b) }
-                                if m.running, let lv = m.live { CCLiveRow(live: lv, offset: m.liveOffset, liveAt: { m.liveAt }, offline: !m.err.isEmpty).padding(.top, 6).padding(.bottom, 4) }
+                                if m.running, let lv = m.live {
+                                    // 下面压着没读的插话时固定两行高：括号里「running 1 shell command」折两行、「thinking」一行，来回换插话就跟着上下跳（10-30 寻）
+                                    CCLiveRow(live: lv, offset: m.liveOffset, liveAt: { m.liveAt }, offline: !m.err.isEmpty)
+                                        .frame(minHeight: unread.isEmpty ? nil : ceil(Theme.uiMono(12.5).lineHeight * 2), alignment: .topLeading)
+                                        .padding(.top, 6).padding(.bottom, 4)
+                                }
                                 ForEach(blocks.suffix(shown).filter { unread.contains($0.id) }) { b in row(b) }
                                 Color.clear.frame(height: 8).id("bottom")
                             }
@@ -1209,8 +1214,8 @@ struct CCTextRow: View {
             ForEach(Array(Self.split(t).enumerated()), id: \.offset) { _, part in
                 switch part {
                 case .text(let s):
-                    RichText(attr: MD.ns(s, base: Theme.uiRound(16), bold: Theme.uiRound(16, weight: .semibold),
-                                         mono: Theme.uiMono(13), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
+                    RichText(attr: MD.ns(s, base: Theme.uiRound(16, casW: 360), bold: Theme.uiRound(16, weight: .semibold),
+                                         mono: Theme.uiMono(13, casW: 360), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
                 case .table(let h, let r): MDTable(head: h, rows: r, round: true)
                 }
             }

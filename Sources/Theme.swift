@@ -122,16 +122,17 @@ enum Theme {
     }
     static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiSys(size, weight: weight)) }
     /// 圆体那一档（时间戳、纸条、搜索框）：Cascadia → 系统圆体
-    static func uiRound(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+    /// casW：只调 Cascadia 那层的字重（汉字不变）。CC师 正文用 360，同寻气泡（10-30 寻：英文比汉字粗）
+    static func uiRound(_ size: CGFloat, weight: Font.Weight = .regular, casW: CGFloat? = nil) -> UIFont {
         let base = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
         let rd = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
-        guard let d = casDescriptor(size, wght: casWght(weight), cascade: [rd]) else { return UIFont(descriptor: rd, size: size) }
+        guard let d = casDescriptor(size, wght: casW ?? casWght(weight), cascade: [rd]) else { return UIFont(descriptor: rd, size: size) }
         return UIFont(descriptor: d, size: size)
     }
     /// 等宽（工具行、代码块）：Cascadia → SF Mono
-    static func uiMono(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+    static func uiMono(_ size: CGFloat, weight: Font.Weight = .regular, casW: CGFloat? = nil) -> UIFont {
         let mono = UIFont.monospacedSystemFont(ofSize: size, weight: uiWeight(weight))
-        guard let d = casDescriptor(size, wght: casWght(weight), cascade: [mono.fontDescriptor]) else { return mono }
+        guard let d = casDescriptor(size, wght: casW ?? casWght(weight), cascade: [mono.fontDescriptor]) else { return mono }
         return UIFont(descriptor: d, size: size)
     }
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiMono(size, weight: weight)) }
