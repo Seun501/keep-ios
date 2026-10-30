@@ -503,18 +503,21 @@ struct CCBadge: View {
         if Preview.on { loadPreview(); return }
         streamTask?.cancel()
         streamTask = Task { [weak self] in
+            var fails = 0
             while !Task.isCancelled {
                 guard let self else { return }
                 do {
                     let e = try await CCShiAPI.events(self.id, after: self.last)
                     self.meta = e.meta; self.absorb(e.events)
-                    self.err = ""          // 接上了就收起「断线」——流一开就是一小时，不能等它结束才清
+                    self.err = ""; fails = 0   // 接上了就收起「断线」——流一开就是一小时，不能等它结束才清
                     for try await ev in CCShiAPI.stream(self.id, after: self.last) { self.absorb([ev]) }
                     self.err = ""
                 } catch {
                     if Task.isCancelled { return }
-                    self.err = "断线了，正在重连…"
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    // 手机切后台、换网时流常断一下：头一次先悄悄重连，连着第二次还不通才亮提示（10-30 寻）
+                    fails += 1
+                    if fails >= 2 { self.err = "断线了，正在重连…" }
+                    try? await Task.sleep(nanoseconds: fails == 1 ? 800_000_000 : 3_000_000_000)
                 }
             }
         }
