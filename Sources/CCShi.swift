@@ -460,8 +460,7 @@ struct CCBadge: View {
     private var blockKey: (Int, Int) = (-1, -1)
     private var blockCache: [CCBlock] = []
     private var unreadCache: Set<Int> = []
-    private var endsCache: Set<Int> = []
-    private var tailCache: Int? = nil
+    private var endTextCache: [Int: CCEvent] = [:]
     fileprivate var blocks: [CCBlock] {
         refreshCache()
         return blockCache
@@ -477,22 +476,21 @@ struct CCBadge: View {
         blockKey = k
         blockCache = CCBlock.build(events)
         unreadCache = computeUnread()
-        // 每轮最后一段话（底下挂复制／分叉那行，10-30 寻：照 claude.ai）：下一句是她的话之前的那段；最后一轮另记
-        var ends = Set<Int>(), lastText: Int? = nil
+        // 每轮收尾那行（✻ Brewed for…）后面挂复制／分叉（10-30 寻：照 claude.ai，放字后边）：记下这一轮最后一段话
+        var map: [Int: CCEvent] = [:], lastText: CCEvent? = nil
         for b in blockCache {
             switch b {
-            case .text(let e): lastText = e.seq
-            case .user(let e) where e.interject != true:   // 插话不算一轮的结尾（10-30 寻：图标挂到了插话前那段底下）
-                if let t = lastText { ends.insert(t) }; lastText = nil
+            case .text(let e): lastText = e
+            case .end(let e): if let t = lastText { map[e.seq] = t }; lastText = nil
             default: break
             }
         }
-        endsCache = ends; tailCache = lastText
+        endTextCache = map
     }
-    /// 这段话底下挂不挂复制／分叉：每轮最后一段；正在干活的那轮不挂（还没说完）
-    func turnEnd(_ seq: Int) -> Bool {
+    /// 这一轮（收尾行的 seq）最后一段话；没说话的轮次没有
+    func turnText(_ endSeq: Int) -> CCEvent? {
         refreshCache()
-        return endsCache.contains(seq) || (!running && seq == tailCache)
+        return endTextCache[endSeq]
     }
     private func computeUnread() -> Set<Int> {
         // 只看这一轮（最后一次 status=running 之后）发的插话：更早的轮早读过了（10-28 寻：旧插话没回执，全被排到了转星行下面）
@@ -898,15 +896,21 @@ struct CCShiSessionScreen: View {
         case .todo(let e, let latest):
             CCTodoCard(event: e, open: latest).padding(.vertical, 6)
         case .text(let e):
-            CCTextRow(event: e, actions: m.turnEnd(e.seq), onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: e.seq) { onOpen(s.id) } } }).equatable()
+            CCTextRow(event: e, onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: e.seq) { onOpen(s.id) } } }).equatable()
         case .show(let e):
             CCShowCard(sid: m.id, event: e, onOpen: { webDoc = $0 }).padding(.vertical, 8)
         case .compact(let e, let secs):
             CCCompactDivider(event: e, secs: secs).padding(.vertical, 14)
         case .end(let e):
             // 照 Claude Code：整行灰，✻ 也灰；✻ 单用系统字（Cascadia 没有这个字形，画成了 *，截图 452）
-            (Text("✻ ").font(.system(size: 12.5, weight: .semibold)) + Text(String(CCFmt.endLine(e).dropFirst(2))).font(Theme.mono(12)))
-                .foregroundColor(Theme.muted.opacity(0.85)).padding(.top, 2).padding(.bottom, 10)
+            HStack(spacing: 4) {
+                (Text("✻ ").font(.system(size: 12.5, weight: .semibold)) + Text(String(CCFmt.endLine(e).dropFirst(2))).font(Theme.mono(12)))
+                    .foregroundColor(Theme.muted.opacity(0.85))
+                if let t = m.turnText(e.seq) {
+                    CCEndActions(text: t.text ?? "", onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: t.seq) { onOpen(s.id) } } })
+                }
+            }
+            .padding(.top, 2).padding(.bottom, 10)
         case .error(let e):
             Text(e.text ?? "出错了").font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 6)
         }
@@ -1174,9 +1178,7 @@ final class CCPin { var atBottom = true }
 /// 我的一段正文：圆体；长按复制／从这里重来（新开一个分叉，原会话不动）
 struct CCTextRow: View {
     let event: CCEvent
-    var actions = false          // 每轮最后一段：底下一行复制／分叉（10-30 寻：长按菜单不方便，照 claude.ai）
     let onRewind: () -> Void
-    @State private var copied = false
     enum Part { case text(String); case table([String], [[String]]) }
     /// md 表格单拎出来画成格子（10-28 寻：表格要渲染），其余照旧一份富文本。判表格同 MD.parse：带 | 的行＋下一行是 |---| 分隔
     static func split(_ t: String) -> [Part] {
@@ -1203,7 +1205,6 @@ struct CCTextRow: View {
     }
     var body: some View {
         let t = (event.text ?? "").replacingOccurrences(of: "\n[ \t]*\n+", with: "\n", options: .regularExpression)   // 空行不画成整行空白（截图 429）
-        VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(Self.split(t).enumerated()), id: \.offset) { _, part in
                 switch part {
@@ -1214,27 +1215,31 @@ struct CCTextRow: View {
                 }
             }
         }
-            .padding(.top, 8).padding(.bottom, actions ? 2 : 8)
-        // 长按＝选字复制（RichText 自带，同克那页）；整段复制和分叉在底下这行
-        if actions {
-            HStack(spacing: 4) {
-                actionIcon(copied ? "tool-check" : "tool-copy", copied ? "已复制" : "复制") {
-                    UIPasteboard.general.string = event.text ?? ""
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    copied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-                }
-                actionIcon("tool-git-branch", "从这里开分支", onRewind)
+        .padding(.vertical, 8)   // 长按＝选字复制（RichText 自带，同克那页）；整段复制和分叉挂在这一轮的收尾行后面（CCEndActions）
+    }
+}
+
+/// 收尾行后面那两枚小图标：复制这一轮最后一段、从这里开分支（10-30 寻：照 claude.ai，缩小、放字后边）
+struct CCEndActions: View {
+    let text: String
+    let onRewind: () -> Void
+    @State private var copied = false
+    var body: some View {
+        HStack(spacing: 0) {
+            icon(copied ? "tool-check" : "tool-copy", copied ? "已复制" : "复制") {
+                UIPasteboard.general.string = text
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
             }
-            .padding(.leading, -8).padding(.bottom, 6)
-        }
+            icon("tool-git-branch", "从这里开分支", onRewind)
         }
     }
-    private func actionIcon(_ img: String, _ label: String, _ act: @escaping () -> Void) -> some View {
+    private func icon(_ img: String, _ label: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
-            Image(img).renderingMode(.template).resizable().frame(width: 15, height: 15)
-                .foregroundColor(Theme.muted)
-                .frame(width: 32, height: 30).contentShape(Rectangle())
+            Image(img).renderingMode(.template).resizable().frame(width: 12.5, height: 12.5)
+                .foregroundColor(Theme.muted.opacity(0.85))
+                .frame(width: 26, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain).accessibilityLabel(label)
     }
@@ -1368,7 +1373,7 @@ struct CCToolPair { let call: CCEvent; let result: CCEvent? }
 
 // 打字时整页会重算（10-30 寻：打字卡）：这两种行内容没变就不重画（比 seq 和长度，不比闭包）
 extension CCTextRow: Equatable {
-    static func == (a: CCTextRow, b: CCTextRow) -> Bool { a.event.seq == b.event.seq && a.event.text == b.event.text && a.actions == b.actions }
+    static func == (a: CCTextRow, b: CCTextRow) -> Bool { a.event.seq == b.event.seq && a.event.text == b.event.text }
 }
 extension CCToolGroup: Equatable {
     static func == (a: CCToolGroup, b: CCToolGroup) -> Bool {
