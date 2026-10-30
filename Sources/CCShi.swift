@@ -462,7 +462,7 @@ struct CCBadge: View {
     private var unreadCache: Set<Int> = []
     private var endsCache: Set<Int> = []
     private var tailCache: Int? = nil
-    var blocks: [CCBlock] {
+    fileprivate var blocks: [CCBlock] {
         refreshCache()
         return blockCache
     }
