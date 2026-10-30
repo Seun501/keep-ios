@@ -600,7 +600,9 @@ private enum CCBlock: Identifiable {
         // 压缩那轮（10-28 寻：三截不好看）：「（压缩上下文）」气泡、压缩行、空收尾行并成一条分隔线，照 Claude Code 的「═══ Conversation compacted ═══」。
         // 没压成（叫停、出错）的那次气泡照留
         var folded = Set<Int>()
-        for (i, e) in evs.enumerated() where e.kind == "user" && (e.text ?? "").hasPrefix("（") && (e.text ?? "").contains("压缩上下文") {
+        // 气泡里显示成「/compact」（10-30 寻：比「（压缩上下文）」好看）；10-30 前记的是那句中文，两种都认
+        let isCompactAsk = { (t: String?) in t == "/compact" || ((t ?? "").hasPrefix("（") && (t ?? "").contains("压缩上下文")) }
+        for (i, e) in evs.enumerated() where e.kind == "user" && isCompactAsk(e.text) {
             if evs[(i + 1)...].first(where: { $0.kind == "user" || $0.kind == "compact" })?.kind == "compact" { folded.insert(e.seq) }
         }
         // 读到了的插话排在「读到那一刻」（read 事件的位置），不回发出时的位置（10-30 寻）：她发出后到我读到之间
@@ -613,7 +615,12 @@ private enum CCBlock: Identifiable {
         for e in evs {
             if e.kind != "status" && e.kind != "result" { afterCompact = false }
             switch e.kind {
-            case "user": if !folded.contains(e.seq) && interjects[e.seq] == nil { out.append(.user(e)) }
+            case "user":
+                if !folded.contains(e.seq) && interjects[e.seq] == nil {
+                    var u = e
+                    if isCompactAsk(u.text) { u.text = "/compact" }
+                    out.append(.user(u))
+                }
             case "read": if let r = e.ref, let u = interjects[r] { out.append(.user(u)) }
             case "thinking": out.append(.thinking(e))
             case "tool":
