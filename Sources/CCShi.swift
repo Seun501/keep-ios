@@ -482,7 +482,8 @@ struct CCBadge: View {
         for b in blockCache {
             switch b {
             case .text(let e): lastText = e.seq
-            case .user: if let t = lastText { ends.insert(t) }; lastText = nil
+            case .user(let e) where e.interject != true:   // 插话不算一轮的结尾（10-30 寻：图标挂到了插话前那段底下）
+                if let t = lastText { ends.insert(t) }; lastText = nil
             default: break
             }
         }
