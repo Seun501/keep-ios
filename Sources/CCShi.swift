@@ -555,6 +555,7 @@ struct CCBadge: View {
     private func loadPreview() {
         guard let d = Preview.json("preview_ccshi"), let p = try? JSONDecoder().decode(CCShiPreview.self, from: d) else { return }
         meta = p.sessions.first; events = p.events; last = p.events.last?.seq ?? 0
+        if Preview.screen == "ccshiask" { events = p.events.filter { $0.seq <= 15 }; last = 15 }   // 选项卡还没答的样子（截图班用）
         if Preview.screen == "ccshirun" {
             meta?.status = "running"
             let now = Date().timeIntervalSince1970
