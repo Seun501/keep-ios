@@ -314,26 +314,25 @@ struct CCShiListScreen: View {
     }
 
     private func card(_ s: CCSession) -> some View {
-        Button { if swiped != nil { withAnimation(.easeOut(duration: 0.2)) { swiped = nil } } else { onOpen(s.id) } } label: {   // 有卡开着时点卡片＝收起
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.5 } }   // 圆点＝在干活；中心对汉字中线（15 号字约基线上 5.5，10-28 寻）
-                    Text(s.title).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
-                    Spacer()
-                    Text(TimeFmt.stamp(s.updated)).font(Theme.round(12)).foregroundColor(Theme.muted)   // 「在干活」由左边圆点表示（10-28 寻）
-                }
-                HStack(alignment: .top, spacing: 8) {
-                    Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
-                        .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let n = s.unread, n > 0 { CCBadge(n: n) }
-                }
+        // 不用 Button 包（10-30 寻：左滑很难停住）：Button 自己的按压手势会和横拖抢，松手时常被它吃掉
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.5 } }   // 圆点＝在干活；中心对汉字中线（15 号字约基线上 5.5，10-28 寻）
+                Text(s.title).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
+                Spacer()
+                Text(TimeFmt.stamp(s.updated)).font(Theme.round(12)).foregroundColor(Theme.muted)   // 「在干活」由左边圆点表示（10-28 寻）
             }
-            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(Rectangle())
+            HStack(alignment: .top, spacing: 8) {
+                Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
+                    .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let n = s.unread, n > 0 { CCBadge(n: n) }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { if swiped != nil { withAnimation(.easeOut(duration: 0.2)) { swiped = nil } } else { onOpen(s.id) } }   // 有卡开着时点卡片＝收起
     }
 
     /// 左滑露出改名／归档（10-28 寻：长按的系统菜单不像 Keep）。图标 Lucide pencil／archive，淡底深色、不描边
@@ -394,7 +393,7 @@ struct CCSwipe<Content: View>: View {
     @Binding var open: Bool
     @ViewBuilder var content: () -> Content
     var actions: [(String, String, () -> Void)]
-    @State private var drag: CGFloat = 0
+    @GestureState private var drag: CGFloat = 0   // 手势被滚动抢走时自己归零，卡片不会卡在半路
     private var w: CGFloat { CGFloat(actions.count) * 54 + 6 }
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -414,16 +413,19 @@ struct CCSwipe<Content: View>: View {
             .opacity(open || drag < 0 ? 1 : 0)
             content()
                 .offset(x: min(0, max(-w - 20, (open ? -w : 0) + drag)))
-                .simultaneousGesture(DragGesture(minimumDistance: 14).onChanged { v in
+                .simultaneousGesture(DragGesture(minimumDistance: 10).updating($drag) { v, st, _ in
                     guard abs(v.translation.width) > abs(v.translation.height) else { return }
-                    drag = v.translation.width
+                    st = v.translation.width
                 }.onEnded { v in
-                    if abs(v.translation.width) > abs(v.translation.height) {
-                        withAnimation(.easeOut(duration: 0.2)) { open = (open ? -w : 0) + v.translation.width < -w / 2; drag = 0 }
-                    } else { drag = 0 }
+                    // 10-30：按松手时的「甩」算（predictedEnd），轻轻一甩也停得住；过三分之一就开
+                    guard abs(v.translation.width) > abs(v.translation.height) * 0.8 else { return }
+                    let at = (open ? -w : 0) + v.translation.width
+                    let fling = (open ? -w : 0) + v.predictedEndTranslation.width
+                    withAnimation(.easeOut(duration: 0.2)) { open = min(at, fling) < -w / 3 && !(open && fling > -w * 2 / 3) }
                 })
         }
         .fixedSize(horizontal: false, vertical: true)
+        .animation(.easeOut(duration: 0.2), value: drag == 0)
     }
 }
 
@@ -1586,8 +1588,10 @@ struct CCAskPanel: View {
                             }
                         }
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(o.label).font(Font(Theme.uiUser(16))).foregroundColor(Theme.text)
-                            if !o.desc.isEmpty { Text(o.desc).font(Theme.round(12)).foregroundColor(Theme.muted) }
+                            Text(o.label).font(Font(Theme.uiUser(16))).foregroundColor(Theme.text).fixedSize(horizontal: false, vertical: true)
+                            if !o.desc.isEmpty {   // 细述一律全展开（10-30 寻：两行装不下的看不全）
+                                Text(o.desc).font(Theme.round(12)).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         if !q.multi {
