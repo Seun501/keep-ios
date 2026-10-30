@@ -599,11 +599,18 @@ private enum CCBlock: Identifiable {
         for (i, e) in evs.enumerated() where e.kind == "user" && (e.text ?? "").hasPrefix("（") && (e.text ?? "").contains("压缩上下文") {
             if evs[(i + 1)...].first(where: { $0.kind == "user" || $0.kind == "compact" })?.kind == "compact" { folded.insert(e.seq) }
         }
+        // 读到了的插话排在「读到那一刻」（read 事件的位置），不回发出时的位置（10-30 寻）：她发出后到我读到之间
+        // 我说的话、调的命令本来排在它上面，读到时它要是回到发出那格，那几行就一下跳到它下面去了
+        var readAt: [Int: Int] = [:]
+        for e in evs where e.kind == "read" { if let r = e.ref { readAt[r] = e.seq } }
+        var interjects: [Int: CCEvent] = [:]
+        for e in evs where e.kind == "user" && e.interject == true && readAt[e.seq] != nil { interjects[e.seq] = e }
         var afterCompact = false
         for e in evs {
             if e.kind != "status" && e.kind != "result" { afterCompact = false }
             switch e.kind {
-            case "user": if !folded.contains(e.seq) { out.append(.user(e)) }
+            case "user": if !folded.contains(e.seq) && interjects[e.seq] == nil { out.append(.user(e)) }
+            case "read": if let r = e.ref, let u = interjects[r] { out.append(.user(u)) }
             case "thinking": out.append(.thinking(e))
             case "tool":
                 let n = e.name ?? ""
