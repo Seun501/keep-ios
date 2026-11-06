@@ -260,6 +260,7 @@ struct ZoomPager<Page: View>: View {
     @State private var lastOffset: CGSize = .zero
     @State private var dx: CGFloat = 0
     @State private var dy: CGFloat = 0          // 往下拖着退出（11-07）
+    @State private var slop: CGSize = .zero     // 认出方向那一刻手指已走的距离：减掉它，图从原地起步不跳
     @State private var axis = 0                 // 这一拖：0 未定 1 横翻 2 竖拖退出 3 平移放大的图 -1 双指/作废
     @State private var downAt: Date? = nil
     @State private var holdTask: Task<Void, Never>? = nil
@@ -289,13 +290,14 @@ struct ZoomPager<Page: View>: View {
             if axis == 0, !holding, hypot(t.width, t.height) > 10 {
                 holdTask?.cancel()
                 axis = scale > 1 ? 3 : (abs(t.width) >= abs(t.height) ? 1 : (t.height > 0 ? 2 : -1))
+                slop = axis == 3 ? .zero : t
             }
             switch axis {
             case 1:
-                var x = t.width
+                var x = t.width - slop.width
                 if (index == 0 && x > 0) || (index >= count - 1 && x < 0) { x = x / (1 + abs(x) / (w * 0.35)) }   // 到头：越拖越沉，不是硬切三分之一
                 dx = x
-            case 2: dy = max(0, t.height)
+            case 2: dy = max(0, t.height - slop.height)
             case 3: offset = CGSize(width: lastOffset.width + t.width, height: lastOffset.height + t.height)
             default: break
             }
@@ -308,12 +310,16 @@ struct ZoomPager<Page: View>: View {
             switch a {
             case 1:
                 var ni = index
-                let t = v.translation.width, pred = v.predictedEndTranslation.width
-                if (t < -w * 0.2 || pred < -w * 0.45), index < count - 1 { ni += 1 }
-                else if (t > w * 0.2 || pred > w * 0.45), index > 0 { ni -= 1 }
-                withAnimation(flip) { index = ni; dx = 0 }
+                let t = dx, vel = (v.predictedEndTranslation.width - v.translation.width) * 2   // SwiftUI 的预测≈速度×0.5 秒
+                if (t < -w * 0.2 || vel < -500), index < count - 1 { ni += 1 }
+                else if (t > w * 0.2 || vel > 500), index > 0 { ni -= 1 }
+                // 先原地换页（画面不动），再带着手指的速度弹回 0：松手那下不顿、不硬切（11-07 寻：翻页太硬）
+                let from = dx + CGFloat(ni - index) * (w + gap)
+                index = ni; dx = from
+                let k = abs(from) > 1 ? max(0, -vel / from) : 0
+                withAnimation(.interpolatingSpring(mass: 1, stiffness: 260, damping: 32, initialVelocity: min(k, 12))) { dx = 0 }
             case 2:
-                if v.translation.height > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 { onTap() }
+                if dy > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 { onTap() }
                 else { withAnimation(flip) { dy = 0 } }
             case 3: lastOffset = offset
             case 0 where quick && !pinching: tapped()
