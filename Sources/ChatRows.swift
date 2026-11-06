@@ -1,4 +1,5 @@
 import SwiftUI
+import ImageIO
 
 /// 消息流里的一格。规则照网页 buildRangeFrag。
 enum TimelineItem {
@@ -462,7 +463,7 @@ struct StreamImage: View {
     @State private var ui: UIImage?
     init(src: String, maxW: CGFloat = 200, maxH: CGFloat = 200, radius: CGFloat = 26, live: String? = nil) {
         self.src = src; self.maxW = maxW; self.maxH = maxH; self.radius = radius; self.live = live
-        _ui = State(initialValue: StreamImageCache.peek(src: src))   // 缓存里有就第一帧直接画（LazyVStack 滚回来重建行，别闪占位块）
+        _ui = State(initialValue: StreamImageCache.peek(src: src, maxPixel: max(maxW, maxH) * 3))   // 缓存里有就第一帧直接画（LazyVStack 滚回来重建行，别闪占位块）
     }
     var body: some View {
         Group {
@@ -480,8 +481,9 @@ struct StreamImage: View {
             }
         }
         .task(id: src) {
-            if let c = StreamImageCache.peek(src: src) { ui = c; return }
-            ui = await StreamImageCache.load(src)
+            let px = max(maxW, maxH) * 3   // 按显示尺寸解（11-06）
+            if let c = StreamImageCache.peek(src: src, maxPixel: px) { ui = c; return }
+            ui = await StreamImageCache.load(src, maxPixel: px)
             // 09-21 寻：「进 Keep 界面不在最底」——占位块 120×90、真图最大 200×200，冷启动图片最后才到、内容长高偏移不动。
             // 通知主页：原本在底就再钉一次
             if ui != nil { NotificationCenter.default.post(name: .keepImageLoaded, object: nil) }
@@ -489,21 +491,32 @@ struct StreamImage: View {
     }
 }
 
+/// 消息流的图缓存（11-06 起按尺寸解码＋设内存上限）：气泡只按显示尺寸的 3 倍解（200pt → 600px），看大图才解整张；
+/// 网关上的图走 GatewayImageCache（磁盘缓存＋内存上限 180MB）；dataURL 图在这里解，上限 80MB。
+/// 此前每张小图都按 1568 整张解、只限 200 张不限内存——满了能到一两个 G，手机一热最先被杀（寻 11-06「发热时 Keep 容易被挂掉」）
 enum StreamImageCache {
-    private static let cache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 200; return c }()
-    static func peek(src: String) -> UIImage? { cache.object(forKey: src as NSString) }
-    static func load(_ src: String) async -> UIImage? {
-        let ui: UIImage?
-        if src.hasPrefix("data:"), let comma = src.firstIndex(of: ",") {
-            let b64 = String(src[src.index(after: comma)...])
-            ui = await Task.detached(priority: .userInitiated) { Data(base64Encoded: b64).flatMap(UIImage.init(data:)) }.value
-        } else if let url = URL(string: src, relativeTo: Gateway.home) {
-            var r = URLRequest(url: url)
-            if let token = Keychain.token, url.host == Gateway.home.host { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-            guard let (d, _) = try? await URLSession.shared.data(for: r) else { return nil }
-            ui = UIImage(data: d)
-        } else { ui = nil }
-        if let ui { cache.setObject(ui, forKey: src as NSString) }
+    private static let cache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 300; c.totalCostLimit = 80 * 1024 * 1024; return c }()
+    private static func key(_ src: String, _ px: CGFloat) -> NSString { "\(src)#\(Int(px))" as NSString }
+    static func peek(src: String, maxPixel: CGFloat = 0) -> UIImage? {
+        if !src.hasPrefix("data:"), let url = URL(string: src, relativeTo: Gateway.home) { return GatewayImageCache.peek(url, maxPixel: maxPixel) }
+        return cache.object(forKey: key(src, maxPixel))
+    }
+    static func load(_ src: String, maxPixel: CGFloat = 0) async -> UIImage? {
+        if !src.hasPrefix("data:") {
+            guard let url = URL(string: src, relativeTo: Gateway.home) else { return nil }
+            return await GatewayImageCache.load(url, maxPixel: maxPixel)
+        }
+        if let c = cache.object(forKey: key(src, maxPixel)) { return c }
+        guard let comma = src.firstIndex(of: ",") else { return nil }
+        let b64 = String(src[src.index(after: comma)...])
+        let ui = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            guard let d = Data(base64Encoded: b64) else { return nil }
+            guard maxPixel > 0, let s = CGImageSourceCreateWithData(d as CFData, nil) else { return UIImage(data: d) }
+            let o: [CFString: Any] = [kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true,
+                                      kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel]
+            return CGImageSourceCreateThumbnailAtIndex(s, 0, o as CFDictionary).map { UIImage(cgImage: $0) } ?? UIImage(data: d)
+        }.value
+        if let ui { cache.setObject(ui, forKey: key(src, maxPixel), cost: Int(ui.size.width * ui.size.height * ui.scale * ui.scale * 4)) }
         return ui
     }
 }
@@ -548,7 +561,7 @@ struct ImageViewerView: View {
                 }.ignoresSafeArea()
             } else if !items.isEmpty {
                 ZoomPager(count: items.count, index: $index, live: { items[min($0, items.count - 1)].live }, onTap: onClose) { i in
-                    StreamFullImage(src: items[i].src)
+                    StreamFullImage(src: items[i].src, orig: items[i].orig)
                 }.ignoresSafeArea()
             }
         }

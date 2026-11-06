@@ -22,8 +22,9 @@ struct ArchEntry: Decodable, Identifiable {
     var thinkSecs: Double?
     var voice: Voice?          // 语音条（09-14）：档案里也能放
     var lives: [String]?       // Live 图（11-06）：与 images 对齐，空串＝不是 Live
+    var origs: [String]?       // 原图（11-06）
     enum CodingKeys: String, CodingKey {
-        case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice, lives
+        case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice, lives, origs
         case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", bookNote = "book_note", thinkSecs = "think_secs"
     }
     var id: String { "\(no ?? 0)-\(ts ?? "")-\(role ?? "")" }
@@ -51,7 +52,8 @@ final class ArchiveModel: ObservableObject {
         didSet {   // 大图里能翻的那一串＝当天她发的图（11-06 寻定）
             let items = (day?.entries ?? []).filter { $0.role == "user" }.flatMap { e in
                 (e.images ?? []).enumerated().map { i, u in
-                    GalleryItem(src: u, live: e.lives.flatMap { i < $0.count && !$0[i].isEmpty ? $0[i] : nil })
+                    GalleryItem(src: u, live: e.lives.flatMap { i < $0.count && !$0[i].isEmpty ? $0[i] : nil },
+                                orig: e.origs.flatMap { i < $0.count && !$0[i].isEmpty ? $0[i] : nil })
                 }
             }
             ImageViewer.shared.register("arch", items)

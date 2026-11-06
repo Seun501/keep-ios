@@ -12,6 +12,18 @@ import CryptoKit
 struct GalleryItem: Equatable {
     var src: String
     var live: String? = nil
+    var orig: String? = nil     // 原图（11-06）：大图先垫压缩版、原图到了再换
+}
+
+/// 原图（11-06 寻定「以后发图每张都存原图」）：选图器给的原样文件（多为 HEIC），克那边照旧只拿 1568 那份
+enum OrigExtract {
+    static func data(_ ip: NSItemProvider) async -> (Data, String)? {
+        let pick: [(String, String)] = [("public.heic", "heic"), ("public.jpeg", "jpg"), ("public.png", "png")]
+        guard let (uti, ext) = pick.first(where: { ip.hasItemConformingToTypeIdentifier($0.0) }) else { return nil }
+        return await withCheckedContinuation { c in
+            ip.loadDataRepresentation(forTypeIdentifier: uti) { d, _ in c.resume(returning: d.map { ($0, ext) }) }
+        }
+    }
 }
 
 /// 静图的网关文件名哈希：和网关 _save_image 同一算法（jpeg 原字节 sha256 前 32 位），视频凭它对上静图
@@ -62,6 +74,7 @@ enum LiveCache {
         guard let (tmp, resp) = try? await URLSession.shared.download(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         try? FileManager.default.removeItem(at: p)
         try? FileManager.default.moveItem(at: tmp, to: p)
+        trim()
         return FileManager.default.fileExists(atPath: p.path) ? p : nil
     }
 }
@@ -84,7 +97,50 @@ extension GatewayAPI {
     }
 }
 
+extension GatewayAPI {
+    static func uploadOrig(data: Data, img: String, ext: String) async throws {
+        guard let token = Keychain.token else { throw Failure.unauthorized }
+        var comps = URLComponents(url: Gateway.home.appendingPathComponent("api/orig"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "img", value: img), URLQueryItem(name: "ext", value: ext)]
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 120
+        let (_, resp) = try await URLSession.shared.upload(for: req, from: data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { throw Failure.unauthorized }
+        guard (200..<300).contains(code) else { throw Failure.http(code) }
+    }
+}
+
 extension LiveCache {
+    /// 视频缓存超 150MB 从最旧的删（11-06 寻「手机下 Keep 越来越大」）
+    static func trim(limit: Int = 150 * 1024 * 1024) {
+        DispatchQueue.global(qos: .utility).async {
+            let fm = FileManager.default
+            guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey]) else { return }
+            var rows = items.map { u -> (URL, Int, Date) in
+                let v = try? u.resourceValues(forKeys: [.fileSizeKey, .contentAccessDateKey])
+                return (u, v?.fileSize ?? 0, v?.contentAccessDate ?? .distantPast)
+            }
+            var total = rows.reduce(0) { $0 + $1.1 }
+            guard total > limit else { return }
+            rows.sort { $0.2 < $1.2 }
+            for r in rows where total > limit { try? fm.removeItem(at: r.0); total -= r.1 }
+        }
+    }
+    /// 原图：发之前先落进看图的磁盘缓存（名字＝网关上的地址），回显那条点开就是原图；回 images 对齐的 origs 与待传清单
+    static func stageOrigs(images: [String], origs: [String: (Data, String)]) -> (origs: [String], uploads: [(Data, String, String)]) {
+        var out: [String] = [], ups: [(Data, String, String)] = []
+        for u in images {
+            guard let (d, ext) = origs[u], let h = LiveHash.of(dataURL: u),
+                  let url = URL(string: "/uploads/orig/\(h).\(ext)", relativeTo: Gateway.home) else { out.append(""); continue }
+            GatewayImageCache.Disk.write(url, d)
+            out.append("/uploads/orig/\(h).\(ext)"); ups.append((d, h, ext))
+        }
+        return (out, ups)
+    }
     /// 要发的那几张：图（dataURL）→ 视频。搬进缓存（名字＝网关上的名字），回 images 对齐的 lives 与待传清单
     static func stage(images: [String], videos: [String: URL]) -> (lives: [String], uploads: [(URL, String)]) {
         var lives: [String] = [], ups: [(URL, String)] = []
@@ -266,16 +322,28 @@ struct ZoomPager<Page: View>: View {
     }
 }
 
-/// 一页大图：先拿缓存垫着，再按 src 取（dataURL 直接解、/uploads 带口令头）
+/// 一页大图：先拿缓存垫着（原图有就用原图，没到先垫压缩版），再按 src 取（dataURL 直接解、/uploads 带口令头）。
+/// 一律按 2600 长边解（屏幕 3 倍够用）：原图常是 4032×3024，整张解开一张就近 50MB
 struct StreamFullImage: View {
     let src: String
+    var orig: String? = nil
     @State private var ui: UIImage?
-    init(src: String) { self.src = src; _ui = State(initialValue: StreamImageCache.peek(src: src)) }
+    @State private var full = false
+    private static let px = GatewayImageCache.fullPx
+    init(src: String, orig: String? = nil) {
+        self.src = src; self.orig = orig
+        let o = orig.flatMap { StreamImageCache.peek(src: $0, maxPixel: Self.px) }
+        _full = State(initialValue: o != nil || orig == nil)
+        _ui = State(initialValue: o ?? StreamImageCache.peek(src: src, maxPixel: Self.px) ?? StreamImageCache.peek(src: src, maxPixel: 600))
+    }
     var body: some View {
         Group {
             if let ui { Image(uiImage: ui).resizable().scaledToFit() }
             else { ProgressView().tint(.white) }
         }
-        .task(id: src) { if ui == nil { ui = await StreamImageCache.load(src) } }
+        .task(id: src + (orig ?? "")) {
+            if ui == nil || (orig == nil && !full) { ui = await StreamImageCache.load(src, maxPixel: Self.px) ?? ui }
+            if let o = orig, !full, let big = await StreamImageCache.load(o, maxPixel: Self.px) { ui = big; full = true }
+        }
     }
 }

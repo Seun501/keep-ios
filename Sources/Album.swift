@@ -15,7 +15,9 @@ struct Photo: Decodable, Identifiable {
     var no: Int?
     var pid: Int?      // 照片的永久编号（09-12）：克口中的 #N——和他说「哪张」就靠它
     var live: String?  // Live 图视频（11-06）：空串/没有＝不是 Live
-    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, pid, live, surfUrl = "surf_url" }
+    var orig: String?  // 原图（11-06）：有就看图器用它
+    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, pid, live, orig, surfUrl = "surf_url" }
+    var bigURL: URL? { (orig?.isEmpty == false) ? URL(string: orig!, relativeTo: Gateway.home)?.absoluteURL : url }
     var liveSrc: String? { (live?.isEmpty == false) ? live : nil }
     var id: String { img + (ts ?? "") }
     var url: URL? { img.hasPrefix("http") ? URL(string: img) : URL(string: img, relativeTo: Gateway.home)?.absoluteURL }
@@ -407,7 +409,7 @@ struct Lightbox: View {
                       live: { photos[min($0, photos.count - 1)].liveSrc },
                       onTap: { if sheet { sheet = false } else { onClose() } }) { i in
                 let ph = photos[i]
-                GatewayImage(url: ph.url, fill: false, maxPixel: GatewayImageCache.fullPx) {
+                GatewayImage(url: ph.bigURL, fill: false, maxPixel: GatewayImageCache.fullPx) {
                     if let t = GatewayImageCache.peekAny(ph.url) { Image(uiImage: t).resizable().scaledToFit() } else { ProgressView().tint(.white) }
                 }
                     .frame(maxWidth: UIScreen.main.bounds.width * 0.96, maxHeight: UIScreen.main.bounds.height * 0.88)

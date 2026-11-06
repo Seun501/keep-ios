@@ -10,6 +10,7 @@ struct Msg: Decodable {
     var wake: Bool? = nil
     var toolCalls: [ToolCall]? = nil
     var images: [String]? = nil
+    var origs: [String]? = nil     // 原图（11-06）：与 images 对齐，空串＝没有；同 lives 只在给寻的接口里
     var lives: [String]? = nil     // Live 图（11-06）：与 images 对齐的视频地址，空串＝不是 Live；网关给寻的接口才带，正史里没有
     var meal: Bool? = nil
     var sleepNote: Bool? = nil
@@ -26,7 +27,7 @@ struct Msg: Decodable {
     var localEcho = false          // 吃吃就地回显：本地插进正史的小纸条，正牌纸条到了就撤
 
     enum CodingKeys: String, CodingKey {
-        case role, content, ts, thinking, wake, images, lives, meal, knock, usage, interrupted, voice, via
+        case role, content, ts, thinking, wake, images, lives, origs, meal, knock, usage, interrupted, voice, via
         case thinkSecs = "think_secs", toolCalls = "tool_calls", sleepNote = "sleep_note"
         case napNote = "nap_note", rainNote = "rain_note", knockText = "knock_text", placeNote = "place_note", bookNote = "book_note"
     }
@@ -42,6 +43,7 @@ struct Msg: Decodable {
         toolCalls = try? c.decode([ToolCall].self, forKey: .toolCalls)
         images = try? c.decode([String].self, forKey: .images)
         lives = try? c.decode([String].self, forKey: .lives)
+        origs = try? c.decode([String].self, forKey: .origs)
         meal = try? c.decode(Bool.self, forKey: .meal)
         sleepNote = try? c.decode(Bool.self, forKey: .sleepNote)
         napNote = try? c.decode(Bool.self, forKey: .napNote)
