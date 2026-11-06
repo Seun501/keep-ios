@@ -1061,7 +1061,7 @@ struct CCShiSessionScreen: View {
         VStack(spacing: 0) {
             plusRow("相册", "photo.on.rectangle") {
                 withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in pending.append(contentsOf: imgs.prefix(max(0, 4 - pending.count))) }
+                PhotoPickerBridge.shared.present(max: 4 - pending.count, live: false) { imgs in pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count))) }
             }
             plusRow("拍照", "camera") {
                 withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }

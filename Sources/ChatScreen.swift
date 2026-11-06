@@ -1211,7 +1211,9 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
     /// 选出来的一张：静图＋（是 Live 的话）那 3 秒视频的临时文件（11-06）
     struct Picked { var image: UIImage; var live: URL? = nil }
     private var done: (([Picked]) -> Void)? = nil
-    func present(max: Int, done: @escaping ([Picked]) -> Void) {
+    private var wantLive = true   // CC师 页只要静图，不取视频
+    func present(max: Int, live: Bool = true, done: @escaping ([Picked]) -> Void) {
+        wantLive = live
         guard max > 0, let top = Self.topVC() else { return }
         var cfg = PHPickerConfiguration(photoLibrary: .shared())
         cfg.selectionLimit = max; cfg.filter = .images
@@ -1235,7 +1237,7 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
                 let results = self.current; self.current = []
                 Task { @MainActor in
                     var imgs: [Picked] = []
-                    for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: await LiveExtract.video(r.itemProvider))) } }
+                    for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: self.wantLive ? await LiveExtract.video(r.itemProvider) : nil)) } }
                     cb?(imgs)
                 }
             })
@@ -1282,7 +1284,7 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             picker.dismiss(animated: true)
             let cb = self.done; self.done = nil
             var imgs: [Picked] = []
-            for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: await LiveExtract.video(r.itemProvider))) } }
+            for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: self.wantLive ? await LiveExtract.video(r.itemProvider) : nil)) } }
             cb?(imgs)
         }
     }
