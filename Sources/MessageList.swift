@@ -46,7 +46,7 @@ struct MessageListBody: View {
     @ViewBuilder private func row(_ item: TimelineItem, afterTools: Bool = false, last: Bool = false) -> some View {
         switch item {
         case .daySep(let d): DaySepView(day: d)
-        case .user(let t, let s, let imgs, let p, let v): UserRowView(text: t, stamp: s, images: imgs, pick: p, voice: v)
+        case .user(let t, let s, let imgs, let p, let v, let lv): UserRowView(text: t, stamp: s, images: imgs, lives: lv, pick: p, voice: v)
         case .ai(_, let m, let u):
             AIRowView(msg: m, showUsage: u, afterTools: afterTools)
         case .toolChip(let n, let f): ToolChipView(name: n, done: true, first: f)

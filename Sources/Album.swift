@@ -14,7 +14,9 @@ struct Photo: Decodable, Identifiable {
     var surfUrl: String?
     var no: Int?
     var pid: Int?      // 照片的永久编号（09-12）：克口中的 #N——和他说「哪张」就靠它
-    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, pid, surfUrl = "surf_url" }
+    var live: String?  // Live 图视频（11-06）：空串/没有＝不是 Live
+    enum CodingKeys: String, CodingKey { case img, desc, intro, book, ts, src, no, pid, live, surfUrl = "surf_url" }
+    var liveSrc: String? { (live?.isEmpty == false) ? live : nil }
     var id: String { img + (ts ?? "") }
     var url: URL? { img.hasPrefix("http") ? URL(string: img) : URL(string: img, relativeTo: Gateway.home)?.absoluteURL }
 }
@@ -209,7 +211,11 @@ struct AlbumScreen: View {
                     else { home }
                 }
             }
-            if let p = lightbox { Lightbox(p: p, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) }).zIndex(80) }
+            if let p = lightbox {
+                // 大图在同一册里翻（11-06 寻定）：顺序同册内页（新的在前）
+                let list = m.photos(in: p.book ?? "")
+                let at = list.firstIndex { $0.id == p.id }
+                Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) }).zIndex(80) }
         }
         .background(EdgeSwipe(onBack: { if book != nil { book = nil } else { onBack() } }))
         .task {
@@ -378,13 +384,13 @@ struct SoloPhoto: View {
 
 /// 全图查看：捏合缩放、双击 1x⇄2.5x、放大后拖动；ⓘ 掀信息条；单点空处收信息条/关闭
 struct Lightbox: View {
-    let p: Photo
+    let photos: [Photo]
+    let start: Int
     var onClose: () -> Void
     var onArchive: (String, Int) -> Void
-    @State private var scale: CGFloat = 1
-    @State private var lastScale: CGFloat = 1
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
+    @State private var index = -1
+    private var cur: Int { index < 0 ? min(start, photos.count - 1) : index }
+    private var p: Photo { photos[cur] }
     @State private var sheet = false
     @State private var sheetDrag: CGFloat = 0
     var body: some View {
@@ -393,24 +399,18 @@ struct Lightbox: View {
             Color(red: 18/255, green: 18/255, blue: 17/255).opacity(0.96).ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { if sheet { sheet = false } else { onClose() } }
-            // 开门先拿列表里已解好的缩略垫着（立刻有图），大图到了再换
-            GatewayImage(url: p.url, fill: false, maxPixel: GatewayImageCache.fullPx) {
-                if let t = GatewayImageCache.peekAny(p.url) { Image(uiImage: t).resizable().scaledToFit() } else { ProgressView().tint(.white) }
-            }
-                .frame(maxWidth: UIScreen.main.bounds.width * 0.96, maxHeight: UIScreen.main.bounds.height * 0.88)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
-                .scaleEffect(scale)
-                .offset(offset)
-                .gesture(MagnificationGesture().onChanged { v in scale = min(6, max(1, lastScale * v)); if scale == 1 { offset = .zero; lastOffset = .zero } }
-                    .onEnded { _ in lastScale = scale })
-                .simultaneousGesture(DragGesture().onChanged { v in
-                    guard scale > 1 else { return }
-                    offset = CGSize(width: lastOffset.width + v.translation.width, height: lastOffset.height + v.translation.height)
-                }.onEnded { _ in lastOffset = offset })
-                .onTapGesture(count: 2) {
-                    withAnimation(.easeOut(duration: 0.2)) { if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }; lastScale = scale }
+            // 开门先拿列表里已解好的缩略垫着（立刻有图），大图到了再换；左右翻（11-06）、Live 按住播都在 ZoomPager 里
+            ZoomPager(count: photos.count, index: Binding(get: { cur }, set: { index = $0 }),
+                      live: { photos[min($0, photos.count - 1)].liveSrc },
+                      onTap: { if sheet { sheet = false } else { onClose() } }) { i in
+                let ph = photos[i]
+                GatewayImage(url: ph.url, fill: false, maxPixel: GatewayImageCache.fullPx) {
+                    if let t = GatewayImageCache.peekAny(ph.url) { Image(uiImage: t).resizable().scaledToFit() } else { ProgressView().tint(.white) }
                 }
-                .onTapGesture { if sheet { sheet = false } else { onClose() } }
+                    .frame(maxWidth: UIScreen.main.bounds.width * 0.96, maxHeight: UIScreen.main.bounds.height * 0.88)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            .ignoresSafeArea()
             VStack {
                 Spacer()
                 if sheet {

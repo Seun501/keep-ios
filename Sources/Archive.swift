@@ -21,8 +21,9 @@ struct ArchEntry: Decodable, Identifiable {
     var no: Int?
     var thinkSecs: Double?
     var voice: Voice?          // 语音条（09-14）：档案里也能放
+    var lives: [String]?       // Live 图（11-06）：与 images 对齐，空串＝不是 Live
     enum CodingKeys: String, CodingKey {
-        case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice
+        case role, text, thinking, ts, images, note, diary, author, meal, wake, no, voice, lives
         case sleepNote = "sleep_note", napNote = "nap_note", rainNote = "rain_note", placeNote = "place_note", bookNote = "book_note", thinkSecs = "think_secs"
     }
     var id: String { "\(no ?? 0)-\(ts ?? "")-\(role ?? "")" }
@@ -46,7 +47,16 @@ struct ArchSearch: Decodable { var hits: [ArchHit]?; var truncated: Bool?; var n
 
 @MainActor
 final class ArchiveModel: ObservableObject {
-    @Published var day: ArchDay? = nil
+    @Published var day: ArchDay? = nil {
+        didSet {   // 大图里能翻的那一串＝当天她发的图（11-06 寻定）
+            let items = (day?.entries ?? []).filter { $0.role == "user" }.flatMap { e in
+                (e.images ?? []).enumerated().map { i, u in
+                    GalleryItem(src: u, live: e.lives.flatMap { i < $0.count && !$0[i].isEmpty ? $0[i] : nil })
+                }
+            }
+            ImageViewer.shared.register("arch", items)
+        }
+    }
     @Published var hits: [ArchHit] = []
     @Published var q = ""
     @Published var truncated = false
@@ -135,6 +145,7 @@ struct ArchiveScreen: View {
             }
         }
         .background(EdgeSwipe(onBack: back))
+        .onDisappear { ImageViewer.shared.unregister("arch") }
         .task {
             if Preview.on, let q = query, let day { await m.search(q); await m.openDay(day) }   // 截图 archq：带关键词进天页
             else if let q = query { await m.search(q) }
@@ -299,13 +310,14 @@ struct ArchiveScreen: View {
         } else if e.role == "user" && e.isPing {
             PingChipView(msg: pingMsg(e))
         } else if e.role == "user" {
-            UserRowView(text: e.voice != nil ? (e.voice?.text ?? Voice.stripNote(Msg.stripWatch(e.text ?? ""))) : Msg.stripWatch(e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick, voice: e.voice)
+            UserRowView(text: e.voice != nil ? (e.voice?.text ?? Voice.stripNote(Msg.stripWatch(e.text ?? ""))) : Msg.stripWatch(e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: e.images ?? [], lives: e.lives ?? [], tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, pick: pick, voice: e.voice)
         } else {
             AIRowView(msg: aiMsg(e), showUsage: false, tagNo: tag ?? flash, flash: flash != nil, highlight: m.q, parseReplies: false)   // 档案馆放原文，[reply: …] 照排
         }
     }
     private func pingMsg(_ e: ArchEntry) -> Msg {
         var msg = Msg(role: "user", content: e.text, ts: e.ts, images: e.images)
+        msg.lives = e.lives
         msg.meal = e.meal; msg.sleepNote = e.sleepNote; msg.napNote = e.napNote; msg.rainNote = e.rainNote; msg.placeNote = e.placeNote; msg.bookNote = e.bookNote
         return msg
     }

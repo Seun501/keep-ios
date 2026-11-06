@@ -121,6 +121,9 @@ final class ChatModel: ObservableObject {
         loading = true; defer { loading = false }
         if Preview.on, let d = Preview.json("preview"), let conv = try? JSONDecoder().decode(ConversationPayload.self, from: d) {
             conversationId = conv.id; msgs = conv.messages; renderFrom = Self.startOfLastDays(msgs, days: 2); rebuild(); loadTick += 1
+            if Preview.screen == "liveview", let g = Self.gallery(msgs).last(where: { $0.live != nil }) {   // 截图：大图里的 Live 角标＋第几张（11-06）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { ImageViewer.shared.open(src: g.src, live: g.live) }
+            }
             if Preview.screen == "door" {
                 let until = TimeFmt.nowIso(); _ = until
                 door = Door(until: ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600 * 2)), note: "去睡一会儿。\n门口的灯给你留着。",
@@ -255,13 +258,25 @@ final class ChatModel: ObservableObject {
             if m.role == "assistant", !m.isWake, m.usage?.inputTokens != nil { lastUsage = i; break }
         }
         items = TimelineItem.build(msgs, from: renderFrom, to: msgs.count, lastUsageIdx: lastUsage)
+        ImageViewer.shared.register("chat", Self.gallery(msgs))
+    }
+    /// 大图里能翻的那一串（11-06 寻定）：消息流里她发的图（含纸条附图），按时间先后
+    static func gallery(_ msgs: [Msg]) -> [GalleryItem] {
+        var out: [GalleryItem] = []
+        for m in msgs where m.role == "user" && !m.isWake {
+            for (i, u) in (m.images ?? []).enumerated() {
+                let lv = m.lives.flatMap { i < $0.count && !$0[i].isEmpty ? $0[i] : nil }
+                out.append(GalleryItem(src: u, live: lv))
+            }
+        }
+        return out
     }
 
     /// 语音条（09-14 夜二版）：字已经在手机上出好（腾讯实时识别）、她定稿了；这里传音频、再当普通消息发（带 voice：定稿＋识别原文＋annotate），
     /// 网关让 Gemini 照定稿标记号写语气。先画一个转圈的小气泡＋字，传好就换成真的。失败就把小气泡下面改成一句灰字。
     @Published var transcribing = false
     /// images（09-21 寻）：输入框里已选的图随语音条一起发——之前带图就把音频丢了当普通消息发
-    func sendVoice(file: URL, dur: Double, text: String, orig: String, images: [String] = []) {
+    func sendVoice(file: URL, dur: Double, text: String, orig: String, images: [String] = [], videos: [String: URL] = [:]) {
         guard !sending, !transcribing, !text.isEmpty else { return }
         transcribing = true
         var echo = Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images); echo.voice = Voice(url: "", dur: dur, text: text, pending: true)
@@ -274,7 +289,7 @@ final class ChatModel: ObservableObject {
                 try? FileManager.default.removeItem(at: file)
                 v.text = text; v.orig = orig; v.annotate = true
                 msgs.removeAll { $0.voice?.pending == true }
-                send(text: text, images: images, voice: v)
+                send(text: text, images: images, voice: v, videos: videos)
             } catch {
                 PushRegistrar.diag("voice: upload failed \(error.localizedDescription)")
                 voiceFailed("音频没传上去，再说一次？")
@@ -286,10 +301,13 @@ final class ChatModel: ObservableObject {
         rebuild()
     }
 
-    func send(text: String, images: [String], voice: Voice? = nil) {
+    /// videos（11-06）：哪张图是 Live、视频临时文件在哪（键＝那张图的 dataURL）
+    func send(text: String, images: [String], voice: Voice? = nil, videos: [String: URL] = [:]) {
         guard !sending, !(text.isEmpty && images.isEmpty) else { return }
         sending = true; lastError = nil; lastEventAt = Date()
+        let staged = LiveCache.stage(images: images, videos: videos)
         var um = Msg(role: "user", content: text, ts: TimeFmt.nowIso(), images: images.isEmpty ? nil : images); um.voice = voice
+        if staged.lives.contains(where: { !$0.isEmpty }) { um.lives = staged.lives }
         let echoAt = msgs.count, echoTs = um.ts
         msgs.append(um)
         rebuild()
@@ -299,6 +317,11 @@ final class ChatModel: ObservableObject {
             var heard = false        // 服务器回过任何一个事件＝这条已落盘
             var lost = false         // 一个事件都没回就断了：可能根本没送到，对账后决定退不退回输入框
             var bounceWhy: String? = nil   // 网关说「没经过模型就被打回、这句已撤出正史」
+            // Live 视频先传（11-06）：传不上只记一笔，静图照发——克那边本来就只看静图
+            for (f, h) in staged.uploads {
+                do { try await GatewayAPI.uploadLive(file: f, img: h) }
+                catch { PushRegistrar.diag("live: upload failed \(error.localizedDescription)") }
+            }
             do {
                 for try await ev in GatewayAPI.chat(conversationId: conversationId, message: text, images: images, voice: voice, bounceOK: voice == nil) {
                     heard = true
@@ -439,6 +462,7 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
+    @State private var pendingLive: [String: URL] = [:]   // 已选的图里哪几张是 Live：dataURL → 视频临时文件（11-06）
     @State private var plusOpen = false                 // 「+」菜单（拍照/相册）开着
     @State private var showWeb = false
     @State private var drawerOn = Preview.on && Preview.screen == "drawer"
@@ -517,8 +541,8 @@ struct ChatScreen: View {
                     let sid = n.object as? String ?? ""
                     path = sid.isEmpty ? [.ccshi] : [.ccshi, .ccshiSession(sid)]
                 }
-            if let img = viewer.image {
-                ImageViewerView(image: img, onClose: { viewer.image = nil }).zIndex(300).transaction { $0.animation = nil }
+            if viewer.image != nil || viewer.gallery != nil {
+                ImageViewerView(image: viewer.image, gallery: viewer.gallery, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
             }
         }
     }
@@ -906,8 +930,9 @@ struct ChatScreen: View {
                         ForEach(Array(pending.enumerated()), id: \.offset) { i, u in
                             ZStack(alignment: .topTrailing) {
                                 DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
+                                    .overlay(alignment: .bottomLeading) { if pendingLive[u] != nil { LiveBadge(compact: true).scaleEffect(0.85).padding(3) } }   // 认出是 Live（11-06）
                                     .onTapGesture { composerFocused = false; Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图；09-28 先收键盘，不和大图打架
-                                Button { pending.remove(at: i) } label: {
+                                Button { if let v = pendingLive.removeValue(forKey: u) { try? FileManager.default.removeItem(at: v) }; pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
                                 }.buttonStyle(.plain).offset(x: 4, y: -4)
@@ -1046,7 +1071,7 @@ struct ChatScreen: View {
     private func pick(_ a: PlusAction) {
         withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
         switch a {
-        case .camera: CameraBridge.shared.present { img in Task { await addImages([img]) } }
+        case .camera: CameraBridge.shared.present { img in Task { await addImages([.init(image: img)]) } }
         case .album: PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
         }
     }
@@ -1075,8 +1100,8 @@ struct ChatScreen: View {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
-                let imgs = pending; pending = []   // 09-21 寻：已选的图随语音一起走
-                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs)   // orig＝识别原文（字典改之前），学编辑用
+                let imgs = pending, vids = pendingLive; pending = []; pendingLive = [:]   // 09-21 寻：已选的图随语音一起走
+                model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs, videos: vids)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
             }
@@ -1094,16 +1119,16 @@ struct ChatScreen: View {
 
     private func sendNow() {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let imgs = pending
-        draft = ""; pending = []
+        let imgs = pending, vids = pendingLive
+        draft = ""; pending = []; pendingLive = [:]
         composerFocused = false
         if let vd = voiceDraft, !t.isEmpty {
             voiceDraft = nil
-            model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig, images: imgs)   // 09-21 寻：带图也是语音条，图一起走
+            model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig, images: imgs, videos: vids)   // 09-21 寻：带图也是语音条，图一起走
             return
         }
         if let vd = voiceDraft { try? FileManager.default.removeItem(at: vd.file); voiceDraft = nil }   // 字全删了只剩图：当普通消息发，音频不要了
-        model.send(text: t, images: imgs)
+        model.send(text: t, images: imgs, videos: vids)
     }
 
     /// 列表末尾的那一行（懒列表的「到底」锚点按估算高度定位，最后一行没排出来就停在它上头——寻验：最后一条克的话总看不见）
@@ -1128,8 +1153,9 @@ struct ChatScreen: View {
     }
 
     /// 选图 → 长边 1568 的 jpeg dataURL（Anthropic 最优尺寸），最多 4 张。
-    private func addImages(_ imgs: [UIImage]) async {
-        for ui in imgs {
+    private func addImages(_ imgs: [PhotoPickerBridge.Picked]) async {
+        for pk in imgs {
+            let ui = pk.image
             guard pending.count < 4 else { break }
             let L: CGFloat = 1568
             let s = min(1, L / max(ui.size.width, ui.size.height))
@@ -1137,7 +1163,9 @@ struct ChatScreen: View {
             let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1
             let img = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in ui.draw(in: CGRect(origin: .zero, size: size)) }
             if let jpg = img.jpegData(compressionQuality: 0.85) {
-                pending.append("data:image/jpeg;base64," + jpg.base64EncodedString())
+                let u = "data:image/jpeg;base64," + jpg.base64EncodedString()
+                pending.append(u)
+                if let v = pk.live { pendingLive[u] = v }
             }
         }
     }
@@ -1180,8 +1208,10 @@ final class CameraBridge: NSObject, UIImagePickerControllerDelegate, UINavigatio
 
 final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
     static let shared = PhotoPickerBridge()
-    private var done: (([UIImage]) -> Void)? = nil
-    func present(max: Int, done: @escaping ([UIImage]) -> Void) {
+    /// 选出来的一张：静图＋（是 Live 的话）那 3 秒视频的临时文件（11-06）
+    struct Picked { var image: UIImage; var live: URL? = nil }
+    private var done: (([Picked]) -> Void)? = nil
+    func present(max: Int, done: @escaping ([Picked]) -> Void) {
         guard max > 0, let top = Self.topVC() else { return }
         var cfg = PHPickerConfiguration(photoLibrary: .shared())
         cfg.selectionLimit = max; cfg.filter = .images
@@ -1204,8 +1234,8 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
                 let cb = self.done; self.done = nil
                 let results = self.current; self.current = []
                 Task { @MainActor in
-                    var imgs: [UIImage] = []
-                    for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(ui) } }
+                    var imgs: [Picked] = []
+                    for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: await LiveExtract.video(r.itemProvider))) } }
                     cb?(imgs)
                 }
             })
@@ -1251,8 +1281,8 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
             }
             picker.dismiss(animated: true)
             let cb = self.done; self.done = nil
-            var imgs: [UIImage] = []
-            for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(ui) } }
+            var imgs: [Picked] = []
+            for r in results { if let ui = await Self.load(r.itemProvider) { imgs.append(Picked(image: ui, live: await LiveExtract.video(r.itemProvider))) } }
             cb?(imgs)
         }
     }
