@@ -218,7 +218,7 @@ struct AlbumScreen: View {
                 let list = m.photos(in: p.book ?? "")
                 let at = list.firstIndex { $0.id == p.id }
                 Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) },
-                         onLive: { ph, src in if let i = m.photos.firstIndex(where: { $0.id == ph.id }) { m.photos[i].live = src } }).zIndex(80) }
+                         onLive: { ph, src, o in if let i = m.photos.firstIndex(where: { $0.id == ph.id }) { m.photos[i].live = src; if let o { m.photos[i].orig = o } } }).zIndex(80) }
         }
         .background(EdgeSwipe(onBack: { if book != nil { book = nil } else { onBack() } }))
         .task {
@@ -394,14 +394,15 @@ struct Lightbox: View {
     @State private var index = -1
     private var cur: Int { index < 0 ? min(start, photos.count - 1) : index }
     private var p: Photo { photos[cur] }
-    var onLive: (Photo, String) -> Void = { _, _ in }
+    var onLive: (Photo, String, String?) -> Void = { _, _, _ in }
     @State private var sheet = Preview.on && Preview.screen == "albumlive"   // 截图：信息条里的「Live · …」那行
     @State private var sheetDrag: CGFloat = 0
     @State private var liveMsg: String? = nil
+    @State private var drop: CGFloat = 0   // 往下拖退出的距离（黑底跟着淡）
     var body: some View {
         ZStack {
             // 点图外的暗处也能退（寻验 09-04：原来只按图本体才关）；信息条开着先收信息条
-            Color(red: 18/255, green: 18/255, blue: 17/255).opacity(0.96).ignoresSafeArea()
+            Color(red: 18/255, green: 18/255, blue: 17/255).opacity(0.96 * (1 - min(drop / 320, 1) * 0.75)).ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { if sheet { sheet = false } else { onClose() } }
             // 开门先拿列表里已解好的缩略垫着（立刻有图），大图到了再换；左右翻（11-06）、Live 按住播都在 ZoomPager 里
@@ -416,6 +417,7 @@ struct Lightbox: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
             .ignoresSafeArea()
+            .onPreferenceChange(ViewerDismissKey.self) { drop = $0 }
             VStack {
                 Spacer()
                 if sheet {
@@ -484,8 +486,14 @@ struct Lightbox: View {
                 try? FileManager.default.moveItem(at: v, to: dst)
                 do {
                     try await GatewayAPI.uploadLive(file: dst, img: h)
+                    // 同一张顺手存原图（11-07 寻定 A）；原图没传上不算失败，Live 照样配好
+                    var o: String? = nil
+                    if let (d, ext) = pk.orig, let url = URL(string: "/uploads/orig/\(h).\(ext)", relativeTo: Gateway.home),
+                       (try? await GatewayAPI.uploadOrig(data: d, img: h, ext: ext)) != nil {
+                        GatewayImageCache.Disk.write(url, d); o = "/uploads/orig/\(h).\(ext)"
+                    }
                     liveMsg = "配好了，按住图试试"
-                    onLive(ph, src)
+                    onLive(ph, src, o)
                 } catch {
                     try? FileManager.default.removeItem(at: dst)
                     liveMsg = "没传上去，再试一次"

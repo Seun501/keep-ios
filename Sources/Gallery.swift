@@ -255,71 +255,140 @@ struct ZoomPager<Page: View>: View {
     @ViewBuilder var page: (Int) -> Page
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
+    @State private var pinching = false
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var dx: CGFloat = 0
+    @State private var dy: CGFloat = 0          // 往下拖着退出（11-07）
+    @State private var axis = 0                 // 这一拖：0 未定 1 横翻 2 竖拖退出 3 平移放大的图 -1 双指/作废
+    @State private var downAt: Date? = nil
+    @State private var holdTask: Task<Void, Never>? = nil
+    @State private var holding = false
+    @State private var lastTap: Date = .distantPast
+    @State private var tapTask: Task<Void, Never>? = nil
     @StateObject private var lp = LivePlayer()
     private let gap: CGFloat = 18
+    private let flip = Animation.interactiveSpring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.1)
+
+    /// 一个手势管到底（11-07 寻：原来几个手势叠着把单击吃了，点图关不掉）：
+    /// 轻点＝退出（双击放大，第二下 0.26 秒内来）；按住不动 0.28 秒＝播 Live、松手停；横拖翻页、竖拖往下退出；放大后拖＝平移。
+    private func drag(_ w: CGFloat, _ h: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0).onChanged { v in
+            if downAt == nil {
+                downAt = Date(); axis = 0; holding = false
+                holdTask?.cancel()
+                holdTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 280_000_000)
+                    guard !Task.isCancelled, axis == 0, !pinching else { return }
+                    holding = true
+                    if let s = live(index) { lp.start(s) }
+                }
+            }
+            if pinching { axis = -1; return }
+            let t = v.translation
+            if axis == 0, !holding, hypot(t.width, t.height) > 10 {
+                holdTask?.cancel()
+                axis = scale > 1 ? 3 : (abs(t.width) >= abs(t.height) ? 1 : (t.height > 0 ? 2 : -1))
+            }
+            switch axis {
+            case 1:
+                var x = t.width
+                if (index == 0 && x > 0) || (index >= count - 1 && x < 0) { x = x / (1 + abs(x) / (w * 0.35)) }   // 到头：越拖越沉，不是硬切三分之一
+                dx = x
+            case 2: dy = max(0, t.height)
+            case 3: offset = CGSize(width: lastOffset.width + t.width, height: lastOffset.height + t.height)
+            default: break
+            }
+        }.onEnded { v in
+            holdTask?.cancel()
+            let held = holding, a = axis
+            let quick = Date().timeIntervalSince(downAt ?? Date()) < 0.28
+            downAt = nil; axis = 0; holding = false
+            if held { lp.stop(); return }
+            switch a {
+            case 1:
+                var ni = index
+                let t = v.translation.width, pred = v.predictedEndTranslation.width
+                if (t < -w * 0.2 || pred < -w * 0.45), index < count - 1 { ni += 1 }
+                else if (t > w * 0.2 || pred > w * 0.45), index > 0 { ni -= 1 }
+                withAnimation(flip) { index = ni; dx = 0 }
+            case 2:
+                if v.translation.height > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 { onTap() }
+                else { withAnimation(flip) { dy = 0 } }
+            case 3: lastOffset = offset
+            case 0 where quick && !pinching: tapped()
+            default: break
+            }
+        }
+    }
+
+    private func tapped() {
+        tapTask?.cancel()
+        if Date().timeIntervalSince(lastTap) < 0.26 {   // 双击：放大／还原
+            lastTap = .distantPast
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }
+                lastScale = scale
+            }
+            return
+        }
+        lastTap = Date()
+        tapTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            if !Task.isCancelled { onTap() }
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
+            let w = geo.size.width, h = geo.size.height
             let lo = max(0, index - 1), hi = max(lo, min(count - 1, index + 1))
+            let shrink = 1 - min(dy / h, 1) * 0.35
             ZStack {
                 ForEach(lo...hi, id: \.self) { i in
                     page(i)
                         .overlay { if i == index, lp.playing, let p = lp.player { LiveVideoLayer(player: p) } }   // 叠在页面自己的框上，和静图同一块
-                        .frame(width: w, height: geo.size.height)
-                    .scaleEffect(i == index ? scale : 1)
+                        .frame(width: w, height: h)
+                    .scaleEffect(i == index ? scale * shrink : 1)
                     .offset(x: CGFloat(i - index) * (w + gap) + dx + (i == index ? offset.width : 0),
-                            y: i == index ? offset.height : 0)
+                            y: i == index ? offset.height + dy : 0)
+                    .opacity(i == index ? 1 : 1 - min(dy / (h * 0.25), 1))
                 }
             }
-            .frame(width: w, height: geo.size.height)
+            .frame(width: w, height: h)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 8).onChanged { v in
-                if scale > 1 {
-                    offset = CGSize(width: lastOffset.width + v.translation.width, height: lastOffset.height + v.translation.height)
-                    return
-                }
-                var t = v.translation.width
-                if (index == 0 && t > 0) || (index >= count - 1 && t < 0) { t /= 3 }   // 到头了：拖得动但带阻尼
-                dx = t
-            }.onEnded { v in
-                if scale > 1 { lastOffset = offset; return }
-                var ni = index
-                let t = v.translation.width, pred = v.predictedEndTranslation.width
-                if (t < -w * 0.18 || pred < -w * 0.5), index < count - 1 { ni += 1 }
-                else if (t > w * 0.18 || pred > w * 0.5), index > 0 { ni -= 1 }
-                withAnimation(.easeOut(duration: 0.22)) { index = ni; dx = 0 }
-            })
+            .gesture(drag(w, h))
             .simultaneousGesture(MagnificationGesture().onChanged { v in
+                pinching = true; holdTask?.cancel()
                 scale = min(6, max(1, lastScale * v)); if scale == 1 { offset = .zero; lastOffset = .zero }
-            }.onEnded { _ in lastScale = scale })
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.28, maximumDistance: 12).onEnded { _ in
-                if let s = live(index) { lp.start(s) }
+            }.onEnded { _ in
+                lastScale = scale
+                Task { @MainActor in try? await Task.sleep(nanoseconds: 150_000_000); pinching = false }
             })
-            .simultaneousGesture(DragGesture(minimumDistance: 0).onEnded { _ in lp.stop() })   // 松手就停（长按本身不报松手）
-            .onTapGesture(count: 2) {
-                withAnimation(.easeOut(duration: 0.2)) { if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }; lastScale = scale }
-            }
-            .onTapGesture { onTap() }
         }
         .overlay(alignment: .topLeading) {
             if live(index) != nil {
-                LiveBadge().padding(.leading, 16).padding(.top, 58).opacity(lp.playing ? 0 : 1).allowsHitTesting(false)
+                LiveBadge().padding(.leading, 16).padding(.top, 58).opacity(lp.playing || dy > 0 ? 0 : 1).allowsHitTesting(false)
             }
         }
         .overlay(alignment: .top) {
             if count > 1 {   // 第几张（Cascadia Mono 小字，淡白）
-                Text("\(index + 1) / \(count)").font(Theme.mono(12)).foregroundColor(.white.opacity(0.7)).padding(.top, 60).allowsHitTesting(false)
+                Text("\(index + 1) / \(count)").font(Theme.mono(12)).foregroundColor(.white.opacity(0.7)).padding(.top, 60)
+                    .opacity(dy > 0 ? 0 : 1).allowsHitTesting(false)
             }
         }
+        .preference(key: ViewerDismissKey.self, value: dy)
         .onChange(of: index) { _ in
             lp.stop(); scale = 1; lastScale = 1; offset = .zero; lastOffset = .zero
         }
-        .onDisappear { lp.stop() }
+        .onDisappear { lp.stop(); holdTask?.cancel(); tapTask?.cancel() }
     }
+}
+
+/// 往下拖退出时，宿主按这个把黑底渐淡
+struct ViewerDismissKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// 一页大图：先拿缓存垫着（原图有就用原图，没到先垫压缩版），再按 src 取（dataURL 直接解、/uploads 带口令头）。

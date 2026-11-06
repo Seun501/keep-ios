@@ -551,10 +551,11 @@ struct ImageViewerView: View {
     var gallery: ImageViewer.Gallery? = nil
     var onClose: () -> Void
     @State private var index = 0
+    @State private var drop: CGFloat = 0   // 往下拖退出的距离（黑底跟着淡）
     var body: some View {
         let items = gallery?.items ?? []
         ZStack {
-            Color.black.opacity(0.93).ignoresSafeArea()
+            Color.black.opacity(0.93 * (1 - min(drop / 320, 1) * 0.75)).ignoresSafeArea()
             if let image {
                 ZoomPager(count: 1, index: .constant(0), live: { _ in nil }, onTap: onClose) { _ in
                     Image(uiImage: image).resizable().scaledToFit()
@@ -566,6 +567,7 @@ struct ImageViewerView: View {
             }
         }
         .ignoresSafeArea()
+        .onPreferenceChange(ViewerDismissKey.self) { drop = $0 }
         .onAppear { index = gallery?.index ?? 0 }
         .background(EdgeSwipe(onBack: onClose))
     }
