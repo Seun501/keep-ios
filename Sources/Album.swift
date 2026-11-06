@@ -215,14 +215,15 @@ struct AlbumScreen: View {
                 // 大图在同一册里翻（11-06 寻定）：顺序同册内页（新的在前）
                 let list = m.photos(in: p.book ?? "")
                 let at = list.firstIndex { $0.id == p.id }
-                Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) }).zIndex(80) }
+                Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) },
+                         onLive: { ph, src in if let i = m.photos.firstIndex(where: { $0.id == ph.id }) { m.photos[i].live = src } }).zIndex(80) }
         }
         .background(EdgeSwipe(onBack: { if book != nil { book = nil } else { onBack() } }))
         .task {
             await m.refresh()
             if Preview.on {
-                if Preview.screen == "albumbook" || Preview.screen == "albumlb" { book = m.order.first }
-                if Preview.screen == "albumlb" { lightbox = m.photos.first }
+                if Preview.screen == "albumbook" || Preview.screen == "albumlb" || Preview.screen == "albumlive" { book = m.order.first }
+                if Preview.screen == "albumlb" || Preview.screen == "albumlive" { lightbox = m.photos.first }
             }
         }
     }
@@ -391,8 +392,10 @@ struct Lightbox: View {
     @State private var index = -1
     private var cur: Int { index < 0 ? min(start, photos.count - 1) : index }
     private var p: Photo { photos[cur] }
-    @State private var sheet = false
+    var onLive: (Photo, String) -> Void = { _, _ in }
+    @State private var sheet = Preview.on && Preview.screen == "albumlive"   // 截图：信息条里的「Live · …」那行
     @State private var sheetDrag: CGFloat = 0
+    @State private var liveMsg: String? = nil
     var body: some View {
         ZStack {
             // 点图外的暗处也能退（寻验 09-04：原来只按图本体才关）；信息条开着先收信息条
@@ -432,6 +435,17 @@ struct Lightbox: View {
                                     Text("聊天 #\(n)").foregroundColor(Theme.accent).onTapGesture { onArchive(TimeFmt.localDay(p.ts), n) }
                                 } else { Text("聊天") }
                             }
+                            // 给以前存的图配上 Live（11-06 寻定：只放这里，集中补一次）：从手机相册挑原图，视频配到这张上，静图与编号不动
+                            if p.src != "surf", LiveHash.of(upload: p.img) != nil || Preview.on {
+                                HStack(spacing: 0) {
+                                    Text("Live · ")
+                                    if let msg = liveMsg { Text(msg) }
+                                    else {
+                                        Text(p.liveSrc == nil ? "从相册选原图配上" : "已配上 · 换一段").foregroundColor(Theme.accent)
+                                            .onTapGesture { pickLive(p) }
+                                    }
+                                }
+                            }
                         }
                         .font(Theme.round(11.5)).lineSpacing(6).foregroundColor(Theme.muted).padding(.top, 32)   // 时间/来源离描述空两行（寻验 09-04）
                     }
@@ -456,6 +470,29 @@ struct Lightbox: View {
         }
         .background(EdgeSwipe(onBack: onClose))
     }
+    private func pickLive(_ ph: Photo) {
+        guard let h = LiveHash.of(upload: ph.img) else { return }
+        PhotoPickerBridge.shared.present(max: 1, filter: .livePhotos) { picks in
+            guard let pk = picks.first else { return }
+            guard let v = pk.live else { liveMsg = "这张不是 Live"; clearMsg(); return }
+            liveMsg = "传上去中…"
+            Task {
+                let src = "/uploads/live/\(h).mov", dst = LiveCache.path(src)
+                try? FileManager.default.removeItem(at: dst)
+                try? FileManager.default.moveItem(at: v, to: dst)
+                do {
+                    try await GatewayAPI.uploadLive(file: dst, img: h)
+                    liveMsg = "配好了，按住图试试"
+                    onLive(ph, src)
+                } catch {
+                    try? FileManager.default.removeItem(at: dst)
+                    liveMsg = "没传上去，再试一次"
+                }
+                clearMsg()
+            }
+        }
+    }
+    private func clearMsg() { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { liveMsg = nil } }
     private func when(_ ts: String?) -> String {
         guard let d = ts.flatMap(TimeFmt.parse) else { return "" }
         let c = Calendar.current

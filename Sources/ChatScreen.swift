@@ -1212,11 +1212,12 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
     struct Picked { var image: UIImage; var live: URL? = nil }
     private var done: (([Picked]) -> Void)? = nil
     private var wantLive = true   // CC师 页只要静图，不取视频
-    func present(max: Int, live: Bool = true, done: @escaping ([Picked]) -> Void) {
+    /// filter（11-06）：相册「换成 Live」只列 Live 图
+    func present(max: Int, live: Bool = true, filter: PHPickerFilter = .images, done: @escaping ([Picked]) -> Void) {
         wantLive = live
         guard max > 0, let top = Self.topVC() else { return }
         var cfg = PHPickerConfiguration(photoLibrary: .shared())
-        cfg.selectionLimit = max; cfg.filter = .images
+        cfg.selectionLimit = max; cfg.filter = filter
         // 09-22 寻：半屏时系统把「添加」藏在顶栏里，非拉到全屏才能确定——改成嵌入式：选择器塞进我们自己的容器，
         // 每勾一张就回调（continuous），顶上自己画「取消 / 完成(n)」，半屏就能确定。iOS 17 起才有嵌入式，老系统照旧整页弹
         if #available(iOS 17, *) {

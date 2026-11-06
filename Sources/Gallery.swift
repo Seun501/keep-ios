@@ -20,6 +20,11 @@ enum LiveHash {
         guard let comma = dataURL.firstIndex(of: ","), let d = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])) else { return nil }
         return SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined().prefix(32).description
     }
+    /// 已在网关上的图 /uploads/<哈希>.jpg → 哈希（相册给旧图配 Live 用）
+    static func of(upload: String) -> String? {
+        guard let r = upload.range(of: #"^/uploads/([0-9a-f]{32})\.(jpg|png|webp|gif)$"#, options: .regularExpression) else { return nil }
+        return String(upload[r].dropFirst("/uploads/".count).prefix(32))
+    }
 }
 
 /// 从系统选图器的一项里取 Live 的那段视频（PHLivePhoto → pairedVideo 写进临时文件）；不是 Live 回 nil
