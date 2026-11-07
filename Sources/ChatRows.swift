@@ -433,18 +433,20 @@ struct KnockRowView: View {
     }
 }
 
-/// 图：dataURL 直接解，路径拼网关地址。
+/// 图：dataURL 直接解，路径拼网关地址、走 GatewayImageCache 带口令头（11-07 起 /uploads 要口令，AsyncImage 带不了头）。
 struct RemoteImage: View {
     let src: String
+    @State private var remote: UIImage?
     var body: some View {
         if src.hasPrefix("data:"), let comma = src.firstIndex(of: ","),
            let data = Data(base64Encoded: String(src[src.index(after: comma)...])), let ui = UIImage(data: data) {
             Image(uiImage: ui).resizable().scaledToFit()
         } else if let url = URL(string: src, relativeTo: Gateway.home) {
-            AsyncImage(url: url) { phase in
-                if let img = phase.image { img.resizable().scaledToFit() }
+            Group {
+                if let remote { Image(uiImage: remote).resizable().scaledToFit() }
                 else { Theme.panel }
             }
+            .task(id: src) { remote = await GatewayImageCache.load(url) }
         } else {
             Theme.panel
         }
