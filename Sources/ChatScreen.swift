@@ -950,7 +950,7 @@ struct ChatScreen: View {
                                 DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
                                     .overlay(alignment: .bottomLeading) {   // 认出是 Live（11-06）；11-07 寻：默认灰着＝只发静图，点一下亮起＝连视频一起传
                                         if pendingLive[u] != nil {
-                                            LiveBadge(compact: !liveOn.contains(u), dim: !liveOn.contains(u)).scaleEffect(0.85).padding(3)
+                                            LiveBadge(compact: !liveOn.contains(u), dim: !liveOn.contains(u)).fixedSize().scaleEffect(0.85, anchor: .bottomLeading).padding(3)
                                                 .contentShape(Rectangle()).onTapGesture { if liveOn.contains(u) { liveOn.remove(u) } else { liveOn.insert(u) } }
                                         }
                                     }
