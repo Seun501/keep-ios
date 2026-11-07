@@ -122,7 +122,7 @@ struct UserRowView: View {
                 if !stamp.isEmpty {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         if let t = tagNo { NoTag(t, flash: flash) }
-                        if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted) }
+                        if let p = pick { Text(p).font(Theme.mono(12, weight: .medium)).foregroundColor(Theme.muted).fixedSize() }   // 11-07 寻：气泡窄时「插话」被挤成竖排
                         // 语音条的语气（Gemini 听的）：灰字放时间前，不带「语气：」，和时间之间只空一格不加「·」（寻 09-14/09-15 定）
                         if let tone = voice?.tone?.trimmingCharacters(in: .whitespacesAndNewlines), !tone.isEmpty, voice?.pending != true {
                             Text(tone).font(Theme.round(12)).foregroundColor(Theme.muted).multilineTextAlignment(.trailing)
