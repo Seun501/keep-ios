@@ -427,7 +427,7 @@ final class PagerView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate
 
     // MARK: 翻页（系统分页）
     func scrollViewDidScroll(_ s: UIScrollView) {
-        guard s === pager, bounds.width > 0, count > 0 else { return }
+        guard s === pager, bounds.width > 0, count > 0, s.isTracking || s.isDragging || s.isDecelerating else { return }   // 只认手指翻的，布局时的偏移不算
         let i = max(0, min(count - 1, Int((s.contentOffset.x / pageW).rounded())))
         if i != current { current = i; fill(); onIndex(i) }
     }
