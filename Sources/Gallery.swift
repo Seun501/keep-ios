@@ -213,6 +213,7 @@ struct LiveBadge: View {
                 Circle().strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [1.2, 1.6])).frame(width: 12, height: 12)
                 Circle().strokeBorder(lineWidth: 1).frame(width: 8, height: 8)
                 Circle().frame(width: 3.5, height: 3.5)
+                if dim { Rectangle().frame(width: 1.2, height: 15).rotationEffect(.degrees(-45)) }   // 11-07 寻：照微信那样，关着＝图标上一道斜杠
             }
             if !compact { Text("LIVE").font(Theme.mono(9.5, weight: .medium)).tracking(0.6) }
         }
