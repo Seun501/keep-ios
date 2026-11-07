@@ -248,154 +248,280 @@ struct LiveHold: ViewModifier {
 
 // MARK: - 大图翻页
 
-/// 翻页＋捏合缩放＋双击放大＋Live 按住播。页面怎么画由调用方给（聊天走 StreamImageCache、相册走 GatewayImage）
+/// 翻页＋捏合缩放＋双击放大＋Live 按住播。页面怎么画由调用方给（聊天走 StreamImageCache、相册走 GatewayImage）。
+/// 11-07 寻：SwiftUI 手搓的翻页和下滑「还是不够顺」→ 换成系统自己的 UIScrollView：外层分页（翻页惯性、回弹＝系统原样），
+/// 每页一个能缩放的 UIScrollView（捏合、双击、放大后拖＝系统原样）；下滑退出用 UIKit 弹簧。页面本身照旧是 SwiftUI。
 struct ZoomPager<Page: View>: View {
     let count: Int
     @Binding var index: Int
     var live: (Int) -> String?
     var onTap: () -> Void
     @ViewBuilder var page: (Int) -> Page
-    @State private var scale: CGFloat = 1
-    @State private var lastScale: CGFloat = 1
-    @State private var pinching = false
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
-    @State private var dx: CGFloat = 0
-    @State private var dy: CGFloat = 0          // 往下拖着退出（11-07）
-    @State private var slop: CGSize = .zero     // 认出方向那一刻手指已走的距离：减掉它，图从原地起步不跳
-    @State private var axis = 0                 // 这一拖：0 未定 1 横翻 2 竖拖退出 3 平移放大的图 -1 双指/作废
-    @State private var downAt: Date? = nil
-    @State private var holdTask: Task<Void, Never>? = nil
-    @State private var holding = false
-    @State private var lastTap: Date = .distantPast
-    @State private var tapTask: Task<Void, Never>? = nil
+    @StateObject private var model = PagerModel()
     @StateObject private var lp = LivePlayer()
-    private let gap: CGFloat = 18
-    private let flip = Animation.interactiveSpring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.1)
-
-    /// 一个手势管到底（11-07 寻：原来几个手势叠着把单击吃了，点图关不掉）：
-    /// 轻点＝退出（双击放大，第二下 0.26 秒内来）；按住不动 0.28 秒＝播 Live、松手停；横拖翻页、竖拖往下退出；放大后拖＝平移。
-    private func drag(_ w: CGFloat, _ h: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0).onChanged { v in
-            if downAt == nil {
-                downAt = Date(); axis = 0; holding = false
-                holdTask?.cancel()
-                holdTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 280_000_000)
-                    guard !Task.isCancelled, axis == 0, !pinching else { return }
-                    holding = true
-                    if let s = live(index) { lp.start(s) }
-                }
-            }
-            if pinching { axis = -1; return }
-            let t = v.translation
-            if axis == 0, !holding, hypot(t.width, t.height) > 10 {
-                holdTask?.cancel()
-                axis = scale > 1 ? 3 : (abs(t.width) >= abs(t.height) ? 1 : (t.height > 0 ? 2 : -1))
-                slop = axis == 3 ? .zero : t
-            }
-            switch axis {
-            case 1:
-                var x = t.width - slop.width
-                if (index == 0 && x > 0) || (index >= count - 1 && x < 0) { x = x / (1 + abs(x) / (w * 0.35)) }   // 到头：越拖越沉，不是硬切三分之一
-                dx = x
-            case 2: dy = max(0, t.height - slop.height)
-            case 3: offset = CGSize(width: lastOffset.width + t.width, height: lastOffset.height + t.height)
-            default: break
-            }
-        }.onEnded { v in
-            holdTask?.cancel()
-            let held = holding, a = axis
-            let quick = Date().timeIntervalSince(downAt ?? Date()) < 0.28
-            downAt = nil; axis = 0; holding = false
-            if held { lp.stop(); return }
-            switch a {
-            case 1:
-                var ni = index
-                let t = dx, vel = (v.predictedEndTranslation.width - v.translation.width) * 2   // SwiftUI 的预测≈速度×0.5 秒
-                if (t < -w * 0.2 || vel < -500), index < count - 1 { ni += 1 }
-                else if (t > w * 0.2 || vel > 500), index > 0 { ni -= 1 }
-                // 先原地换页（画面不动），再带着手指的速度弹回 0：松手那下不顿、不硬切（11-07 寻：翻页太硬）
-                let from = dx + CGFloat(ni - index) * (w + gap)
-                index = ni; dx = from
-                let k = abs(from) > 1 ? max(0, -vel / from) : 0
-                // 11-07 寻：还是太快太硬 → 刚度 260→120（临界阻尼 2√k≈22），落定约慢一半，不回弹
-                withAnimation(.interpolatingSpring(mass: 1, stiffness: 120, damping: 22, initialVelocity: min(k, 8))) { dx = 0 }
-            case 2:
-                if dy > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 {
-                    // 11-07 寻：下滑退出太僵 → 先顺着手往下滑出去、黑底一起淡掉，再关（原来松手当场关，画面一跳）
-                    withAnimation(.easeOut(duration: 0.22)) { dy = h }
-                    Task { @MainActor in try? await Task.sleep(nanoseconds: 200_000_000); onTap() }
-                }
-                else { withAnimation(flip) { dy = 0 } }
-            case 3: lastOffset = offset
-            case 0 where quick && !pinching: tapped()
-            default: break
-            }
-        }
-    }
-
-    private func tapped() {
-        tapTask?.cancel()
-        if Date().timeIntervalSince(lastTap) < 0.26 {   // 双击：放大／还原
-            lastTap = .distantPast
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }
-                lastScale = scale
-            }
-            return
-        }
-        lastTap = Date()
-        tapTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 260_000_000)
-            if !Task.isCancelled { onTap() }
-        }
-    }
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let lo = max(0, index - 1), hi = max(lo, min(count - 1, index + 1))
-            let shrink = 1 - min(dy / h, 1) * 0.35
-            ZStack {
-                ForEach(lo...hi, id: \.self) { i in
-                    page(i)
-                        .overlay { if i == index, lp.playing, let p = lp.player { LiveVideoLayer(player: p) } }   // 叠在页面自己的框上，和静图同一块
-                        .frame(width: w, height: h)
-                    .scaleEffect(i == index ? scale * shrink : 1)
-                    .offset(x: CGFloat(i - index) * (w + gap) + dx + (i == index ? offset.width : 0),
-                            y: i == index ? offset.height + dy : 0)
-                    .opacity(i == index ? 1 : 1 - min(dy / (h * 0.25), 1))
+        NativePager(count: count, index: $index, model: model, lp: lp, live: live, onTap: onTap, page: page)
+            .overlay(alignment: .topLeading) {
+                if live(index) != nil {
+                    LiveBadge().padding(.leading, 16).padding(.top, 58).opacity(lp.playing || model.dy > 0 ? 0 : 1).allowsHitTesting(false)
                 }
             }
-            .frame(width: w, height: h)
-            .contentShape(Rectangle())
-            .gesture(drag(w, h))
-            .simultaneousGesture(MagnificationGesture().onChanged { v in
-                pinching = true; holdTask?.cancel()
-                scale = min(6, max(1, lastScale * v)); if scale == 1 { offset = .zero; lastOffset = .zero }
-            }.onEnded { _ in
-                lastScale = scale
-                Task { @MainActor in try? await Task.sleep(nanoseconds: 150_000_000); pinching = false }
-            })
-        }
-        .overlay(alignment: .topLeading) {
-            if live(index) != nil {
-                LiveBadge().padding(.leading, 16).padding(.top, 58).opacity(lp.playing || dy > 0 ? 0 : 1).allowsHitTesting(false)
+            .overlay(alignment: .top) {
+                if count > 1 {   // 第几张（Cascadia Mono 小字，淡白）
+                    Text("\(index + 1) / \(count)").font(Theme.mono(12)).foregroundColor(.white.opacity(0.7)).padding(.top, 60)
+                        .opacity(model.dy > 0 ? 0 : 1).allowsHitTesting(false)
+                }
             }
-        }
-        .overlay(alignment: .top) {
-            if count > 1 {   // 第几张（Cascadia Mono 小字，淡白）
-                Text("\(index + 1) / \(count)").font(Theme.mono(12)).foregroundColor(.white.opacity(0.7)).padding(.top, 60)
-                    .opacity(dy > 0 ? 0 : 1).allowsHitTesting(false)
-            }
-        }
-        .preference(key: ViewerDismissKey.self, value: dy)
-        .onChange(of: index) { _ in
-            lp.stop(); scale = 1; lastScale = 1; offset = .zero; lastOffset = .zero
-        }
-        .onDisappear { lp.stop(); holdTask?.cancel(); tapTask?.cancel() }
+            .preference(key: ViewerDismissKey.self, value: model.dy)
+            .onChange(of: index) { _ in lp.stop() }
+            .onDisappear { lp.stop() }
     }
+}
+
+final class PagerModel: ObservableObject {
+    @Published var dy: CGFloat = 0      // 往下拖了多远（宿主拿去淡黑底）
+    @Published var current = 0
+}
+
+/// 一页：调用方的画面＋正在播的 Live 视频叠在同一块上
+private struct PagerPage<P: View>: View {
+    let i: Int
+    @ObservedObject var model: PagerModel
+    @ObservedObject var lp: LivePlayer
+    let content: P
+    var body: some View {
+        content
+            .overlay { if i == model.current, lp.playing, let p = lp.player { LiveVideoLayer(player: p) } }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct NativePager<Page: View>: UIViewRepresentable {
+    let count: Int
+    @Binding var index: Int
+    let model: PagerModel
+    let lp: LivePlayer
+    var live: (Int) -> String?
+    var onTap: () -> Void
+    var page: (Int) -> Page
+
+    func makeUIView(context: Context) -> PagerView {
+        let v = PagerView()
+        wire(v)
+        v.jump(to: index)
+        return v
+    }
+    func updateUIView(_ v: PagerView, context: Context) {
+        wire(v)
+        if v.current != index { v.jump(to: index) } else { v.reload() }
+    }
+    private func wire(_ v: PagerView) {
+        let model = model, lp = lp, page = page, live = live, binding = $index
+        v.count = count
+        v.makePage = { i in AnyView(PagerPage(i: i, model: model, lp: lp, content: page(i))) }
+        v.onIndex = { i in
+            DispatchQueue.main.async {   // 不在 SwiftUI 刷新中途改状态
+                if model.current != i { model.current = i }
+                if binding.wrappedValue != i { binding.wrappedValue = i }
+            }
+        }
+        v.onTap = onTap
+        v.onDrop = { d in model.dy = d }
+        v.onHold = { [weak v] down in
+            guard let v else { return }
+            if down, let s = live(v.current) { lp.start(s) } else { lp.stop() }
+        }
+        v.canHold = { [weak v] in v.map { live($0.current) != nil } ?? false }
+    }
+}
+
+final class PagerView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+    var count = 0 { didSet { if count != oldValue { setNeedsLayout() } } }
+    var makePage: (Int) -> AnyView = { _ in AnyView(EmptyView()) }
+    var onIndex: (Int) -> Void = { _ in }
+    var onTap: () -> Void = {}
+    var onDrop: (CGFloat) -> Void = { _ in }
+    var onHold: (Bool) -> Void = { _ in }
+    var canHold: () -> Bool = { false }
+    private(set) var current = 0
+    private let gap: CGFloat = 18
+    private let pager = UIScrollView()
+    private var cells: [Int: ZoomCell] = [:]
+    private let dismissPan = UIPanGestureRecognizer()
+    private let hold = UILongPressGestureRecognizer()
+    private var dismissing = false
+    private var lastSize: CGSize = .zero
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        clipsToBounds = false
+        pager.isPagingEnabled = true
+        pager.showsHorizontalScrollIndicator = false
+        pager.showsVerticalScrollIndicator = false
+        pager.contentInsetAdjustmentBehavior = .never
+        pager.alwaysBounceVertical = false
+        pager.backgroundColor = .clear
+        pager.clipsToBounds = false
+        pager.delegate = self
+        addSubview(pager)
+        let single = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        let double = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
+        double.numberOfTapsRequired = 2
+        hold.addTarget(self, action: #selector(held(_:)))
+        hold.minimumPressDuration = 0.28
+        hold.delegate = self
+        single.require(toFail: double)
+        single.require(toFail: hold)
+        dismissPan.addTarget(self, action: #selector(panned(_:)))
+        dismissPan.delegate = self
+        pager.panGestureRecognizer.require(toFail: dismissPan)
+        [single, double, hold, dismissPan].forEach(addGestureRecognizer)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private var pageW: CGFloat { bounds.width + gap }
+    private func frame(for i: Int) -> CGRect {
+        CGRect(x: CGFloat(i) * pageW + gap / 2, y: 0, width: bounds.width, height: bounds.height)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0 else { return }
+        let resized = bounds.size != lastSize
+        lastSize = bounds.size
+        pager.frame = CGRect(x: -gap / 2, y: 0, width: pageW, height: bounds.height)   // 页距 18：滚动框比屏幕宽一个页距
+        pager.contentSize = CGSize(width: pageW * CGFloat(max(count, 1)), height: bounds.height)
+        if resized {
+            for (i, c) in cells { c.transform = .identity; c.frame = frame(for: i); c.relayout() }
+            pager.contentOffset = CGPoint(x: CGFloat(current) * pageW, y: 0)
+        }
+        fill()
+    }
+
+    func jump(to i: Int) {
+        guard count > 0 else { return }
+        let i = max(0, min(count - 1, i))
+        current = i
+        if bounds.width > 0 { pager.contentOffset = CGPoint(x: CGFloat(i) * pageW, y: 0) }
+        fill()
+        onIndex(i)
+    }
+    func reload() { for (i, c) in cells { c.host.rootView = makePage(i) } }
+
+    /// 只留当前页和左右各一页
+    private func fill() {
+        guard bounds.width > 0, count > 0 else { return }
+        let want = Set(max(0, current - 1)...min(count - 1, current + 1))
+        for (i, c) in cells where !want.contains(i) { c.removeFromSuperview(); cells[i] = nil }
+        for i in want where cells[i] == nil {
+            let c = ZoomCell(page: makePage(i))
+            c.frame = frame(for: i)
+            c.relayout()
+            c.panGestureRecognizer.require(toFail: dismissPan)
+            pager.addSubview(c)
+            cells[i] = c
+        }
+    }
+
+    // MARK: 翻页（系统分页）
+    func scrollViewDidScroll(_ s: UIScrollView) {
+        guard s === pager, bounds.width > 0, count > 0 else { return }
+        let i = max(0, min(count - 1, Int((s.contentOffset.x / pageW).rounded())))
+        if i != current { current = i; fill(); onIndex(i) }
+    }
+    func scrollViewDidEndDecelerating(_ s: UIScrollView) {
+        guard s === pager else { return }
+        for (i, c) in cells where i != current && c.zoomScale != 1 { c.setZoomScale(1, animated: false) }   // 翻走的那页还原
+    }
+
+    // MARK: 点、双击、按住
+    @objc private func tapped() { if !dismissing { onTap() } }
+    @objc private func doubleTapped(_ g: UITapGestureRecognizer) {
+        guard let c = cells[current] else { return }
+        if c.zoomScale > 1.01 { c.setZoomScale(1, animated: true); return }
+        let p = g.location(in: c.host.view), s: CGFloat = 2.5
+        let w = c.bounds.width / s, h = c.bounds.height / s
+        c.zoom(to: CGRect(x: p.x - w / 2, y: p.y - h / 2, width: w, height: h), animated: true)
+    }
+    @objc private func held(_ g: UILongPressGestureRecognizer) {
+        switch g.state {
+        case .began: pager.isScrollEnabled = false; onHold(true)
+        case .ended, .cancelled, .failed: pager.isScrollEnabled = true; onHold(false)
+        default: break
+        }
+    }
+    override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        if g === dismissPan {
+            guard let c = cells[current], c.zoomScale <= 1.01, !dismissing else { return false }
+            let v = dismissPan.velocity(in: self)
+            return v.y > 0 && v.y > abs(v.x)   // 只认往下的竖拖；横拖交给分页
+        }
+        if g === hold { return canHold() }
+        return super.gestureRecognizerShouldBegin(g)
+    }
+
+    // MARK: 下滑退出（图跟手走、缩小，黑底一起淡；松手系统弹簧回位或顺势滑出）
+    @objc private func panned(_ g: UIPanGestureRecognizer) {
+        guard let c = cells[current] else { return }
+        let t = g.translation(in: self), h = max(bounds.height, 1)
+        switch g.state {
+        case .began:
+            dismissing = true
+        case .changed:
+            let dy = max(0, t.y)
+            let s = 1 - min(dy / h, 1) * 0.35
+            c.transform = CGAffineTransform(translationX: t.x, y: t.y).scaledBy(x: s, y: s)
+            onDrop(dy)
+        case .ended, .cancelled, .failed:
+            let v = g.velocity(in: self), dy = max(0, t.y)
+            if g.state == .ended && ((dy > h * 0.12 && v.y > -150) || v.y > 900) {
+                let s = c.transform.a * 0.92
+                let dur = TimeInterval(min(0.3, max(0.16, (h - dy) / max(v.y, 1))))
+                UIView.animate(withDuration: dur, delay: 0, options: [.curveEaseOut]) {
+                    c.transform = CGAffineTransform(translationX: t.x + v.x * 0.08, y: h * 0.9).scaledBy(x: s, y: s)
+                }
+                withAnimation(.easeOut(duration: dur)) { onDrop(h) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + dur * 0.85) { [weak self] in self?.onTap() }
+            } else {
+                let k = dy > 1 ? min(20, max(-20, -v.y / dy)) : 0
+                UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: k,
+                               options: [.allowUserInteraction]) { c.transform = .identity }
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) { onDrop(0) }
+                dismissing = false
+            }
+        default: break
+        }
+    }
+}
+
+/// 一页能缩放的系统滚动框：捏合、双击、放大后拖都是系统原样
+private final class ZoomCell: UIScrollView, UIScrollViewDelegate {
+    let host: UIHostingController<AnyView>
+    init(page: AnyView) {
+        host = UIHostingController(rootView: page)
+        super.init(frame: .zero)
+        host.safeAreaRegions = []
+        host.view.backgroundColor = .clear
+        delegate = self
+        minimumZoomScale = 1
+        maximumZoomScale = 6
+        bouncesZoom = true
+        showsHorizontalScrollIndicator = false
+        showsVerticalScrollIndicator = false
+        contentInsetAdjustmentBehavior = .never
+        decelerationRate = .fast
+        backgroundColor = .clear
+        addSubview(host.view)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func relayout() {
+        setZoomScale(1, animated: false)
+        host.view.frame = CGRect(origin: .zero, size: bounds.size)
+        contentSize = bounds.size
+    }
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { host.view }
 }
 
 /// 往下拖退出时，宿主按这个把黑底渐淡
