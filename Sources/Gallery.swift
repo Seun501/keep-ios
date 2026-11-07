@@ -206,6 +206,7 @@ struct LiveVideoLayer: UIViewRepresentable {
 /// 角标：同系统相册那枚——实心点＋细圈＋虚线外圈＋LIVE（线性画法，不描边不加阴影；垫一层淡暗底保证亮图上看得清）
 struct LiveBadge: View {
     var compact = false
+    var dim = false   // 发图前没点亮（11-07）
     var body: some View {
         HStack(spacing: 3) {
             ZStack {
@@ -215,7 +216,7 @@ struct LiveBadge: View {
             }
             if !compact { Text("LIVE").font(Theme.mono(9.5, weight: .medium)).tracking(0.6) }
         }
-        .foregroundColor(.white.opacity(0.92))
+        .foregroundColor(.white.opacity(dim ? 0.5 : 0.92))
         .padding(.horizontal, compact ? 4 : 6).padding(.vertical, 3)
         .background(Color.black.opacity(0.26), in: Capsule())
     }
@@ -317,9 +318,14 @@ struct ZoomPager<Page: View>: View {
                 let from = dx + CGFloat(ni - index) * (w + gap)
                 index = ni; dx = from
                 let k = abs(from) > 1 ? max(0, -vel / from) : 0
-                withAnimation(.interpolatingSpring(mass: 1, stiffness: 260, damping: 32, initialVelocity: min(k, 12))) { dx = 0 }
+                // 11-07 寻：还是太快太硬 → 刚度 260→120（临界阻尼 2√k≈22），落定约慢一半，不回弹
+                withAnimation(.interpolatingSpring(mass: 1, stiffness: 120, damping: 22, initialVelocity: min(k, 8))) { dx = 0 }
             case 2:
-                if dy > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 { onTap() }
+                if dy > h * 0.14 || v.predictedEndTranslation.height > h * 0.3 {
+                    // 11-07 寻：下滑退出太僵 → 先顺着手往下滑出去、黑底一起淡掉，再关（原来松手当场关，画面一跳）
+                    withAnimation(.easeOut(duration: 0.22)) { dy = h }
+                    Task { @MainActor in try? await Task.sleep(nanoseconds: 200_000_000); onTap() }
+                }
                 else { withAnimation(flip) { dy = 0 } }
             case 3: lastOffset = offset
             case 0 where quick && !pinching: tapped()

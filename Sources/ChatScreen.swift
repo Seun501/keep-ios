@@ -472,6 +472,7 @@ struct ChatScreen: View {
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
     @State private var pendingLive: [String: URL] = [:]
+    @State private var liveOn: Set<String> = []   // 11-07 寻：Live 默认只发静图，点亮角标才传视频
     @State private var pendingOrig: [String: (Data, String)] = [:]   // 已选的图的原样文件（11-06）   // 已选的图里哪几张是 Live：dataURL → 视频临时文件（11-06）
     @State private var plusOpen = false                 // 「+」菜单（拍照/相册）开着
     @State private var showWeb = false
@@ -657,6 +658,13 @@ struct ChatScreen: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     guard let u = model.msgs.last(where: { $0.role == "user" && !($0.images ?? []).isEmpty })?.images?.first else { return }
                     Task { viewer.image = await StreamImageCache.load(u) }
+                }
+            case "pendinglive":   // 11-07：待发的两张 Live，一张灰着（只发静图）、一张点亮（连视频）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    let us = model.msgs.compactMap { $0.images?.first }.prefix(2)
+                    pending = Array(us)
+                    for u in us { pendingLive[u] = URL(fileURLWithPath: "/dev/null") }
+                    if let last = us.last, us.count > 1 { liveOn.insert(last) }
                 }
             case "voicehold", "voiceedit", "voicecancel":   // 语音条录音态截图：假装录着（字、秒数、音量），edit/cancel 再摆上对应手势的提示
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -940,9 +948,14 @@ struct ChatScreen: View {
                         ForEach(Array(pending.enumerated()), id: \.offset) { i, u in
                             ZStack(alignment: .topTrailing) {
                                 DataImage(src: u, maxW: 64, maxH: 64, radius: 12)
-                                    .overlay(alignment: .bottomLeading) { if pendingLive[u] != nil { LiveBadge(compact: true).scaleEffect(0.85).padding(3) } }   // 认出是 Live（11-06）
+                                    .overlay(alignment: .bottomLeading) {   // 认出是 Live（11-06）；11-07 寻：默认灰着＝只发静图，点一下亮起＝连视频一起传
+                                        if pendingLive[u] != nil {
+                                            LiveBadge(compact: !liveOn.contains(u), dim: !liveOn.contains(u)).scaleEffect(0.85).padding(3)
+                                                .contentShape(Rectangle()).onTapGesture { if liveOn.contains(u) { liveOn.remove(u) } else { liveOn.insert(u) } }
+                                        }
+                                    }
                                     .onTapGesture { composerFocused = false; Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图；09-28 先收键盘，不和大图打架
-                                Button { if let v = pendingLive.removeValue(forKey: u) { try? FileManager.default.removeItem(at: v) }; pendingOrig[u] = nil; pending.remove(at: i) } label: {
+                                Button { if let v = pendingLive.removeValue(forKey: u) { try? FileManager.default.removeItem(at: v) }; liveOn.remove(u); pendingOrig[u] = nil; pending.remove(at: i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
                                 }.buttonStyle(.plain).offset(x: 4, y: -4)
@@ -1110,7 +1123,7 @@ struct ChatScreen: View {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
-                let imgs = pending, vids = pendingLive, ogs = pendingOrig; pending = []; pendingLive = [:]; pendingOrig = [:]   // 09-21 寻：已选的图随语音一起走
+                let imgs = pending, vids = takeLives(), ogs = pendingOrig; pending = []; pendingOrig = [:]   // 09-21 寻：已选的图随语音一起走
                 model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs, videos: vids, origs: ogs)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
@@ -1127,10 +1140,18 @@ struct ChatScreen: View {
         voiceDraft = nil; draft = ""
     }
 
+    /// 只把点亮了的 Live 视频交出去，没点亮的临时文件当场删（11-07）
+    private func takeLives() -> [String: URL] {
+        var out: [String: URL] = [:]
+        for (u, v) in pendingLive { if liveOn.contains(u) { out[u] = v } else { try? FileManager.default.removeItem(at: v) } }
+        pendingLive = [:]; liveOn = []
+        return out
+    }
+
     private func sendNow() {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let imgs = pending, vids = pendingLive, ogs = pendingOrig
-        draft = ""; pending = []; pendingLive = [:]; pendingOrig = [:]
+        let imgs = pending, vids = takeLives(), ogs = pendingOrig
+        draft = ""; pending = []; pendingOrig = [:]
         composerFocused = false
         if let vd = voiceDraft, !t.isEmpty {
             voiceDraft = nil

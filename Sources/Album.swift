@@ -217,8 +217,7 @@ struct AlbumScreen: View {
                 // 大图在同一册里翻（11-06 寻定）：顺序同册内页（新的在前）
                 let list = m.photos(in: p.book ?? "")
                 let at = list.firstIndex { $0.id == p.id }
-                Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) },
-                         onLive: { ph, src, o in if let i = m.photos.firstIndex(where: { $0.id == ph.id }) { m.photos[i].live = src; if let o { m.photos[i].orig = o } } }).zIndex(80) }
+                Lightbox(photos: at == nil ? [p] : list, start: at ?? 0, onClose: { lightbox = nil }, onArchive: { d, n in lightbox = nil; onArchive(d, n) }).zIndex(80) }
         }
         .background(EdgeSwipe(onBack: { if book != nil { book = nil } else { onBack() } }))
         .task {
@@ -331,6 +330,7 @@ struct AlbumScreen: View {
             ForEach(arr) { p in
                 VStack(alignment: .leading, spacing: 0) {
                     FitImage(url: p.url, width: Self.colW, radius: 12)
+                        .overlay(alignment: .topLeading) { if p.liveSrc != nil { LiveBadge(compact: true).padding(7).allowsHitTesting(false) } }   // 11-07 寻：没点开就看得出是 Live
                         .onTapGesture { lightbox = p }
                     Self.caption(p)
                 }
@@ -340,8 +340,8 @@ struct AlbumScreen: View {
     }
     /// 图下的名字 / 简介 / 冲浪来源（两列与独张共用）
     @ViewBuilder static func caption(_ p: Photo) -> some View {
-        Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(14, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text).padding(.top, 8).padding(.horizontal, 2)
-        if let n = p.intro, !n.isEmpty { Text(n).font(Theme.serif(13)).lineSpacing(3.5).foregroundColor(Theme.muted).padding(.top, 3).padding(.horizontal, 2) }
+        Text((p.desc?.isEmpty == false) ? p.desc! : "（还没起名字）").font(Theme.serif(14, weight: .semibold)).lineSpacing(3).foregroundColor(Theme.text).fixedSize(horizontal: false, vertical: true).padding(.top, 8).padding(.horizontal, 2)
+        if let n = p.intro, !n.isEmpty { Text(n).font(Theme.serif(13)).lineSpacing(3.5).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true).padding(.top, 3).padding(.horizontal, 2) }   // 11-07 寻：克写的简介被截半截——两列里文字要能自己长高
         if p.src == "surf", let u = p.surfUrl, let url = URL(string: u) {
             Link("冲浪存的 ↗", destination: url).font(Theme.round(11)).foregroundColor(Theme.muted).padding(.top, 5).padding(.horizontal, 2)
         }
@@ -377,6 +377,7 @@ struct SoloPhoto: View {
                 else { Theme.panel.frame(width: colW, height: (colW * 0.75).rounded()) }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(alignment: .topLeading) { if p.liveSrc != nil { LiveBadge(compact: true).padding(7).allowsHitTesting(false) } }
             .onTapGesture(perform: onTap)
             AlbumScreen.caption(p)
         }
@@ -394,10 +395,8 @@ struct Lightbox: View {
     @State private var index = -1
     private var cur: Int { index < 0 ? min(start, photos.count - 1) : index }
     private var p: Photo { photos[cur] }
-    var onLive: (Photo, String, String?) -> Void = { _, _, _ in }
     @State private var sheet = Preview.on && Preview.screen == "albumlive"   // 截图：信息条里的「Live · …」那行
     @State private var sheetDrag: CGFloat = 0
-    @State private var liveMsg: String? = nil
     @State private var drop: CGFloat = 0   // 往下拖退出的距离（黑底跟着淡）
     var body: some View {
         ZStack {
@@ -439,17 +438,6 @@ struct Lightbox: View {
                                     Text("聊天 #\(n)").foregroundColor(Theme.accent).onTapGesture { onArchive(TimeFmt.localDay(p.ts), n) }
                                 } else { Text("聊天") }
                             }
-                            // 给以前存的图配上 Live（11-06 寻定：只放这里，集中补一次）：从手机相册挑原图，视频配到这张上，静图与编号不动
-                            if p.src != "surf", LiveHash.of(upload: p.img) != nil || Preview.on {
-                                HStack(spacing: 0) {
-                                    Text("Live · ")
-                                    if let msg = liveMsg { Text(msg) }
-                                    else {
-                                        Text(p.liveSrc == nil ? "从相册选原图配上" : "已配上 · 换一段").foregroundColor(Theme.accent)
-                                            .onTapGesture { pickLive(p) }
-                                    }
-                                }
-                            }
                         }
                         .font(Theme.round(11.5)).lineSpacing(6).foregroundColor(Theme.muted).padding(.top, 32)   // 时间/来源离描述空两行（寻验 09-04）
                     }
@@ -474,35 +462,6 @@ struct Lightbox: View {
         }
         .background(EdgeSwipe(onBack: onClose))
     }
-    private func pickLive(_ ph: Photo) {
-        guard let h = LiveHash.of(upload: ph.img) else { return }
-        PhotoPickerBridge.shared.present(max: 1, filter: .livePhotos) { picks in
-            guard let pk = picks.first else { return }
-            guard let v = pk.live else { liveMsg = "这张不是 Live"; clearMsg(); return }
-            liveMsg = "传上去中…"
-            Task {
-                let src = "/uploads/live/\(h).mov", dst = LiveCache.path(src)
-                try? FileManager.default.removeItem(at: dst)
-                try? FileManager.default.moveItem(at: v, to: dst)
-                do {
-                    try await GatewayAPI.uploadLive(file: dst, img: h)
-                    // 同一张顺手存原图（11-07 寻定 A）；原图没传上不算失败，Live 照样配好
-                    var o: String? = nil
-                    if let (d, ext) = pk.orig, let url = URL(string: "/uploads/orig/\(h).\(ext)", relativeTo: Gateway.home),
-                       (try? await GatewayAPI.uploadOrig(data: d, img: h, ext: ext)) != nil {
-                        GatewayImageCache.Disk.write(url, d); o = "/uploads/orig/\(h).\(ext)"
-                    }
-                    liveMsg = "配好了，按住图试试"
-                    onLive(ph, src, o)
-                } catch {
-                    try? FileManager.default.removeItem(at: dst)
-                    liveMsg = "没传上去，再试一次"
-                }
-                clearMsg()
-            }
-        }
-    }
-    private func clearMsg() { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { liveMsg = nil } }
     private func when(_ ts: String?) -> String {
         guard let d = ts.flatMap(TimeFmt.parse) else { return "" }
         let c = Calendar.current
