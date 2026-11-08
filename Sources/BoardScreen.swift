@@ -39,42 +39,41 @@ struct NotesPayload: Decodable {
 final class BoardModel: ObservableObject {
     @Published var notes: [Note] = []
     @Published var unread = 0
-    @Published var tab = "notes"          // tickets | notes | letters
+    @Published var tab = "notes"          // notes | letters（工单是 CC师 和克之间的事，App 不显示，寻 11-08 定）
     @Published var openId: String? = nil
     @Published var loaded = false          // 没拉到之前不显示「还没有帖子」（寻验 32）
     private var landed = false             // 落栏只在第一次拉到网上那份时做（暂存那份不算）
 
     func refresh() async {
         if Preview.on, let d = Preview.json("preview_notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: d) {
-            notes = p.notes; unread = p.unread ?? 0; loaded = true
+            notes = p.notes; unread = Self.plainUnread(p.notes); loaded = true
             if Preview.screen == "boardpop" { openId = "n2" }
             if Preview.screen == "boardreply" { openId = "n1" }
             return
         }
         guard let token = Keychain.token else { return }
         if !loaded, let c = NetCache.load("api/notes"), let p = try? JSONDecoder().decode(NotesPayload.self, from: c) {
-            notes = p.notes; unread = p.unread ?? 0; loaded = true   // 先摆上次存的（10-07），下面拉到新的再换
+            notes = p.notes; unread = Self.plainUnread(p.notes); loaded = true   // 先摆上次存的（10-07），下面拉到新的再换
         }
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/notes"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (d, resp) = try? await URLSession.shared.data(for: r),
               (resp as? HTTPURLResponse)?.statusCode == 200,
               let p = try? JSONDecoder().decode(NotesPayload.self, from: d) else { return }
-        if NetCache.save("api/notes", d) || !loaded { notes = p.notes; unread = p.unread ?? 0 }
+        if NetCache.save("api/notes", d) || !loaded { notes = p.notes; unread = Self.plainUnread(p.notes) }
         if !landed { landed = true; await landOnTab(token) }   // 第一次翻开：哪栏有新进门直接落哪栏（照网页 notesBtn，寻验 44）
         loaded = true
     }
-    /// 照网页：信＞工单；留言有新落默认栏本身
+    /// 未读只数留言（工单不进 App）
+    static func plainUnread(_ ns: [Note]) -> Int { ns.filter { $0.state == "unread" && !$0.isTicket }.count }
+    /// 信有新就落信栏；留言有新落默认栏本身
     private func landOnTab(_ token: String) async {
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/letters"))
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         var lettersBadge = 0
         if let (d, _) = try? await URLSession.shared.data(for: r),
            let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { lettersBadge = j["badge"] as? Int ?? 0 }
-        let unreadTicket = notes.contains { $0.state == "unread" && $0.isTicket }
-        let unreadPlain = notes.contains { $0.state == "unread" && !$0.isTicket }
         if lettersBadge > 0 { tab = "letters" }
-        else if unreadTicket && !unreadPlain { tab = "tickets" }
     }
 
     private func post(_ path: String, _ body: [String: Any]) async -> Bool {
@@ -183,13 +182,7 @@ struct BoardScreen: View {
 
     @ViewBuilder private var list: some View {
         let newest = Array(m.notes.reversed())
-        if m.tab == "tickets" {
-            let tickets = newest.filter { $0.isTicket }
-            let open = tickets.filter { !$0.closed }, done = tickets.filter { $0.closed }
-            if !open.isEmpty { SecTitle("待处理"); ForEach(open) { card($0) } }
-            if !done.isEmpty { SecTitle("已结"); ForEach(done) { card($0) } }
-            if tickets.isEmpty && m.loaded { empty("没有工单——克没报什么毛病。") }
-        } else if m.tab == "letters" {
+        if m.tab == "letters" {
             LettersList(m: lm, onOpen: { letterOpen = $0 }, onLocked: { lockLetter = $0 }, onDraft: { composeDraft = $0; composing = true })
         } else {
             let plain = newest.filter { !$0.isTicket }
@@ -279,7 +272,6 @@ struct BoardScreen: View {
     /// 底部三栏（照 #notesTabs）：白底；选中＝42px 橙正圆托白线图标、往上冒 13px、外圈 4px 页底色；字加粗
     private var tabs: some View {
         HStack(spacing: 0) {
-            tab("tickets", "工单", "tabTicket")
             tab("notes", "留言板", "tabNotes")
             tab("letters", "信件", "tabLetters")
         }
