@@ -140,6 +140,9 @@ final class Fences: NSObject, CLLocationManagerDelegate {
     static let shared = Fences()
     private var mgr: CLLocationManager?
     private var cont: CheckedContinuation<CLLocation?, Never>?
+    private var checkMgr: CLLocationManager?          // 进出圈核实用的那一次定位（和 locate 分开，免得互相顶掉）
+    private var pending: [(String, String)] = []
+    private var fixBg: UIBackgroundTaskIdentifier = .invalid
     private var lastWhere: (String, CLLocation, Date)?
 
     private var manager: CLLocationManager {
@@ -232,19 +235,45 @@ final class Fences: NSObject, CLLocationManagerDelegate {
 
     // MARK: 事件 → 网关
 
-    private func report(_ id: String, _ kind: String) {
+    /// 进出圈先拿一次精确定位再报（11-12 寻定：室内定位会跳，15:55 一秒内报了「离开教学楼」「到了宿舍」，两圈隔 430 米）。
+    /// 坐标＋精度随事件送网关，网关对圈心距离、对不上就不认；同一阵来的几条共用这一次定位，没拿到就照旧报。
+    private func queue(_ id: String, _ kind: String) {
+        if !pending.contains(where: { $0 == (id, kind) }) { pending.append((id, kind)) }   // 系统一次进出会报两遍（didEnter/Exit＋didDetermineState）
+        guard checkMgr == nil else { return }
+        fixBg = UIApplication.shared.beginBackgroundTask(withName: "place-fix")
+        let m = CLLocationManager(); m.delegate = self
+        m.desiredAccuracy = kCLLocationAccuracyBest
+        checkMgr = m
+        m.requestLocation()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in self?.flush(nil) }
+    }
+
+    private func flush(_ loc: CLLocation?) {
+        guard checkMgr != nil else { return }
+        checkMgr = nil
+        let fix = loc.flatMap { $0.horizontalAccuracy >= 0 && Date().timeIntervalSince($0.timestamp) < 120 ? $0 : nil }
+        for (id, kind) in pending { report(id, kind, fix) }
+        pending = []
+        if fixBg != .invalid { UIApplication.shared.endBackgroundTask(fixBg); fixBg = .invalid }
+    }
+
+    private func report(_ id: String, _ kind: String, _ fix: CLLocation?) {
         guard let token = Keychain.token else { return }
         let bg = UIApplication.shared.beginBackgroundTask(withName: "place")   // 后台被拉起只有几秒，先讨一段
         var r = URLRequest(url: Gateway.home.appendingPathComponent("api/places/event")); r.timeoutInterval = 20
         r.httpMethod = "POST"
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try? JSONSerialization.data(withJSONObject: ["id": id, "kind": kind])
+        var body: [String: Any] = ["id": id, "kind": kind]
+        if let fix { body["lat"] = fix.coordinate.latitude; body["lon"] = fix.coordinate.longitude; body["acc"] = fix.horizontalAccuracy }
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: r) { d, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let note = (try? JSONSerialization.jsonObject(with: d ?? Data()) as? [String: Any])?["note"] as? String ?? ""
+            let j = (try? JSONSerialization.jsonObject(with: d ?? Data())) as? [String: Any]
+            let note = j?["note"] as? String ?? "", veto = j?["veto"] != nil
+            let acc = fix.map { " acc=\(Int($0.horizontalAccuracy))" } ?? " nofix"
             Task { @MainActor in
-                PushRegistrar.diag("place: \(kind) code=\(code)\(note.isEmpty ? "" : " note")")
+                PushRegistrar.diag("place: \(kind) code=\(code)\(acc)\(note.isEmpty ? "" : " note")\(veto ? " veto" : "")")
                 UIApplication.shared.endBackgroundTask(bg)
             }
         }.resume()
@@ -252,21 +281,29 @@ final class Fences: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
         if region.identifier == Self.tripRegion { Task { @MainActor in await TripModel.shared.arrived() }; return }
-        Task { @MainActor in self.report(region.identifier, "enter") }
+        Task { @MainActor in self.queue(region.identifier, "enter") }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
-        Task { @MainActor in self.report(region.identifier, "exit") }
+        Task { @MainActor in self.queue(region.identifier, "exit") }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
         guard state != .unknown, region.identifier != Self.tripRegion else { return }
         let kind = state == .inside ? "enter" : "exit"
-        Task { @MainActor in self.report(region.identifier, kind) }
+        Task { @MainActor in self.queue(region.identifier, kind) }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        Task { @MainActor in self.cont?.resume(returning: locations.last); self.cont = nil }
+        let mid = ObjectIdentifier(manager)
+        Task { @MainActor in
+            if let c = self.checkMgr, ObjectIdentifier(c) == mid { self.flush(locations.last); return }
+            self.cont?.resume(returning: locations.last); self.cont = nil
+        }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in self.cont?.resume(returning: nil); self.cont = nil }
+        let mid = ObjectIdentifier(manager)
+        Task { @MainActor in
+            if let c = self.checkMgr, ObjectIdentifier(c) == mid { self.flush(nil); return }
+            self.cont?.resume(returning: nil); self.cont = nil
+        }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
         let note = "place: monitor failed \(region?.identifier ?? "?"): \(error.localizedDescription)"
