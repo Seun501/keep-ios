@@ -508,7 +508,7 @@ struct ChatScreen: View {
         case "books", "booksup": return [.books]
         case "album", "albumbook", "albumlb", "albumlive": return [.album]
         case "mem", "askpick", "memword", "memday", "memedit", "memdayadd", "membk", "membkopen", "membkmon", "membkq", "memmf", "memmfdoc", "memmfpeek", "memrecent", "memchanges": return [.mem]   // askpick：问寻栏选中「不是」并写了补充（10-03）；mem*：记忆页三栏（10-04）
-        case "places", "placesA", "placesB", "placesC", "tripsheet": return [.places]
+        case "places", "tripsheet": return [.places]
         case "ccshi", "ccshiswipe", "ccshirename": return [.ccshi]
         case "ccshisess", "ccshirun", "ccshitop", "ccshiinfo", "ccshimodel", "ccshiask": return [.ccshi, .ccshiSession("p1")]
         case "ccshifiles": return [.ccshi, .ccshiFiles(""), .ccshiFiles("项目")]

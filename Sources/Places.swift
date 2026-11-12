@@ -317,71 +317,6 @@ final class Fences: NSObject, CLLocationManagerDelegate {
 
 // MARK: - 地图
 
-/// 横刻度尺（半径 placesC）：UIScrollView 横拨、松手吸到最近一格，中线下那格就是选中的
-struct RadiusRuler: UIViewRepresentable {
-    @Binding var value: Int
-    let stops: [Int]
-    static let gap: CGFloat = 16
-
-    final class Scroll: UIScrollView {
-        var onLayout: (() -> Void)?
-        override func layoutSubviews() { super.layoutSubviews(); onLayout?() }
-    }
-
-    func makeCoordinator() -> Coord { Coord(self) }
-
-    func makeUIView(context: Context) -> Scroll {
-        let sv = Scroll(); sv.showsHorizontalScrollIndicator = false; sv.decelerationRate = .fast
-        sv.delegate = context.coordinator
-        let content = UIView()
-        let ink = UIColor(Theme.muted)
-        for (i, r) in stops.enumerated() {
-            let major = [100, 500, 1000, 2000].contains(r)
-            let t = UIView(frame: CGRect(x: CGFloat(i) * Self.gap - 0.5, y: 0, width: 1, height: major ? 16 : 9))
-            t.backgroundColor = ink.withAlphaComponent(major ? 0.75 : 0.4)
-            content.addSubview(t)
-            if major {
-                let l = UILabel(); l.text = "\(r)"; l.font = Theme.uiRound(10); l.textColor = ink; l.sizeToFit()
-                l.center = CGPoint(x: CGFloat(i) * Self.gap, y: 29); content.addSubview(l)
-            }
-        }
-        content.frame = CGRect(x: 0, y: 0, width: CGFloat(stops.count - 1) * Self.gap, height: 40)
-        sv.addSubview(content); sv.contentSize = content.frame.size
-        context.coordinator.sv = sv
-        sv.onLayout = { [weak c = context.coordinator] in c?.layout() }
-        return sv
-    }
-
-    func updateUIView(_ sv: Scroll, context: Context) { context.coordinator.parent = self }
-
-    final class Coord: NSObject, UIScrollViewDelegate {
-        var parent: RadiusRuler
-        weak var sv: UIScrollView?
-        private var lastW: CGFloat = 0
-        init(_ p: RadiusRuler) { parent = p }
-
-        func layout() {
-            guard let sv, sv.bounds.width != lastW else { return }
-            lastW = sv.bounds.width
-            sv.contentInset = UIEdgeInsets(top: 0, left: lastW / 2, bottom: 0, right: lastW / 2)
-            let i = parent.stops.firstIndex(of: parent.value) ?? 0
-            sv.contentOffset = CGPoint(x: CGFloat(i) * RadiusRuler.gap - lastW / 2, y: 0)
-        }
-        private func index(_ x: CGFloat) -> Int {
-            let i = Int(((x + (sv?.contentInset.left ?? 0)) / RadiusRuler.gap).rounded())
-            return max(0, min(parent.stops.count - 1, i))
-        }
-        func scrollViewDidScroll(_ sv: UIScrollView) {
-            guard sv.isTracking || sv.isDecelerating else { return }
-            let r = parent.stops[index(sv.contentOffset.x)]
-            if r != parent.value { parent.value = r }
-        }
-        func scrollViewWillEndDragging(_ sv: UIScrollView, withVelocity v: CGPoint, targetContentOffset t: UnsafeMutablePointer<CGPoint>) {
-            t.pointee.x = CGFloat(index(t.pointee.x)) * RadiusRuler.gap - sv.contentInset.left
-        }
-    }
-}
-
 /// 正在编辑的钉（坐标是 GPS 坐标；id 空＝新钉）
 struct PlaceDraft: Equatable {
     var id: String?
@@ -640,11 +575,10 @@ struct PlacesScreen: View {
         draft = PlaceDraft(id: id, lat: lat, lon: lon, radius: radius); name = n; nameF = id == nil
     }
 
-    // 半径：11-12 寻要滑档，三种先截图给她挑——placesA 滑条、placesB 竖滚轮、placesC 横刻度尺；正式包暂用原胶囊
+    // 半径：滑条吸附到档（11-12 寻在滑条／竖滚轮／横刻度尺三张截图里挑了滑条，替掉原来七颗胶囊）
     static let radiusStops: [Int] = Array(stride(from: 100, through: 500, by: 50)) + Array(stride(from: 600, through: 1000, by: 100))
         + Array(stride(from: 1200, through: 2000, by: 200))   // 网关收 100–5000
     static func nearestStop(_ r: Int) -> Int { radiusStops.min(by: { abs($0 - r) < abs($1 - r) }) ?? 100 }
-    private static var radiusStyle: String { Preview.on ? Preview.screen : "places" }
     private let tick = UISelectionFeedbackGenerator()
     private var stopBinding: Binding<Int> {
         Binding(get: { Self.nearestStop(draft?.radius ?? 100) },
@@ -655,46 +589,13 @@ struct PlacesScreen: View {
         Text("\(stopBinding.wrappedValue) 米").font(Theme.round(13, weight: .medium)).monospacedDigit().foregroundColor(Theme.accent)
     }
 
-    @ViewBuilder private var radiusRow: some View {
-        switch Self.radiusStyle {
-        case "placesA":
-            HStack(spacing: 10) {
-                radiusLabel
-                Slider(value: Binding(get: { Double(Self.radiusStops.firstIndex(of: stopBinding.wrappedValue) ?? 0) },
-                                      set: { stopBinding.wrappedValue = Self.radiusStops[Int($0.rounded())] }),
-                       in: 0...Double(Self.radiusStops.count - 1), step: 1).tint(Theme.accent)
-                radiusValue.frame(width: 62, alignment: .trailing)
-            }
-        case "placesB":
-            HStack(spacing: 10) {
-                radiusLabel
-                Picker("", selection: stopBinding) {
-                    ForEach(Self.radiusStops, id: \.self) { Text("\($0) 米").font(Theme.round(16)).tag($0) }
-                }.pickerStyle(.wheel).frame(height: 104).clipped()
-            }
-        case "placesC":
-            VStack(spacing: 6) {
-                HStack { radiusLabel; Spacer(); radiusValue }
-                ZStack(alignment: .top) {
-                    RadiusRuler(value: stopBinding, stops: Self.radiusStops).frame(height: 40)
-                    Capsule().fill(Theme.accent).frame(width: 2, height: 20).allowsHitTesting(false)
-                }
-            }
-        default:
-            HStack(spacing: 6) {
-                Text("半径").font(Theme.round(12)).foregroundColor(Theme.muted)
-                ForEach([100, 150, 200, 300, 500, 1000, 2000], id: \.self) { r in   // 09-12 寻问「能大于 500 米吗」：能，iOS 围栏上限几公里；网关同步放到 5000
-                    let on = draft?.radius == r
-                    Button { draft?.radius = r } label: {
-                        Text("\(r)").font(Theme.round(12, weight: on ? .medium : .regular))
-                            .foregroundColor(on ? .white : Theme.muted)
-                            .padding(.horizontal, 9).frame(height: 24)
-                            .background(on ? Theme.accent : Theme.bg, in: Capsule())
-                    }.buttonStyle(.plain)
-                }
-                Text("米").font(Theme.round(12)).foregroundColor(Theme.muted)
-                Spacer(minLength: 0)
-            }
+    private var radiusRow: some View {
+        HStack(spacing: 10) {
+            radiusLabel
+            Slider(value: Binding(get: { Double(Self.radiusStops.firstIndex(of: stopBinding.wrappedValue) ?? 0) },
+                                  set: { stopBinding.wrappedValue = Self.radiusStops[Int($0.rounded())] }),
+                   in: 0...Double(Self.radiusStops.count - 1), step: 1).tint(Theme.accent)
+            radiusValue.frame(width: 62, alignment: .trailing)
         }
     }
 
