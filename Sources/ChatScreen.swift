@@ -120,7 +120,7 @@ final class ChatModel: ObservableObject {
         if loading { return }          // 开屏时 onAppear 与 scenePhase 各拉一次 → 两次重排两次滚（寻验：界面弹几下）
         loading = true; defer { loading = false }
         if Preview.on, let d = Preview.json("preview"), let conv = try? JSONDecoder().decode(ConversationPayload.self, from: d) {
-            conversationId = conv.id; msgs = conv.messages; renderFrom = Self.startOfLastDays(msgs, days: 2); rebuild(); loadTick += 1
+            conversationId = conv.id; msgs = conv.messages; renderFrom = Self.recentStart(msgs); rebuild(); loadTick += 1
             if Preview.screen == "liveview", let g = Self.gallery(msgs).last(where: { $0.live != nil }) {   // 截图：大图里的 Live 角标＋第几张（11-06）
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { ImageViewer.shared.open(src: g.src, live: g.live) }
             }
@@ -157,17 +157,17 @@ final class ChatModel: ObservableObject {
         let keepFrom = (staged && conv.id == conversationId && conv.messages.count >= msgs.count) ? renderFrom : Int.max
         conversationId = conv.id
         msgs = conv.messages
-        let full = min(Self.startOfLastDays(msgs, days: 2), keepFrom)
+        let full = min(Self.recentStart(msgs), keepFrom)
         lastPulse = Pulse(n: msgs.count, ts: msgs.last?.ts ?? "")
         // 09-21 寻「开屏大半白纸」：两天有七百多条（09-20/21 各三四百），一次排完第一帧要等好几秒。
-        // 冷启动先只排最近 40 条把屏画出来，0.6 秒后再把两天补齐（内容往上长、开屏落定窗会钉回底）。「主页画两天」不变。
+        // 冷启动先只排最近 40 条把屏画出来，0.6 秒后再把两天补齐（内容往上长、开屏落定窗会钉回底）。主页画多少见 recentStart（11-14 起最近约 100 条）。
         if !staged, msgs.count - full > 40 {
             staged = true
             renderFrom = msgs.count - 40
             rebuild(); loadTick += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self else { return }
-                let f = Self.startOfLastDays(self.msgs, days: 2)
+                let f = Self.recentStart(self.msgs)
                 if self.renderFrom > f { self.renderFrom = f; self.rebuild(); self.loadTick += 1 }
             }
             return
@@ -212,27 +212,37 @@ final class ChatModel: ObservableObject {
         knockBusy = false
     }
 
-    func loadOlderDay() {
-        guard renderFrom > 0 else { return }
-        let day = msgs[renderFrom - 1].localDay
-        var from = renderFrom - 1
-        while from > 0, msgs[from - 1].localDay == day { from -= 1 }
-        renderFrom = from
+    /// 11-14 发热崩溃（看门狗 0x8BADF00D：手机热到 serious，切后台那一下要把整页上千个文本框重算一遍，10 秒没算完被杀）：
+    /// 主页不再画两天，只画最近约 100 条；翻到顶自动接 100 条，回到底再收回 100 条。切点挪到她那句上，一轮不劈开。
+    static let pageSize = 100
+
+    private func snapToTurn(_ i: Int) -> Int {
+        var i = max(0, min(i, msgs.count))
+        while i > 0, i < msgs.count, msgs[i].role != "user" { i -= 1 }
+        return i
+    }
+
+    private static func recentStart(_ msgs: [Msg]) -> Int {
+        var i = max(0, msgs.count - pageSize)
+        while i > 0, msgs[i].role != "user" { i -= 1 }
+        return i
+    }
+
+    private var olderAt = Date.distantPast
+    func loadOlder() {
+        guard renderFrom > 0, Date().timeIntervalSince(olderAt) > 0.8 else { return }   // 顶上停一下只接一次
+        olderAt = Date()
+        renderFrom = snapToTurn(renderFrom - Self.pageSize)
         rebuild()
     }
 
-    private static func startOfLastDays(_ msgs: [Msg], days: Int) -> Int {
-        var seen: [String] = []
-        var i = msgs.count - 1
-        while i >= 0 {
-            let d = msgs[i].localDay
-            if !d.isEmpty, !seen.contains(d) {
-                if seen.count >= days { return i + 1 }
-                seen.append(d)
-            }
-            i -= 1
-        }
-        return 0
+    /// 回到底了：翻上去接的那些收回来，页面上常驻的行数不越攒越多
+    func trimToRecent() {
+        guard live == nil, !sending else { return }
+        let f = Self.recentStart(msgs)
+        guard renderFrom < f - Self.pageSize / 2 else { return }
+        renderFrom = f
+        rebuild()
     }
 
     /// 吃吃回显（寻：按时间顺序，别压到新消息下面）：本地小纸条按时间插进正史；
@@ -755,6 +765,8 @@ struct ChatScreen: View {
             // 之后不再跟随，直到她回到底（跳底钮或自己滑回来，离底 < 4）
             if !userUp, let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
             if userUp, gap < 4 { userUp = false }
+            if userUp, y < 400, model.renderFrom > 0 { model.loadOlder() }  // 她自己翻到顶：自动接更早的（11-14）
+            if gap < 4, !userUp { model.trimToRecent() }                  // 回到底：收回去
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
             // 开屏落定窗：内容长高就钉回底（见 settleUntil）
             if Date() < settleUntil, gap > 1, !userUp, !kbAnimating, !composerFocused, path.isEmpty,

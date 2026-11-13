@@ -15,7 +15,7 @@ struct MessageListBody: View {
             // 直播段每长高一行，外层就把当天攒下的几百行逐个重新问一遍尺寸、重新摆；包成一块后外层只有两个孩子，正史这块尺寸没变就整块照旧
             VStack(spacing: 0) {
                 if model.renderFrom > 0 {
-                    Button { model.loadOlderDay() } label: {
+                    Button { model.loadOlder() } label: {
                         Text("· 更早 ·").font(Theme.round(12)).tracking(1).foregroundColor(Theme.muted)
                     }.buttonStyle(.plain).padding(.top, 4)
                 }
