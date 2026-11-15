@@ -1609,26 +1609,26 @@ struct CCToolRow: View {
                 Text(title).font(Theme.mono(12.5)).foregroundColor(Theme.text).lineLimit(open ? nil : 2)
                 if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }
             }
-            VStack(alignment: .leading, spacing: 3) {
-                if let sub {
-                    Text("⎿  " + sub).font(Theme.mono(11.5)).foregroundColor(Theme.muted).lineLimit(open ? nil : 2)
-                }
-                if showOut {
-                    let shown = open ? outLines : Array(outLines.prefix(cap))
-                    let prefix = sub == nil ? "⎿  " : "   "
-                    if shown.isEmpty {
-                        Text(prefix + "(No output)").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
-                    } else {
-                        Text(prefix + shown.joined(separator: "\n   "))
-                            .font(Theme.mono(11.5)).foregroundColor(failed ? Theme.knockText : Theme.text.opacity(0.75))
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                // 「⎿」单占一列，下面的字折行时跟字对齐，不顶回最左（截图 560）
+                Text("⎿  ").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                    .opacity(sub != nil || (showOut && result != nil) || !diffs.isEmpty ? 1 : 0)
+                VStack(alignment: .leading, spacing: 3) {
+                    if let sub {
+                        Text(sub).font(Theme.mono(11.5)).foregroundColor(Theme.muted).lineLimit(open ? nil : 2)
                     }
-                    if !open && outLines.count > cap {
-                        Text("   … +\(outLines.count - cap) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                    if showOut {
+                        let shown = open ? outLines : Array(outLines.prefix(cap))
+                        Text(shown.isEmpty ? "(No output)" : shown.joined(separator: "\n"))
+                            .font(Theme.mono(11.5)).foregroundColor(shown.isEmpty ? Theme.muted : (failed ? Theme.knockText : Theme.text.opacity(0.75)))
+                        if !open && outLines.count > cap {
+                            Text("… +\(outLines.count - cap) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                        }
                     }
-                }
-                if result != nil && !failed {
-                    ForEach(Array(diffs.enumerated()), id: \.offset) { _, d in
-                        CCDiff(rows: d, limit: open ? nil : (isWrite ? 8 : 14)).padding(.top, 3)
+                    if result != nil && !failed {
+                        ForEach(Array(diffs.enumerated()), id: \.offset) { _, d in
+                            CCDiff(rows: d, limit: open ? nil : (isWrite ? 8 : 14)).padding(.top, 3)
+                        }
                     }
                 }
             }
