@@ -1951,9 +1951,13 @@ struct CCWeb: UIViewRepresentable {
         w.isOpaque = false
         w.backgroundColor = .clear
         w.load(doc.data, mimeType: doc.mime, characterEncodingName: "utf-8", baseURL: URL(string: "about:blank")!)
+        // 滚动条染赤陶，同别处（寻 11-15）。WKWebView 自己占着 scrollView 的 delegate，只能盯 contentOffset 补染
+        context.coordinator.obs = w.scrollView.observe(\.contentOffset) { sv, _ in ScrollObserver.Coordinator.tintIndicator(sv) }
         return w
     }
     func updateUIView(_ w: WKWebView, context: Context) {}
+    func makeCoordinator() -> Coord { Coord() }
+    final class Coord { var obs: NSKeyValueObservation? }
 }
 
 // MARK: - 文件页（寻 10-27：看我的记忆、项目文档；「给CC师读」「临时给寻」一来一回）
