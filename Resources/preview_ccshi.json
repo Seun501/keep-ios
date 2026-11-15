@@ -177,5 +177,24 @@
   {"seq": 20, "ts": "2026-10-27T20:41:22+08:00", "kind": "compact", "pre": 496296, "post": 4090},
   {"seq": 21, "ts": "2026-10-27T20:41:22+08:00", "kind": "result", "secs": 82, "out": 0, "turns": 0, "error": false},
   {"seq": 22, "ts": "2026-10-27T20:41:22+08:00", "kind": "status", "state": "idle"}
+ ],
+ "tools": [
+  {"kind": "user", "text": "工具行照 CC 改", "ts": "2026-11-15T23:40:00+08:00", "seq": 1},
+  {"kind": "tool", "id": "a", "name": "Read", "input": "{\"file_path\": \"/home/ccx/Claude/项目/App/Sources/CCShi.swift\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 2},
+  {"kind": "tool", "id": "b", "name": "Grep", "input": "{\"pattern\": \"CCToolRow\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 3},
+  {"kind": "tool_result", "id": "a", "text": "(2021 lines)", "ts": "2026-11-15T23:40:00+08:00", "seq": 4},
+  {"kind": "tool_result", "id": "b", "text": "Sources/CCShi.swift", "ts": "2026-11-15T23:40:00+08:00", "seq": 5},
+  {"kind": "tool", "id": "c", "name": "Bash", "input": "{\"command\": \"grep -n \\\"isCollapsible\\\" /tmp/ccstr.txt | head\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 6},
+  {"kind": "tool_result", "id": "c", "text": "181068:isCollapsible:F", "ts": "2026-11-15T23:40:00+08:00", "seq": 7},
+  {"kind": "tool", "id": "d", "name": "Edit", "input": "{\"file_path\": \"/home/ccx/Claude/项目/App/Sources/CCShi.swift\", \"old_string\": \"struct CCToolGroup: View {\\n    let pairs: [CCToolPair]\\n    @State private var open = false\\n    var body: some View {\", \"new_string\": \"struct CCToolGroup: View {\\n    let pairs: [CCToolPair]\\n    private enum Run { case folded([CCToolPair]); case one(CCToolPair) }\\n    var body: some View {\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 8},
+  {"kind": "tool_result", "id": "d", "text": "The file has been updated successfully.", "ts": "2026-11-15T23:40:00+08:00", "seq": 9},
+  {"kind": "tool", "id": "e", "name": "Bash", "input": "{\"command\": \"git log --oneline -6\", \"description\": \"Show recent commits\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 10},
+  {"kind": "tool_result", "id": "e", "text": "a1a106c 日志：TestFlight 550\n30d6397 日志：11-14 周检汇总巡检\n237210c 日志：11-14 早核 shuttle-1114\n04df465 日志：Keep 发热看门狗崩溃\n3b08489 聊天里写的近况也代录\n52db064 聊天页只画最近约 100 条", "ts": "2026-11-15T23:40:00+08:00", "seq": 11},
+  {"kind": "tool", "id": "f", "name": "Write", "input": "{\"file_path\": \"/home/ccx/Claude/临时给寻/说明.md\", \"content\": \"# 工具行\\n\\n读和搜收成一行，\\n命令露前三行结果，\\n改文件直接画红绿。\\n\\n点一下全开。\\n多的折成 +N lines。\\n还有一行\\n最后一行\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 12},
+  {"kind": "tool_result", "id": "f", "text": "File created successfully", "ts": "2026-11-15T23:40:00+08:00", "seq": 13},
+  {"kind": "tool", "id": "g", "name": "Bash", "input": "{\"command\": \"gh workflow run iOS -f screens=ccshitools\", \"description\": \"Dispatch screenshot build\"}", "ts": "2026-11-15T23:40:00+08:00", "seq": 14},
+  {"kind": "tool_result", "id": "g", "error": true, "text": "HTTP 422: Workflow does not have 'workflow_dispatch' trigger", "ts": "2026-11-15T23:40:00+08:00", "seq": 15},
+  {"kind": "text", "text": "改好了，截图在路上。", "ts": "2026-11-15T23:40:00+08:00", "seq": 16},
+  {"kind": "result", "secs": 42, "ts": "2026-11-15T23:40:00+08:00", "seq": 17}
  ]
 }

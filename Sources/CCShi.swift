@@ -241,7 +241,7 @@ enum CCFmt {
     }
 }
 
-struct CCShiPreview: Decodable { var sessions: [CCSession]; var events: [CCEvent] }
+struct CCShiPreview: Decodable { var sessions: [CCSession]; var events: [CCEvent]; var tools: [CCEvent]? }   // tools：截图班 ccshitools 那页（工具行各种样子）
 
 struct CCShiListScreen: View {
     var onBack: () -> Void
@@ -558,6 +558,7 @@ struct CCBadge: View {
     private func loadPreview() {
         guard let d = Preview.json("preview_ccshi"), let p = try? JSONDecoder().decode(CCShiPreview.self, from: d) else { return }
         meta = p.sessions.first; events = p.events; last = p.events.last?.seq ?? 0
+        if Preview.screen == "ccshitools", let t = p.tools { events = t; last = t.last?.seq ?? 0 }
         if Preview.screen == "ccshiask" { events = p.events.filter { $0.seq <= 15 }; last = 15 }   // 选项卡还没答的样子（截图班用）
         if Preview.screen == "ccshirun" {
             meta?.status = "running"
@@ -1398,8 +1399,8 @@ struct CCRing: View {
     }
 }
 
-// MARK: - 工具组（照 Claude Code：跑完收成一行灰字「Read 1 file, ran 2 shell commands」，点开看每一条；
-// 还在跑的那条照 CC 画：「● 在干嘛 · 45s」下一行「⎿ $ 命令」）
+// MARK: - 工具组（照 Claude Code：读／搜收成一行灰字「Read 1 file, searched for 2 patterns」，点开看每一条；
+// 命令、改文件各自摊开，还在跑的那条「● 在干嘛 running…」下一行「⎿ $ 命令」）
 
 struct CCToolPair { let call: CCEvent; let result: CCEvent? }
 
@@ -1415,31 +1416,61 @@ extension CCToolGroup: Equatable {
 
 struct CCToolGroup: View {
     let pairs: [CCToolPair]
-    @State private var open = false
+    /// 照 Claude Code（11-15 寻）：连着的读文件／搜索／列目录收成一行「Read 2 files, searched for 1 pattern」，
+    /// 跑命令、改文件、别的工具各自摊开（命令露前几行结果，改文件直接画红绿）。CLI 里同一个判断叫 isCollapsible
+    private enum Run { case folded([CCToolPair]); case one(CCToolPair) }
+    private var runs: [Run] {
+        var out: [Run] = []
+        for p in pairs {
+            if p.result != nil, Self.collapsible(p.call) {
+                if case .folded(let ps)? = out.last { out[out.count - 1] = .folded(ps + [p]) } else { out.append(.folded([p])) }
+            } else { out.append(.one(p)) }
+        }
+        return out
+    }
     var body: some View {
-        let running = pairs.filter { $0.result == nil }
-        VStack(alignment: .leading, spacing: 6) {
-            if running.isEmpty {
-                Text(Self.summary(pairs))
-                    .font(Theme.mono(12.5)).foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } }
-                if open { ForEach(Array(pairs.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: p.result) } }
-            } else {
-                // 跑完的几条先收成一行，正在跑的那条摊开
-                let done = pairs.filter { $0.result != nil }
-                if !done.isEmpty { Text(Self.summary(done)).font(Theme.mono(12.5)).foregroundColor(Theme.muted) }
-                ForEach(Array(running.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: nil) }
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(runs.enumerated()), id: \.offset) { _, r in
+                switch r {
+                case .folded(let ps): CCFoldedRun(pairs: ps)
+                case .one(let p): CCToolRow(call: p.call, result: p.result)
+                }
             }
         }
+    }
+    static func collapsible(_ call: CCEvent) -> Bool {
+        switch kind(call.name ?? "") {
+        case "read", "search", "list": return true
+        case "bash": return bashKind(call) != nil
+        default: return false
+        }
+    }
+    /// 只读的 shell 命令（cat／grep／ls 这类，管道每一段都是）也算读或搜，CC 一样收起来
+    static func bashKind(_ call: CCEvent) -> String? {
+        guard let d = call.input?.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let c = j["command"] as? String, !c.contains(">"), !c.contains("$(") else { return nil }
+        let reads: Set<String> = ["cat", "head", "tail", "wc", "file", "stat", "less", "jq", "sort", "uniq", "cut", "tr"]
+        let searches: Set<String> = ["grep", "rg", "find", "egrep", "fgrep", "ag"]
+        let lists: Set<String> = ["ls", "tree", "du"]
+        var k: String?
+        let segs = c.components(separatedBy: CharacterSet(charactersIn: "|;&\n")).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        for seg in segs {
+            let w = String(seg.split(separator: " ").first ?? "")
+            if w == "cd" { continue }
+            if searches.contains(w) { k = "search" }
+            else if lists.contains(w) { if k == nil { k = "list" } }
+            else if reads.contains(w) { if k == nil || k == "list" { k = "read" } }
+            else { return nil }
+        }
+        return k
     }
     /// Read 1 file, ran 2 shell commands（按第一次出现的顺序；首字母大写）
     static func summary(_ ps: [CCToolPair]) -> String {
         var order: [String] = []
         var n: [String: Int] = [:]
         for p in ps {
-            let k = kind(p.call.name ?? "")
+            let k0 = kind(p.call.name ?? "")
+            let k = k0 == "bash" ? (bashKind(p.call) ?? k0) : k0
             if n[k] == nil { order.append(k) }
             n[k, default: 0] += 1
         }
@@ -1474,57 +1505,136 @@ struct CCToolGroup: View {
     }
 }
 
-// MARK: - 工具行（同克那边的工具行一族：线图标＋原名小字）；点开看传了什么、回来了什么；改文件画红绿对比
+// MARK: - 收起的一串读／搜：一行灰字，点开逐条看
+
+struct CCFoldedRun: View {
+    let pairs: [CCToolPair]
+    @State private var open = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(CCToolGroup.summary(pairs))
+                .font(Theme.mono(12.5)).foregroundColor(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } }
+            if open { ForEach(Array(pairs.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: p.result, compact: true) } }
+        }
+    }
+}
+
+// MARK: - 工具行。摊开的照 CC 画：「● 标题」下一行「⎿ 说明」，再露前几行结果（命令）或红绿对比（改文件），多的折成「… +N lines」，点一下全开；
+// compact＝收起那串里的一条（线图标＋原名小字，点开看传了什么、回来了什么）
 
 struct CCToolRow: View {
     let call: CCEvent
     let result: CCEvent?
+    var compact = false
     @State private var open = false
     private var input: [String: Any] {
         guard let s = call.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
         return j
     }
+    private static let green = Theme.dyn(0x7FA36B, 0x8DB57A)
     var body: some View {
+        if compact { compactBody } else { fullBody }
+    }
+
+    // 摊开的那种
+    private var fullBody: some View {
         let j = input
-        VStack(alignment: .leading, spacing: 6) {
-            if call.name == "Bash" {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        Circle().fill(result == nil ? Theme.muted.opacity(0.6) : (result?.error == true ? Theme.knockText : Theme.dyn(0x7FA36B, 0x8DB57A)))
-                            .frame(width: 7, height: 7)
-                        Text((j["description"] as? String) ?? "Bash").font(Theme.mono(12.5)).foregroundColor(Theme.text).lineLimit(2)
-                        if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }
-                    }
-                    Text("⎿  $ " + ((j["command"] as? String) ?? "")).font(Theme.mono(11.5)).foregroundColor(Theme.muted)
-                        .lineLimit(open ? nil : 2).padding(.leading, 14)
+        let n = call.name ?? "?"
+        let file = ((j["file_path"] as? String) ?? "") as NSString
+        let edits: [(String, String)] = {
+            if let o = j["old_string"] as? String, let w = j["new_string"] as? String { return [(o, w)] }
+            if let es = j["edits"] as? [[String: Any]] { return es.compactMap { e in (e["old_string"] as? String).flatMap { o in (e["new_string"] as? String).map { (o, $0) } } } }
+            return []
+        }()
+        let isWrite = n == "Write" && j["content"] is String
+        let title: String = {
+            switch n {
+            case "Bash": return (j["description"] as? String) ?? "Bash"
+            case "Edit", "MultiEdit", "NotebookEdit": return "Update(\(file.lastPathComponent))"
+            case "Write": return "Write(\(file.lastPathComponent))"
+            default:
+                let short = n.hasPrefix("mcp__") ? n.split(separator: "_", omittingEmptySubsequences: true).dropFirst(2).joined(separator: "_") : n
+                let b = Self.brief(j)
+                return b.isEmpty ? short : "\(short)(\(b))"
+            }
+        }()
+        let failed = result?.error == true
+        let diffs = edits.map { CCDiff.lines(old: $0.0, new: $0.1) } + (isWrite ? [CCDiff.lines(old: "", new: (j["content"] as? String) ?? "")] : [])
+        let sub: String? = {
+            if n == "Bash" { return "$ " + ((j["command"] as? String) ?? "") }
+            if result == nil || failed { return nil }
+            if isWrite { let c = ((j["content"] as? String) ?? "").components(separatedBy: "\n").count; return "Wrote \(c) line\(c == 1 ? "" : "s") to \(file.lastPathComponent)" }
+            if !diffs.isEmpty {
+                let all = diffs.flatMap { $0 }
+                let add = all.filter { $0.sign == "+" }.count, del = all.filter { $0.sign == "-" }.count
+                var parts: [String] = []
+                if add > 0 { parts.append("Added \(add) line\(add == 1 ? "" : "s")") }
+                if del > 0 { parts.append((parts.isEmpty ? "Removed" : "removed") + " \(del) line\(del == 1 ? "" : "s")") }
+                return parts.isEmpty ? "No changes" : parts.joined(separator: ", ")
+            }
+            return nil
+        }()
+        let out = (result?.text ?? "").trimmingCharacters(in: .newlines)
+        let outLines = out.isEmpty ? [] : out.components(separatedBy: "\n")
+        let showOut = result != nil && (diffs.isEmpty || failed) && !(n == "Write" && !failed)
+        let cap = 3
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Circle().fill(result == nil ? Theme.muted.opacity(0.6) : (failed ? Theme.knockText : Self.green)).frame(width: 7, height: 7)
+                Text(title).font(Theme.mono(12.5)).foregroundColor(Theme.text).lineLimit(open ? nil : 2)
+                if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                if let sub {
+                    Text("⎿  " + sub).font(Theme.mono(11.5)).foregroundColor(Theme.muted).lineLimit(open ? nil : 2)
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { open.toggle() }
-            } else {
+                if showOut {
+                    let shown = open ? outLines : Array(outLines.prefix(cap))
+                    let prefix = sub == nil ? "⎿  " : "   "
+                    if shown.isEmpty {
+                        Text(prefix + "(No output)").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                    } else {
+                        Text(prefix + shown.joined(separator: "\n   "))
+                            .font(Theme.mono(11.5)).foregroundColor(failed ? Theme.knockText : Theme.text.opacity(0.75))
+                    }
+                    if !open && outLines.count > cap {
+                        Text("   … +\(outLines.count - cap) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                    }
+                }
+                if result != nil && !failed {
+                    ForEach(Array(diffs.enumerated()), id: \.offset) { _, d in
+                        CCDiff(rows: d, limit: open ? nil : (isWrite ? 8 : 14)).padding(.top, 3)
+                    }
+                }
+            }
+            .padding(.leading, 14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { open.toggle() }
+    }
+
+    // 收起那串里的一条
+    private var compactBody: some View {
+        let j = input
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 Image(Self.icon(call.name)).renderingMode(.template).resizable().frame(width: 14, height: 14)
                 Text(call.name ?? "?").font(Theme.mono(12.5))
                 Text(Self.brief(j)).font(Theme.mono(12)).lineLimit(1).truncationMode(.tail)
-                if result == nil { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }   // 还没回来
                 if result?.error == true { Text("失败").font(Theme.round(12)).foregroundColor(Theme.knockText) }
             }
             .foregroundColor(Theme.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { open.toggle() }
-            }
             if open {
                 VStack(alignment: .leading, spacing: 8) {
-                    if call.name == "Bash" {
-                        EmptyView()
-                    } else if let old = j["old_string"] as? String, let new = j["new_string"] as? String {
-                        CCDiff(old: old, new: new)
-                    } else if call.name == "Write", let c = j["content"] as? String {
-                        CCDiff(old: "", new: c)
-                    } else {
-                        Text(call.input ?? "").font(Theme.mono(11.5)).foregroundColor(Theme.text).textSelection(.enabled)
-                    }
-                    if let r = result?.text, !r.isEmpty, j["old_string"] == nil {
+                    Text(call.name == "Bash" ? "$ " + ((j["command"] as? String) ?? "") : (call.input ?? "")).font(Theme.mono(11.5)).foregroundColor(Theme.text).textSelection(.enabled)
+                    if let r = result?.text, !r.isEmpty {
                         Rectangle().fill(Theme.border).frame(height: 1)
                         Text(r).font(Theme.mono(11.5)).foregroundColor(Theme.muted).textSelection(.enabled)
                     }
@@ -1556,12 +1666,14 @@ struct CCToolRow: View {
     }
 }
 
-/// 红绿对比：删掉的行淡红底「-」，加上的行淡绿底「+」；两段共有的头尾只留三行灰色上下文
+/// 红绿对比：删掉的行淡红底「-」，加上的行淡绿底「+」；两段共有的头尾只留三行灰色上下文；limit 之外折成「… +N lines」
 struct CCDiff: View {
-    let old: String
-    let new: String
-    private struct Line: Identifiable { let id: Int; let sign: String; let text: String }
-    private var lines: [Line] {
+    struct Line: Identifiable { let id: Int; let sign: String; let text: String }
+    let rows: [Line]
+    var limit: Int? = nil
+    init(old: String, new: String) { rows = Self.lines(old: old, new: new) }
+    init(rows: [Line], limit: Int? = nil) { self.rows = rows; self.limit = limit }
+    static func lines(old: String, new: String) -> [Line] {
         let a = old.isEmpty ? [String]() : old.components(separatedBy: "\n")
         let b = new.components(separatedBy: "\n")
         var head = 0
@@ -1577,8 +1689,9 @@ struct CCDiff: View {
         return out
     }
     var body: some View {
+        let shown = limit.map { Array(rows.prefix($0)) } ?? rows
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(lines) { l in
+            ForEach(shown) { l in
                 HStack(alignment: .top, spacing: 6) {
                     Text(l.sign).frame(width: 10, alignment: .leading)
                     Text(l.text.isEmpty ? " " : l.text).frame(maxWidth: .infinity, alignment: .leading)
@@ -1587,6 +1700,9 @@ struct CCDiff: View {
                 .foregroundColor(l.sign == " " ? Theme.muted : Theme.text)
                 .padding(.vertical, 1).padding(.horizontal, 4)
                 .background(l.sign == "-" ? Theme.dyn(0xF6DEDA, 0x4A2E2A) : (l.sign == "+" ? Theme.dyn(0xDDEEDD, 0x2B4030) : Color.clear))
+            }
+            if shown.count < rows.count {
+                Text("… +\(rows.count - shown.count) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted).padding(.top, 2)
             }
         }
         .textSelection(.enabled)
