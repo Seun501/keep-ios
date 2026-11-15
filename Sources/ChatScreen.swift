@@ -215,6 +215,7 @@ final class ChatModel: ObservableObject {
     /// 11-14 发热崩溃（看门狗 0x8BADF00D：手机热到 serious，切后台那一下要把整页上千个文本框重算一遍，10 秒没算完被杀）：
     /// 主页不再画两天，只画最近约 100 条；翻到顶自动接 100 条，回到底再收回 100 条。切点挪到她那句上，一轮不劈开。
     static let pageSize = 100
+    static let olderStep = 40     // 往上翻一次接多少（一次 100 条排版要顿一下，11-15 寻：不丝滑）
 
     private func snapToTurn(_ i: Int) -> Int {
         var i = max(0, min(i, msgs.count))
@@ -232,9 +233,13 @@ final class ChatModel: ObservableObject {
     func loadOlder() {
         guard renderFrom > 0, Date().timeIntervalSince(olderAt) > 0.8 else { return }   // 顶上停一下只接一次
         olderAt = Date()
-        renderFrom = snapToTurn(renderFrom - Self.pageSize)
+        // 上面接进一截，内容往上长、偏移不动＝画面换成刚接进来那截的最顶上，还在顶上又接一截……一路跳到最老（11-15 寻）。
+        // 记下接之前的内容高，长高那一刻把偏移补上同样的量，眼前那条原地不动
+        if let sv = ScrollObserver.view("chat") { olderAnchor = (sv.contentSize.height, Date()) }
+        renderFrom = snapToTurn(renderFrom - Self.olderStep)
         rebuild()
     }
+    var olderAnchor: (h: CGFloat, at: Date)?
 
     /// 回到底了：翻上去接的那些收回来，页面上常驻的行数不越攒越多
     func trimToRecent() {
@@ -765,7 +770,15 @@ struct ChatScreen: View {
             // 之后不再跟随，直到她回到底（跳底钮或自己滑回来，离底 < 4）
             if !userUp, let sv = ScrollObserver.view("chat"), sv.isTracking || sv.isDragging, gap > 12 { userUp = true }
             if userUp, gap < 4 { userUp = false }
-            if userUp, y < 400, model.renderFrom > 0 { model.loadOlder() }  // 她自己翻到顶：自动接更早的（11-14）
+            if let a = model.olderAnchor {
+                if Date().timeIntervalSince(a.at) > 1.5 { model.olderAnchor = nil }
+                else if ch > a.h + 1, let sv = ScrollObserver.view("chat") {
+                    model.olderAnchor = nil
+                    sv.contentOffset.y += ch - a.h
+                    return
+                }
+            }
+            if userUp, y < 1500, model.renderFrom > 0 { model.loadOlder() }  // 她自己往上翻：离顶还有一屏多就接更早的（11-14；11-15 提前接、一次 40 条，翻起来不顿）
             if gap < 4, !userUp { model.trimToRecent() }                  // 回到底：收回去
             if Preview.on { dbg = String(format: "y=%.0f ch=%.0f vh=%.0f ", y, ch, vh) + ScrollObserver.note + " | " + ScrollObserver.trail.joined(separator: " ") }
             // 开屏落定窗：内容长高就钉回底（见 settleUntil）
