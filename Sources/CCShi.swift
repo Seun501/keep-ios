@@ -1951,13 +1951,32 @@ struct CCWeb: UIViewRepresentable {
         w.isOpaque = false
         w.backgroundColor = .clear
         w.load(doc.data, mimeType: doc.mime, characterEncodingName: "utf-8", baseURL: URL(string: "about:blank")!)
-        // 滚动条染赤陶，同别处（寻 11-15）。WKWebView 自己占着 scrollView 的 delegate，只能盯 contentOffset 补染
-        context.coordinator.obs = w.scrollView.observe(\.contentOffset) { sv, _ in ScrollObserver.Coordinator.tintIndicator(sv) }
+        // 滚动条染赤陶，同别处（寻 11-15）。WKWebView 自己占着 scrollView 的 delegate，只能盯 contentOffset 补染；
+        // 表格、代码块横滑那根是网页里另起的原生滚动视图（WKChildScrollView），找出来一样盯上
+        let c = context.coordinator
+        c.watch(w.scrollView, root: w.scrollView)
+        for t in [0.6, 1.5] { DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak w] in if let w { c.hookInner(w.scrollView) } } }
         return w
     }
     func updateUIView(_ w: WKWebView, context: Context) {}
     func makeCoordinator() -> Coord { Coord() }
-    final class Coord { var obs: NSKeyValueObservation? }
+    final class Coord {
+        var obs: [ObjectIdentifier: NSKeyValueObservation] = [:]
+        var lastHook = Date.distantPast
+        func watch(_ sv: UIScrollView, root: UIScrollView?) {
+            guard obs[ObjectIdentifier(sv)] == nil else { return }
+            obs[ObjectIdentifier(sv)] = sv.observe(\.contentOffset) { [weak self] sv, _ in
+                ScrollObserver.Coordinator.tintIndicator(sv)
+                if let self, let root, sv === root, Date().timeIntervalSince(self.lastHook) > 0.5 { self.lastHook = Date(); self.hookInner(root) }   // 往下翻到新的表格时补挂（半秒最多翻一遍）
+            }
+        }
+        func hookInner(_ v: UIView) {
+            for s in v.subviews {
+                if let sv = s as? UIScrollView { watch(sv, root: nil) }
+                hookInner(s)
+            }
+        }
+    }
 }
 
 // MARK: - 文件页（寻 10-27：看我的记忆、项目文档；「给CC师读」「临时给寻」一来一回）
@@ -2116,7 +2135,7 @@ enum CCMdHTML {
         code{font:12.5px ui-monospace,Menlo;background:#F2EDE3;padding:1px 4px;border-radius:4px}
         pre{font:12px/1.5 ui-monospace,Menlo;background:#F2EDE3;padding:10px;border-radius:10px;overflow-x:auto;white-space:pre}
         blockquote{margin:.6em 0;padding-left:12px;border-left:2px solid #C96442;color:#9B9183}
-        table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto} td{border:1px solid #E4DDCF;padding:5px 8px;vertical-align:top}
+        table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto} table,pre{scrollbar-color:rgba(217,119,87,.4) transparent} td{border:1px solid #E4DDCF;padding:5px 8px;vertical-align:top}
         ul{padding-left:18px} li{margin:.25em 0} .l{color:#C96442} hr{border:0;border-top:1px solid #E4DDCF}
         """
         return "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><style>\(css)</style>" + out.joined(separator: "\n")
