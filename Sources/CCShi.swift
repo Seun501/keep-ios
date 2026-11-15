@@ -1324,8 +1324,9 @@ struct CCLiveRow: View {
     /// Claude Code 主题里的两色（CLI 里读的：claude rgb(215,119,87)、claudeShimmer rgb(245,149,117)）
     static let claude = Color(red: 215/255, green: 119/255, blue: 87/255)
     static let shimmer = Color(red: 245/255, green: 149/255, blue: 117/255)
+    @State private var chase = TokChase()
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.12)) { ctx in
+        TimelineView(.animation(minimumInterval: 0.05)) { ctx in
             let t = ctx.date.timeIntervalSince1970
             let now = t + offset
             let el = Int(max(0, now - (live.started ?? now)))
@@ -1346,11 +1347,32 @@ struct CCLiveRow: View {
                                                             .init(color: Self.mix(k), location: 1)],
                                                     startPoint: .leading, endPoint: .trailing))
                 Text(offline ? "(reconnecting… · check your network)"
-                     : Self.tail(el, live.out ?? 0, live.doing, thinkFor,
+                     : Self.tail(el, chase.step(to: live.out ?? 0, at: t), live.doing, thinkFor,
                                thought: (live.thought_at.map { now - $0 < 3 } ?? false) ? live.thought : nil, desc: live.desc)).font(Theme.mono(12.5))
                     .foregroundColor(offline ? Self.mix(1) : Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)   // 括号长了折行，别截成「still think…」（截图 439）
             }
+        }
+    }
+    /// ↓ 后面的数照 CC 追着真数跳（CLI 里那段：每 50ms 走一步，差得少一步一点、差得多一步一大截；11-15 寻）
+    final class TokChase {
+        var shown: Double = 0
+        var at: Double = 0
+        func step(to target: Int, at t: Double) -> Int {
+            let goal = Double(target)
+            if at == 0 || goal < shown - 2000 { shown = goal; at = t; return target }   // 头一帧、换了一轮：直接对上
+            var n = Int((t - at) / 0.05)
+            if n <= 0 { return Int(shown.rounded()) }
+            at += Double(n) * 0.05
+            n = min(n, 40)
+            for _ in 0..<n {
+                let d = goal - shown
+                if d == 0 { break }
+                let a = abs(d)
+                let inc = a < 17 ? 0.75 : (a < 50 ? max(2, a * 0.15) : 12.5)   // CC 按字符算 3／15%／50，这里÷4 换成 token
+                shown = d > 0 ? min(shown + inc, goal) : max(shown - inc, goal)
+            }
+            return Int(shown.rounded())
         }
     }
     /// (1m 23s · ↓5.7k tokens · still thinking)
