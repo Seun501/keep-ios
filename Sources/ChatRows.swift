@@ -158,11 +158,34 @@ struct CapToFirst: Layout {
     }
 }
 
+/// 点开过的思考块（11-16 寻：生成中点开看，说完落成正史那条换了一个视图，又折回去了）：按思考开头的字认同一块。
+enum ThinkOpened {
+    private static var keys: [String] = []
+    private static func key(_ t: String) -> String {
+        String(t.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+    }
+    static func has(_ t: String) -> Bool {
+        let k = key(t)
+        return !k.isEmpty && keys.contains { k.hasPrefix($0) }
+    }
+    static func set(_ t: String, _ on: Bool) {
+        let k = key(t)
+        guard !k.isEmpty else { return }
+        keys.removeAll { k.hasPrefix($0) || $0.hasPrefix(k) }   // 直播时点开记的是当时那几个字，后来长了照样认
+        if on { keys.append(k); if keys.count > 30 { keys.removeFirst() } }
+    }
+}
+
 /// 思考块：小时钟＋「Thought for Ns」，默认折叠，点开看全文。
 struct ThinkView: View {
     let text: String
     let label: String
-    @State private var open = false
+    @State private var open: Bool
+    init(text: String, label: String) {
+        self.text = text
+        self.label = label
+        _open = State(initialValue: ThinkOpened.has(text))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // 照网页 .think-head：小时钟＋一行字，没有箭头；整行都能点。不用 Button——按下会闪一下高亮（寻验 44：别花里胡哨）
@@ -178,6 +201,7 @@ struct ThinkView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 open.toggle()
+                ThinkOpened.set(text, open)
                 NotificationCenter.default.post(name: .keepThinkToggled, object: nil)   // 折回去时若在底，列表要跟着落回底（寻验 44）
             }
             if open {
