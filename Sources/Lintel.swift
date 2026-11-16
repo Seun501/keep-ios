@@ -12,7 +12,7 @@ final class LintelModel: ObservableObject {
 
     func refresh() async {
         if Preview.on {   // 截图班：门楣与天气角用假的（09-15 加，看像素字）
-            text = "今天风大，围巾戴上。"; wxLabel = "多云"; wxCode = 2; wxTemp = 24; wxDay = true; return
+            text = "今天风大，围巾戴上。/晚上早点回宿舍。"; wxLabel = "多云"; wxCode = 2; wxTemp = 24; wxDay = true; return
         }
         async let l: [String: Any]? = fetch("api/lintel")
         async let w: [String: Any]? = fetch("api/weather")
@@ -91,8 +91,13 @@ struct LintelText: UIViewRepresentable {
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return tv
     }
+    /// 他拿「/」当换行写（11-16 寻：门楣换行失灵）：字中间的斜杠换成换行、斜杠不画；数字中间的（1/2）不动
+    static func lines(_ t: String) -> String {
+        t.replacingOccurrences(of: #"(?<![0-9０-９])\s*[/／]\s*(?![0-9０-９])"#, with: "\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     func updateUIView(_ tv: UITextView, context: Context) {
-        tv.attributedText = NSAttributedString(string: text, attributes: [
+        tv.attributedText = NSAttributedString(string: Self.lines(text), attributes: [
             .font: Theme.uiCJK(15.5, weight: .semibold), .kern: 0.8, .foregroundColor: UIColor(Theme.accent)])
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: UITextView, context: Context) -> CGSize? {
