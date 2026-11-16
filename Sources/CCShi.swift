@@ -1600,7 +1600,9 @@ struct CCToolRow: View {
             return nil
         }()
         let out = (result?.text ?? "").trimmingCharacters(in: .newlines)
-        let outLines = out.isEmpty ? [] : out.components(separatedBy: "\n")
+        // 权限闸打回来的那一大段是写给 CC师 看的，收起时照 CLI 只留一行原因（11-16 寻：原来是这么长一段）
+        let denied = failed ? Self.deniedReason(out) : nil
+        let outLines = out.isEmpty ? [] : ((denied != nil && !open) ? [denied!] : out.components(separatedBy: "\n"))
         let showOut = result != nil && (diffs.isEmpty || failed) && !(n == "Write" && !failed)
         let cap = 3
         return VStack(alignment: .leading, spacing: 3) {
@@ -1647,7 +1649,7 @@ struct CCToolRow: View {
                 Image(Self.icon(call.name)).renderingMode(.template).resizable().frame(width: 14, height: 14)
                 Text(call.name ?? "?").font(Theme.mono(12.5))
                 Text(Self.brief(j)).font(Theme.mono(12)).lineLimit(1).truncationMode(.tail)
-                if result?.error == true { Text("失败").font(Theme.round(12)).foregroundColor(Theme.knockText) }
+                if result?.error == true { Text(Self.deniedReason(result?.text ?? "") != nil ? "被拦下" : "失败").font(Theme.round(12)).foregroundColor(Theme.knockText) }
             }
             .foregroundColor(Theme.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1666,6 +1668,17 @@ struct CCToolRow: View {
                 .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
+    }
+    /// 「Permission … denied by the Claude Code auto mode classifier. Reason: [X]. …」→「Denied by auto mode · X」；别的报错给 nil
+    static func deniedReason(_ t: String) -> String? {
+        guard t.hasPrefix("Permission for this action was denied") || t.hasPrefix("Permission to use") else { return nil }
+        var why = ""
+        if let r = t.range(of: "Reason: ") {
+            let rest = t[r.upperBound...]
+            why = String(rest.prefix { $0 != "\n" }.split(separator: ". ", maxSplits: 1).first ?? "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "[]. "))
+        }
+        return why.isEmpty ? "Denied" : "Denied by auto mode · \(why)"
     }
     static func icon(_ n: String?) -> String {
         switch n ?? "" {
