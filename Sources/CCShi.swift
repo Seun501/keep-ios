@@ -1552,6 +1552,7 @@ struct CCToolRow: View {
     let result: CCEvent?
     var compact = false
     @State private var open = false
+    @State private var outWidth: CGFloat = 0   // 结果那栏的宽：收起时按屏上折出来的行算 3 行（照 CLI 按终端宽折，11-19 寻定）
     private var input: [String: Any] {
         guard let s = call.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
         return j
@@ -1621,10 +1622,14 @@ struct CCToolRow: View {
                     }
                     if showOut {
                         let shown = open ? outLines : Array(outLines.prefix(cap))
+                        let rows = open ? 0 : Self.screenRows(outLines, width: outWidth)
                         Text(shown.isEmpty ? "(No output)" : shown.joined(separator: "\n"))
                             .font(Theme.mono(11.5)).foregroundColor(shown.isEmpty ? Theme.muted : (failed ? Theme.knockText : Theme.text.opacity(0.75)))
-                        if !open && outLines.count > cap {
-                            Text("… +\(outLines.count - cap) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                            .lineLimit(open ? nil : cap)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(GeometryReader { g in Color.clear.onAppear { outWidth = g.size.width }.onChange(of: g.size.width) { outWidth = $0 } })
+                        if !open && rows > cap {
+                            Text("… +\(rows - cap) lines").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
                         }
                     }
                     if result != nil && !failed {
@@ -1690,6 +1695,20 @@ struct CCToolRow: View {
         }
     }
     /// 工具名后面跟一截要点：Bash 的说明/命令、Read/Edit 的文件名、Grep 的关键词
+    /// 这些行在这么宽的栏里折出几行（宽还没量到就按原行数）；只量前 200 行，再多的一行算一行
+    static func screenRows(_ lines: [String], width: CGFloat) -> Int {
+        guard width > 20 else { return lines.count }
+        let font = Theme.uiMono(11.5)
+        var n = max(0, lines.count - 200)
+        for l in lines.prefix(200) {
+            if l.isEmpty { n += 1; continue }
+            let h = (l as NSString).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                                 options: [.usesLineFragmentOrigin], attributes: [.font: font], context: nil).height
+            n += max(1, Int((h / font.lineHeight).rounded()))
+        }
+        return n
+    }
+
     static func brief(_ j: [String: Any]) -> String {
         if let c = j["description"] as? String { return c }
         if let p = j["file_path"] as? String { return (p as NSString).lastPathComponent }
