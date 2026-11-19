@@ -254,7 +254,7 @@ struct ArchiveScreen: View {
         guard let d = m.day, !m.q.isEmpty else { return [] }
         var out: [String] = []
         for e in d.entries {
-            let n = Self.count(m.q, in: (e.text ?? "") + "\n" + (e.thinking ?? "") + (e.note ?? ""))
+            let n = Self.count(m.q, in: (e.text ?? "") + "\n" + (e.note ?? ""))
             for _ in 0..<n { out.append(e.id) }
         }
         return out
@@ -325,7 +325,7 @@ struct ArchiveScreen: View {
     }
     private func aiMsg(_ e: ArchEntry) -> Msg {
         var msg = Msg(role: "assistant", content: e.text, ts: e.ts, images: e.images)
-        msg.thinking = e.thinking; msg.thinkSecs = e.thinkSecs
+        msg.thinkSecs = e.thinkSecs   // 思考链不显示（寻 11-19 定）
         return msg
     }
 

@@ -37,7 +37,7 @@ struct Msg: Decodable {
         role = (try? c.decode(String.self, forKey: .role)) ?? ""
         content = try? c.decode(String.self, forKey: .content)
         ts = try? c.decode(String.self, forKey: .ts)
-        thinking = try? c.decode(String.self, forKey: .thinking)
+        // 克的思考链前端不显示（寻 11-19 定）：不解码，正史照存
         thinkSecs = try? c.decode(Double.self, forKey: .thinkSecs)
         wake = try? c.decode(Bool.self, forKey: .wake)
         toolCalls = try? c.decode([ToolCall].self, forKey: .toolCalls)

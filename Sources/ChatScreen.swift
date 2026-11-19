@@ -54,11 +54,7 @@ struct LiveTurn {
         events += 1
         switch ev {
         case .start, .voice: break   // voice 由 ChatModel 直接写进她那条气泡
-        case .thinking(let t):
-            if !seg.text.isEmpty { newSegment() }
-            var s = seg
-            if s.thinkStart == nil { s.thinkStart = Date() }
-            s.thinking += t; seg = s
+        case .thinking: break   // 思考链不显示（寻 11-19 定）
         case .tool(let name):
             finishThought()
             if !seg.thinking.isEmpty || !seg.text.isEmpty {
