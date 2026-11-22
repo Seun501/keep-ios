@@ -458,7 +458,7 @@ struct MDCode: View {
     let code: String
     var round = false
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal, showsIndicators: round) {
             Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
                 .textSelection(.enabled)
                 .padding(.horizontal, 12).padding(.vertical, 10)
@@ -488,6 +488,13 @@ struct HScrollTint: UIViewRepresentable {
             sv.horizontalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 2, bottom: 1, right: 2)
             Self.tint(sv)
             obs = sv.observe(\.contentOffset, options: [.new]) { sv, _ in Self.tint(sv) }
+            if Preview.on, Preview.screen.hasPrefix("ccshimd") {   // 截图班：滑动条平时不露，隔一会儿闪一下好截到颜色
+                for k in 0..<16 { DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(k) * 0.5) { [weak sv] in
+                    guard let sv else { return }
+                    if k == 0 { sv.contentOffset.x = min(60, max(0, sv.contentSize.width - sv.bounds.width)) }
+                    sv.flashScrollIndicators(); Self.tint(sv)
+                } }
+            }
         }
         static func tint(_ sv: UIScrollView) {
             let c = Theme.uiScrollTint.withAlphaComponent(0.4)

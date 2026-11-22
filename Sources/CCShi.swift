@@ -35,6 +35,7 @@ struct CCEvent: Decodable {
     var name: String?
     var input: String?
     var id: String?          // tool / tool_result 的配对号
+    var parent: String?      // 子代理里的工具：它所在那次 Agent 调用的 id（11-22，收进那条 Agent 行，不单独成行）
     var error: Bool?
     var secs: Double?
     var state: String?
@@ -604,6 +605,9 @@ private enum CCBlock: Identifiable {
         var out: [CCBlock] = []
         var results: [String: CCEvent] = [:]
         for e in evs where e.kind == "tool_result" { if let i = e.id { results[i] = e } }
+        // 子代理的工具（带 parent）收进父 Agent 那条行里；找不到父行的就不画（11-22 寻，照 Claude Code）
+        var subs: [String: [CCToolPair]] = [:]
+        for e in evs where e.kind == "tool" { if let par = e.parent { subs[par, default: []].append(CCToolPair(call: e, result: e.id.flatMap { results[$0] })) } }
         let lastTodo = evs.last(where: { $0.kind == "tool" && $0.name == "TodoWrite" })?.seq
         let lastUser = evs.last(where: { $0.kind == "user" })?.seq ?? 0
         // 压缩那轮（10-28 寻：三截不好看）：「（压缩上下文）」气泡、压缩行、空收尾行并成一条分隔线，照 Claude Code 的「═══ Conversation compacted ═══」。
@@ -634,11 +638,11 @@ private enum CCBlock: Identifiable {
             case "thinking": out.append(.thinking(e))
             case "tool":
                 let n = e.name ?? ""
-                if hidden.contains(n) { continue }
+                if hidden.contains(n) || e.parent != nil { continue }
                 if n.hasSuffix("__ask") { out.append(.ask(e, e.seq < lastUser)) }
                 else if n == "TodoWrite" { out.append(.todo(e, e.seq == lastTodo)) }
                 else {
-                    let pair = CCToolPair(call: e, result: e.id.flatMap { results[$0] })
+                    let pair = CCToolPair(call: e, result: e.id.flatMap { results[$0] }, subs: e.id.flatMap { subs[$0] } ?? [])
                     if case .tools(let ps)? = out.last { out[out.count - 1] = .tools(ps + [pair]) } else { out.append(.tools([pair])) }
                 }
             case "text": out.append(.text(e))
@@ -810,7 +814,7 @@ struct CCShiSessionScreen: View {
 
     /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次
     private func toBottom(_ proxy: ScrollViewProxy) {
-        if Preview.on && ["ccshitop", "ccshimdtop"].contains(Preview.screen) { return }
+        if Preview.on && ["ccshitop", "ccshimdtop", "ccshimdagent"].contains(Preview.screen) { return }
         let pin = self.pin
         guard pin.atBottom else { return }
         for d in [0.05, 0.3, 0.8] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { if pin.atBottom { proxy.scrollTo("bottom", anchor: .bottom) } } }
@@ -1345,12 +1349,12 @@ enum CCMD {
                 let indent = CGFloat(depth) * 18
                 let markW: CGFloat = mark == nil ? 16 : 24
                 let ns = NSMutableAttributedString()
+                let lh = size * 1.6
                 ns.append(NSAttributedString(string: (mark ?? (depth == 0 ? "•" : "◦")) + "\t",
-                                             attributes: [.font: Theme.uiRound(size, casW: 360), .foregroundColor: Theme.uiMuted]))
+                                             attributes: [.font: Theme.uiRound(size, casW: 360), .foregroundColor: Theme.uiMuted,
+                                                          .baselineOffset: max(0, (lh - Theme.uiRound(size).lineHeight) / 2)]))
                 ns.append(MD.ns(t + nl, base: Theme.uiRound(size, casW: 360), bold: Theme.uiRound(size, weight: .semibold),
                                 mono: Theme.uiMono(13, casW: 360), color: color, lineHeight: 1.6))
-                let lh = size * 1.6
-                ns.addAttribute(.baselineOffset, value: max(0, (lh - Theme.uiRound(size).lineHeight) / 2), range: NSRange(location: 0, length: 1))
                 let p = NSMutableParagraphStyle()
                 p.minimumLineHeight = lh; p.maximumLineHeight = lh
                 p.firstLineHeadIndent = indent + 2
@@ -1541,7 +1545,7 @@ struct CCRing: View {
 // MARK: - 工具组（照 Claude Code：读／搜收成一行灰字「Read 1 file, searched for 2 patterns」，点开看每一条；
 // 命令、改文件各自摊开，还在跑的那条「● 在干嘛 running…」下一行「⎿ $ 命令」）
 
-struct CCToolPair { let call: CCEvent; let result: CCEvent? }
+struct CCToolPair { let call: CCEvent; let result: CCEvent?; var subs: [CCToolPair] = [] }   // subs：Agent 行底下子代理的每一步
 
 // 打字时整页会重算（10-30 寻：打字卡）：这两种行内容没变就不重画（比 seq 和长度，不比闭包）
 extension CCTextRow: Equatable {
@@ -1549,7 +1553,8 @@ extension CCTextRow: Equatable {
 }
 extension CCToolGroup: Equatable {
     static func == (a: CCToolGroup, b: CCToolGroup) -> Bool {
-        a.pairs.count == b.pairs.count && zip(a.pairs, b.pairs).allSatisfy { $0.call.seq == $1.call.seq && $0.result?.seq == $1.result?.seq }
+        a.pairs.count == b.pairs.count && zip(a.pairs, b.pairs).allSatisfy { $0.call.seq == $1.call.seq && $0.result?.seq == $1.result?.seq
+            && $0.subs.count == $1.subs.count && $0.subs.filter { $0.result != nil }.count == $1.subs.filter { $0.result != nil }.count }
     }
 }
 
@@ -1572,7 +1577,8 @@ struct CCToolGroup: View {
             ForEach(Array(runs.enumerated()), id: \.offset) { _, r in
                 switch r {
                 case .folded(let ps): CCFoldedRun(pairs: ps)
-                case .one(let p): CCToolRow(call: p.call, result: p.result)
+                case .one(let p):
+                    if CCAgentRow.isAgent(p.call) { CCAgentRow(pair: p) } else { CCToolRow(call: p.call, result: p.result) }
                 }
             }
         }
@@ -1641,6 +1647,75 @@ struct CCToolGroup: View {
         case "WebFetch", "WebSearch": return "web"
         default: return name.replacingOccurrences(of: "mcp__", with: "")
         }
+    }
+}
+
+// MARK: - 子代理（Agent／Task）：主对话只一行「Agent · 描述」，下面露最近两步＋「+N more tool uses」；跑完换成 Done＋结果摘要。
+// 点一下展开全部子步骤（每步照收起那串的样子，再点看传了什么、回来了什么）和完整结果（11-22 寻，照 Claude Code）
+
+struct CCAgentRow: View {
+    let pair: CCToolPair
+    @State private var open: Bool
+    init(pair: CCToolPair) {
+        self.pair = pair
+        _open = State(initialValue: Preview.on && Preview.screen == "ccshimdagent" && pair.call.id == "a1")   // 截图班：展开那页
+    }
+    static func isAgent(_ e: CCEvent) -> Bool { e.name == "Agent" || e.name == "Task" }
+    private static let green = Theme.dyn(0x7FA36B, 0x8DB57A)
+    private static func step(_ p: CCToolPair) -> String {
+        guard let s = p.call.input, let d = s.data(using: .utf8), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return p.call.name ?? "?" }
+        var b = (j["description"] as? String) ?? ((j["command"] as? String).map { String($0.split(separator: "\n", omittingEmptySubsequences: true).first ?? "") } ?? CCToolRow.brief(j))
+        b = b.trimmingCharacters(in: .whitespaces)
+        return b.isEmpty ? (p.call.name ?? "?") : "\(p.call.name ?? "?")(\(b))"
+    }
+    var body: some View {
+        let j: [String: Any] = {
+            guard let s = pair.call.input, let d = s.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+            return o
+        }()
+        let desc = (j["description"] as? String) ?? ""
+        let kind = (j["subagent_type"] as? String).flatMap { ["general-purpose", ""].contains($0) ? nil : $0 }
+        let done = pair.result != nil
+        let failed = pair.result?.error == true
+        let subs = pair.subs
+        let out = (pair.result?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let gist = out.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }.prefix(2).joined(separator: " ")
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Circle().fill(!done ? Theme.muted.opacity(0.6) : (failed ? Theme.knockText : Self.green)).frame(width: 7, height: 7)
+                Text((kind ?? "Agent") + (desc.isEmpty ? "" : " · " + desc)).font(Theme.mono(12.5)).foregroundColor(Theme.text).lineLimit(open ? nil : 2)
+                if !done { Text("running…").font(Theme.mono(11.5)).foregroundColor(CCLiveRow.claude).fixedSize() }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("⎿  ").font(Theme.mono(11.5)).foregroundColor(Theme.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    if open {
+                        ForEach(Array(subs.enumerated()), id: \.offset) { _, p in CCToolRow(call: p.call, result: p.result, compact: true) }
+                        if done {
+                            Text(out.isEmpty ? "(No output)" : out).font(Theme.mono(11.5))
+                                .foregroundColor(failed ? Theme.knockText : Theme.text.opacity(0.75)).textSelection(.enabled)
+                                .padding(.top, subs.isEmpty ? 0 : 4)
+                        }
+                    } else if !done {
+                        if subs.isEmpty { Text("Initializing…").font(Theme.mono(11.5)).foregroundColor(Theme.muted) }
+                        ForEach(Array(subs.suffix(2).enumerated()), id: \.offset) { _, p in
+                            Text(Self.step(p)).font(Theme.mono(11.5)).foregroundColor(Theme.text.opacity(0.75)).lineLimit(1).truncationMode(.tail)
+                        }
+                        if subs.count > 2 { Text("+\(subs.count - 2) more tool use" + (subs.count - 2 > 1 ? "s" : "")).font(Theme.mono(11.5)).foregroundColor(Theme.muted) }
+                    } else {
+                        Text(failed ? "Failed" : "Done" + (subs.isEmpty ? "" : " (\(subs.count) tool use" + (subs.count > 1 ? "s" : "") + ")"))
+                            .font(Theme.mono(11.5)).foregroundColor(failed ? Theme.knockText : Theme.muted)
+                        if !gist.isEmpty {
+                            Text(gist).font(Theme.mono(11.5)).foregroundColor(Theme.text.opacity(0.75)).lineLimit(2).truncationMode(.tail)
+                        }
+                    }
+                }
+            }
+            .padding(.leading, 14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } }
     }
 }
 
