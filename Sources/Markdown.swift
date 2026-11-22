@@ -462,9 +462,40 @@ struct MDCode: View {
             Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
                 .textSelection(.enabled)
                 .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(round ? HScrollTint() : nil)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(uiColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27)), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// 横向滚动区的系统滑动条染成赤陶 40%（同主页竖条、网页 rgba(217,119,87,.4)；11-22 寻：CC师 页表格底下那根是灰的）。
+/// 挂在滚动内容的 background 里：进窗口后顺着父视图找到那只 UIScrollView，每次滚动补染（指示条是私有子视图、会重建）
+struct HScrollTint: UIViewRepresentable {
+    func makeUIView(context: Context) -> HookView {
+        let v = HookView(); v.isUserInteractionEnabled = false
+        v.onWindow = { [weak v] in if let v { context.coordinator.attach(v) } }
+        return v
+    }
+    func updateUIView(_ uiView: HookView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator {
+        private var obs: NSKeyValueObservation?
+        func attach(_ v: UIView) {
+            var s: UIView? = v.superview
+            while let cur = s, !(cur is UIScrollView) { s = cur.superview }
+            guard obs == nil, let sv = s as? UIScrollView else { return }
+            sv.horizontalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 2, bottom: 1, right: 2)
+            Self.tint(sv)
+            obs = sv.observe(\.contentOffset, options: [.new]) { sv, _ in Self.tint(sv) }
+        }
+        static func tint(_ sv: UIScrollView) {
+            let c = Theme.uiScrollTint.withAlphaComponent(0.4)
+            for v in sv.subviews where String(describing: type(of: v)).contains("ScrollIndicator") {
+                if v.subviews.isEmpty { if v.backgroundColor != c { v.backgroundColor = c; v.layer.cornerRadius = min(v.bounds.width, v.bounds.height) / 2 } }
+                for pill in v.subviews where pill.backgroundColor != c { pill.backgroundColor = c }
+            }
+        }
     }
 }
 
@@ -493,7 +524,7 @@ struct MDTable: View {
     }
     var body: some View {
         let ws = widths
-        ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal, showsIndicators: round) {
             VStack(spacing: 0) {
                 row(head, ws, header: true)
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
@@ -503,6 +534,8 @@ struct MDTable: View {
             }
             .overlay(Rectangle().stroke(Theme.border, lineWidth: 1))
             .padding(1)
+            .padding(.bottom, round ? 7 : 0)              // CC师 页：滑动条落在表格底下，不压最后一行
+            .background(round ? HScrollTint() : nil)
         }
     }
     private func row(_ r: [String], _ ws: [CGFloat], header: Bool) -> some View {

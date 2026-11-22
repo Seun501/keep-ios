@@ -241,7 +241,7 @@ enum CCFmt {
     }
 }
 
-struct CCShiPreview: Decodable { var sessions: [CCSession]; var events: [CCEvent]; var tools: [CCEvent]? }   // tools：截图班 ccshitools 那页（工具行各种样子）
+struct CCShiPreview: Decodable { var sessions: [CCSession]; var events: [CCEvent]; var tools: [CCEvent]?; var md: [CCEvent]? }   // tools：截图班 ccshitools 那页（工具行各种样子）；md：ccshimd* 那几页（正文 markdown 样例）
 
 struct CCShiListScreen: View {
     var onBack: () -> Void
@@ -559,6 +559,14 @@ struct CCBadge: View {
         guard let d = Preview.json("preview_ccshi"), let p = try? JSONDecoder().decode(CCShiPreview.self, from: d) else { return }
         meta = p.sessions.first; events = p.events; last = p.events.last?.seq ?? 0
         if Preview.screen == "ccshitools", let t = p.tools { events = t; last = t.last?.seq ?? 0 }
+        if Preview.screen.hasPrefix("ccshimd"), let t = p.md {   // ccshimd 底部、ccshimdtop 顶部、ccshimddark 深色底部（截图班用）
+            events = t; last = t.last?.seq ?? 0
+            if Preview.screen == "ccshimddark" {
+                DispatchQueue.main.async {
+                    for case let sc as UIWindowScene in UIApplication.shared.connectedScenes { sc.windows.forEach { $0.overrideUserInterfaceStyle = .dark } }
+                }
+            }
+        }
         if Preview.screen == "ccshiask" { events = p.events.filter { $0.seq <= 15 }; last = 15 }   // 选项卡还没答的样子（截图班用）
         if Preview.screen == "ccshirun" {
             meta?.status = "running"
@@ -802,7 +810,7 @@ struct CCShiSessionScreen: View {
 
     /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次
     private func toBottom(_ proxy: ScrollViewProxy) {
-        if Preview.on && Preview.screen == "ccshitop" { return }
+        if Preview.on && ["ccshitop", "ccshimdtop"].contains(Preview.screen) { return }
         let pin = self.pin
         guard pin.atBottom else { return }
         for d in [0.05, 0.3, 0.8] { DispatchQueue.main.asyncAfter(deadline: .now() + d) { if pin.atBottom { proxy.scrollTo("bottom", anchor: .bottom) } } }
@@ -1205,11 +1213,22 @@ final class CCPin { var atBottom = true }
 struct CCTextRow: View {
     let event: CCEvent
     let onRewind: () -> Void
-    enum Part { case text(String); case table([String], [[String]]); case code(String) }
+    enum Part { case text(String); case table([String], [[String]]); case code(String); case quote(String); case rule }
     /// md 表格单拎出来画成格子（10-28 寻：表格要渲染），其余照旧一份富文本。判表格同 MD.parse：带 | 的行＋下一行是 |---| 分隔
+    /// 引用（> 开头的连续行）带左边一道细线、分割线（--- / *** / ___）画成一根细线，也单拎（11-22 寻：标题不像标题、排版不好看）
     static func split(_ t: String) -> [Part] {
         let lines = t.components(separatedBy: "\n")
         func isSep(_ l: String) -> Bool { l.contains("-") && l.contains("|") && l.allSatisfy { " |:-".contains($0) } }
+        func isRule(_ l: String) -> Bool {
+            let s = l.replacingOccurrences(of: " ", with: "")
+            guard s.count >= 3, let f = s.first, "-*_".contains(f) else { return false }
+            return s.allSatisfy { $0 == f }
+        }
+        func quote(_ l: String) -> String? {
+            let s = l.drop { $0 == " " }
+            guard s.hasPrefix(">") else { return nil }
+            var r = String(s.dropFirst()); if r.hasPrefix(" ") { r.removeFirst() }; return r
+        }
         func cells(_ l: String) -> [String] {
             var r = l.trimmingCharacters(in: .whitespaces)
             if r.hasPrefix("|") { r.removeFirst() }
@@ -1217,22 +1236,30 @@ struct CCTextRow: View {
             return r.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
         }
         var out: [Part] = [], buf: [String] = [], i = 0
+        func flush() { if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] } }
         while i < lines.count {
             // ``` 围栏代码（10-30 寻：原来不认，三个反引号原样印出来）；没收尾的围栏照普通字
             if lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```"),
                let end = lines[(i + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }) {
-                if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] }
+                flush()
                 out.append(.code(lines[(i + 1)..<end].joined(separator: "\n"))); i = end + 1; continue
             }
             if lines[i].contains("|"), i + 1 < lines.count, isSep(lines[i + 1]) {
-                if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))); buf = [] }
+                flush()
                 let head = cells(lines[i]); var rows: [[String]] = []; i += 2
                 while i < lines.count, lines[i].contains("|"), !lines[i].trimmingCharacters(in: .whitespaces).isEmpty { rows.append(cells(lines[i])); i += 1 }
                 out.append(.table(head, rows)); continue
             }
+            if isRule(lines[i]) { flush(); out.append(.rule); i += 1; continue }
+            if quote(lines[i]) != nil {
+                flush()
+                var q: [String] = []
+                while i < lines.count, let s = quote(lines[i]) { q.append(s); i += 1 }
+                out.append(.quote(q.joined(separator: "\n"))); continue
+            }
             buf.append(lines[i]); i += 1
         }
-        if !buf.isEmpty { out.append(.text(buf.joined(separator: "\n"))) }
+        flush()
         return out
     }
     var body: some View {
@@ -1240,15 +1267,105 @@ struct CCTextRow: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(Self.split(t).enumerated()), id: \.offset) { _, part in
                 switch part {
-                case .text(let s):
-                    RichText(attr: MD.ns(s, base: Theme.uiRound(16, casW: 360), bold: Theme.uiRound(16, weight: .semibold),
-                                         mono: Theme.uiMono(13, casW: 360), color: Theme.uiText, lineHeight: 1.6, paraSpacing: 8))
+                case .text(let s): RichText(attr: CCMD.ns(s))
                 case .table(let h, let r): MDTable(head: h, rows: r, round: true)
                 case .code(let c): MDCode(code: c, round: true)
+                case .quote(let s):
+                    HStack(alignment: .top, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 1.5).fill(Theme.border).frame(width: 3)
+                        RichText(attr: CCMD.ns(s, color: Theme.uiMuted))
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                case .rule: Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 4)
                 }
             }
         }
         .padding(.vertical, 8)   // 长按＝选字复制（RichText 自带，同克那页）；整段复制和分叉挂在这一轮的收尾行后面（CCEndActions）
+    }
+}
+
+/// CC师 正文的块级 markdown（11-22 寻）：原来整段只走行内（MD.ns），# 标题、- 列表原样印出来。
+/// 这里逐行认：#～#### 标题（加大加粗、上面空一点）、- / * 列表（• 悬挂缩进）、1. 列表（原序号、悬挂缩进），前导空格算嵌套；
+/// 其余行照旧 16/1.6、段后 8。合成一份富文本，选字照样跨行。
+enum CCMD {
+    private static let cache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 300; return c }()
+    static func ns(_ s: String, color: UIColor = Theme.uiText) -> NSAttributedString {
+        let key = "\(color.hash)|\(s)" as NSString
+        if let c = cache.object(forKey: key) { return c }
+        let r = build(s, color: color)
+        cache.setObject(r, forKey: key)
+        return r
+    }
+    private static func heading(_ l: String) -> (Int, String)? {
+        var n = 0; var idx = l.startIndex
+        while idx < l.endIndex, l[idx] == "#" { n += 1; idx = l.index(after: idx) }
+        guard n >= 1, n <= 6, idx < l.endIndex, l[idx] == " " || l[idx] == "\t" else { return nil }
+        let t = String(l[idx...]).trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : (min(n, 4), t)
+    }
+    /// 列表项：(缩进层, 记号, 正文)；记号 nil＝无序
+    private static func item(_ l: String) -> (Int, String?, String)? {
+        let lead = l.prefix { $0 == " " || $0 == "\t" }
+        let depth = min(3, lead.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) } / 2)
+        let r = l.dropFirst(lead.count)
+        func body(_ from: Substring.Index) -> String? {
+            guard from < r.endIndex, r[from] == " " || r[from] == "\t" else { return nil }
+            return String(r[from...]).trimmingCharacters(in: .whitespaces)
+        }
+        if let f = r.first, f == "-" || f == "*" || f == "+", let b = body(r.index(after: r.startIndex)) { return (depth, nil, b) }
+        if let dot = r.firstIndex(where: { $0 == "." || $0 == ")" }), dot > r.startIndex, r[..<dot].count <= 3,
+           r[..<dot].allSatisfy(\.isNumber), let b = body(r.index(after: dot)) { return (depth, String(r[...dot]), b) }
+        return nil
+    }
+    private static func build(_ s: String, color: UIColor) -> NSAttributedString {
+        let size: CGFloat = 16
+        let out = NSMutableAttributedString()
+        let lines = s.components(separatedBy: "\n")
+        func restyle(_ ns: NSAttributedString, _ f: (NSMutableParagraphStyle) -> Void) -> NSAttributedString {
+            let m = NSMutableAttributedString(attributedString: ns)
+            m.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: m.length)) { v, r, _ in
+                let p = (v as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                f(p); m.addAttribute(.paragraphStyle, value: p, range: r)
+            }
+            return m
+        }
+        for (i, line) in lines.enumerated() {
+            let nl = i < lines.count - 1 ? "\n" : ""
+            let nextIsItem = i + 1 < lines.count && item(lines[i + 1]) != nil
+            if let (lv, t) = heading(line) {
+                // # 20 / ## 18.5 / ### 17 / #### 16，一律半粗；上空 12～6，下空 4（照网页 h1–h4 的递减，克制些）
+                let hs: CGFloat = [20, 18.5, 17, 16][lv - 1]
+                let ns = MD.ns(t + nl, base: Theme.uiRound(hs, weight: .semibold), bold: Theme.uiRound(hs, weight: .bold),
+                               mono: Theme.uiMono(hs * 0.82, weight: .semibold, casW: 500), color: color, lineHeight: 1.4)
+                out.append(restyle(ns) { p in
+                    p.paragraphSpacingBefore = i == 0 ? 0 : [12, 10, 8, 6][lv - 1]
+                    p.paragraphSpacing = 4
+                })
+            } else if let (depth, mark, t) = item(line) {
+                let indent = CGFloat(depth) * 18
+                let markW: CGFloat = mark == nil ? 16 : 24
+                let ns = NSMutableAttributedString()
+                ns.append(NSAttributedString(string: (mark ?? (depth == 0 ? "•" : "◦")) + "\t",
+                                             attributes: [.font: Theme.uiRound(size, casW: 360), .foregroundColor: Theme.uiMuted]))
+                ns.append(MD.ns(t + nl, base: Theme.uiRound(size, casW: 360), bold: Theme.uiRound(size, weight: .semibold),
+                                mono: Theme.uiMono(13, casW: 360), color: color, lineHeight: 1.6))
+                let lh = size * 1.6
+                ns.addAttribute(.baselineOffset, value: max(0, (lh - Theme.uiRound(size).lineHeight) / 2), range: NSRange(location: 0, length: 1))
+                let p = NSMutableParagraphStyle()
+                p.minimumLineHeight = lh; p.maximumLineHeight = lh
+                p.firstLineHeadIndent = indent + 2
+                p.headIndent = indent + markW + 2
+                p.tabStops = [NSTextTab(textAlignment: .left, location: indent + markW + 2)]
+                p.defaultTabInterval = 0
+                p.paragraphSpacing = nextIsItem ? 3 : 8
+                ns.addAttribute(.paragraphStyle, value: p, range: NSRange(location: 0, length: ns.length))
+                out.append(ns)
+            } else {
+                out.append(MD.ns(line + nl, base: Theme.uiRound(size, casW: 360), bold: Theme.uiRound(size, weight: .semibold),
+                                 mono: Theme.uiMono(13, casW: 360), color: color, lineHeight: 1.6, paraSpacing: 8))
+            }
+        }
+        return out
     }
 }
 
