@@ -870,13 +870,16 @@ struct CCShiSessionScreen: View {
             if let f = onSidebar { CCSidebarButton(action: f) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
-                if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
+                if let q = quotaFlash { quotaRow(q) }
+                else if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
             }
             Spacer()
             Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: m.meta?.ctx ?? 0, max: ctxMax) }
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6).frame(minHeight: 44)
+        .onChange(of: m.events.last(where: { $0.kind == "quota" })?.seq) { _ in flashQuota() }
+        .onAppear { if Preview.screen == "ccshiquota" { quotaFlash = "Approaching 5-hour limit · 90% · resets 20:00" } else { flashQuota() } }
         .task { if let u = await CCShiAPI.usage() { usageLine = u.line } else if Preview.on { usageLine = "5h 36% · week 6% · Sat" } }
     }
     /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
@@ -1150,6 +1153,21 @@ struct CCShiSessionScreen: View {
     }
 
     @State private var bgOpen = false
+    @State private var quotaFlash: String? = nil
+    /// 额度到 90%（网关插一条 quota 事件）：会话名下那行亮 12 秒黄字再撤（11-24 寻：照 Claude Code，英文）；十分钟前的旧事件不再亮
+    private func flashQuota() {
+        guard let e = m.events.last(where: { $0.kind == "quota" }), let t = e.text,
+              let at = e.ts.flatMap(TimeFmt.parse), Date().timeIntervalSince(at) < 600 else { return }
+        withAnimation(.easeOut(duration: 0.2)) { quotaFlash = t }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { if quotaFlash == t { withAnimation(.easeOut(duration: 0.4)) { quotaFlash = nil } } }
+    }
+    private func quotaRow(_ t: String) -> some View {
+        Text(t).font(Theme.mono(10.5)).foregroundColor(Color(red: 0.70, green: 0.50, blue: 0.02))
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Color(red: 0.96, green: 0.78, blue: 0.20).opacity(0.18), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .padding(.leading, -6).lineLimit(1)
+            .transition(.opacity)
+    }
     /// 照 Claude Code「1 shell still running」：后台还有任务在跑；点开看是哪几个
     private func bgRow(_ bg: [CCBgTask]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
