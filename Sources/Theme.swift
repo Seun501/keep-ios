@@ -63,6 +63,7 @@ enum Theme {
     }
     /// 克正文那一套 UIFont：Lora 可变字体按 wght 轴实例化（网页 500）→ 中文级联 Noto Serif CJK SC 同档 → 系统宋体。
     static func uiSerif(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let size = size * padK
         let songti = UIFontDescriptor(name: "Songti SC", size: size)
         let cjk = descriptor(cjkName(weight), size: size, fallback: songti)
         var lora = descriptor("Lora-Regular", size: size, fallback: cjk)
@@ -74,16 +75,20 @@ enum Theme {
     static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font { Font(uiSerif(size, weight: weight)) }
     /// 中文回落字体本体（量自然行高用）
     static func uiCJK(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let size = size * padK
         UIFont(name: cjkName(weight), size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
     }
     /// 寻的汉字＝系统字（苹方）。09-21 查明：之前写的 STSongti-SC 在 iPhone 上根本没有，一直落到这里——她看惯的就是苹方，明写。
     static func uiUserCJK(_ size: CGFloat, bold: Bool = false) -> UIFont {
+        let size = size * padK
         UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
     // MARK: Cascadia Mono（寻 09-13）：界面和她的气泡里的字母、数字、英文标点走 Cascadia Mono。
     // 打包的是只含 ASCII（U+0020–007E）的子集（38 KB，可变字重 200–700）——其余字符它根本没有，
     // 一律落回后面的级联字体，所以汉字、中文标点、弯引号、emoji 都不会被它抢走。
     // 克的正文/思考链（uiSerif/cjk）和 Georgia 装饰字、Snell 花体不走这里（寻定：3、6 不换）。
+    /// iPad 上字整体大一档（11-24 寻：平板上看着小）；所有 ui*/cjk 字体入口乘它，iPhone 是 1
+    static let padK: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 1.12 : 1
     private static let casName = "CascadiaMono-Regular"
     private static func casDescriptor(_ size: CGFloat, wght: CGFloat, cascade: [UIFontDescriptor]) -> UIFontDescriptor? {
         guard UIFont(name: casName, size: size) != nil else { return nil }   // 字体没打进包就原样用后面的
@@ -116,6 +121,7 @@ enum Theme {
     }
     /// 界面通用字（原来的 .system）：Cascadia → 苹果系统字同字重
     static func uiSys(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
+        let size = size * padK
         let sys = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
         guard let d = casDescriptor(size, wght: casWght(weight), cascade: [sys.fontDescriptor]) else { return sys }
         return UIFont(descriptor: d, size: size)
@@ -124,6 +130,7 @@ enum Theme {
     /// 圆体那一档（时间戳、纸条、搜索框）：Cascadia → 系统圆体
     /// casW：只调 Cascadia 那层的字重（汉字不变）。CC师 正文用 360，同寻气泡（10-30 寻：英文比汉字粗）
     static func uiRound(_ size: CGFloat, weight: Font.Weight = .regular, casW: CGFloat? = nil) -> UIFont {
+        let size = size * padK
         let base = UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
         let rd = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
         guard let d = casDescriptor(size, wght: casW ?? casWght(weight), cascade: [rd]) else { return UIFont(descriptor: rd, size: size) }
@@ -131,6 +138,7 @@ enum Theme {
     }
     /// 等宽（工具行、代码块）：Cascadia → SF Mono
     static func uiMono(_ size: CGFloat, weight: Font.Weight = .regular, casW: CGFloat? = nil) -> UIFont {
+        let size = size * padK
         let mono = UIFont.monospacedSystemFont(ofSize: size, weight: uiWeight(weight))
         guard let d = casDescriptor(size, wght: casW ?? casWght(weight), cascade: [mono.fontDescriptor]) else { return mono }
         return UIFont(descriptor: d, size: size)
@@ -139,13 +147,15 @@ enum Theme {
 
     /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia → 汉字苹方；粗体 Cascadia 600 → 苹方半粗
     static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
-        let cjk = uiUserCJK(size, bold: bold).fontDescriptor
+        let size = size * padK
+        let cjk = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular).fontDescriptor   // 同 uiUserCJK（那边自己会再乘 padK，这里直接写）
         // 寻 09-13 晚：400 档挨着汉字显粗、320 又太细 → 360（可变字重 200–700 之间随调）
         guard let d = casDescriptor(size, wght: bold ? 600 : 360, cascade: [cjk]) else { return UIFont(descriptor: cjk, size: size) }
         return UIFont(descriptor: d, size: size)
     }
     /// 纯中文场合（门楣、题）：Noto 打头。
     static func cjk(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let size = size * padK
         let songti = UIFontDescriptor(name: "Songti SC", size: size)
         let d = descriptor(cjkName(weight), size: size, fallback: songti)
             .addingAttributes([.cascadeList: [songti]])
@@ -153,6 +163,7 @@ enum Theme {
     }
     /// 相册标题那一套（网页 Georgia, 'Lora', 'Songti SC', 'Noto Serif SC'，600）：英文 Georgia 粗 → 中文思源宋 SemiBold → 系统宋体
     static func georgiaCJK(_ size: CGFloat) -> Font {
+        let size = size * padK
         let songti = UIFontDescriptor(name: "Songti SC", size: size)
         let cjk = descriptor(cjkName(.semibold), size: size, fallback: songti)
         let g = descriptor("Georgia-Bold", size: size, fallback: cjk).addingAttributes([.cascadeList: [cjk, songti]])

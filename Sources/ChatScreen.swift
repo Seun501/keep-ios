@@ -1313,7 +1313,9 @@ final class PhotoPickerBridge: NSObject, PHPickerViewControllerDelegate {
         p.view.tintColor = Theme.uiScrollTint
         self.done = done
         // 09-21 寻：选图页整页升起来又慢又重——改成半屏抽屉（同网页里那种），往上拖到全屏；相册的格子照旧
-        if let sp = p.sheetPresentationController {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            p.modalPresentationStyle = .formSheet   // iPad：居中整张表单，半屏档在横屏上会被截一半（11-24 寻：怪怪的）
+        } else if let sp = p.sheetPresentationController {
             sp.detents = [.medium(), .large()]
             sp.selectedDetentIdentifier = .medium
             sp.prefersGrabberVisible = true

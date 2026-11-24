@@ -692,7 +692,7 @@ struct CCShiSessionScreen: View {
     @State private var webDoc: CCWebDoc? = nil
     @State private var pin = CCPin()   // 她在不在底部（不触发重绘）
     @State private var far = false     // 离底了：亮回底钮（只在变化时写，10-28）
-    @State private var shown = 120     // 消息流只排最近这么多段（非懒列表，10-28）
+    @State private var shown = UIDevice.isPad ? 50 : 120     // 消息流只排最近这么多段（非懒列表，10-28）；iPad 的老芯片排不动太多，先 50（11-24 寻：卡）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
     private var showBack = true    // iPad 分栏里不画返回（11-24）

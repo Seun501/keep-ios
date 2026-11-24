@@ -32,7 +32,7 @@ struct Composer: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let ph = UILabel()
-        ph.text = placeholder; ph.font = UIFont.systemFont(ofSize: Self.size)   // 占位照原样系统字（寻验 43；09-13 定：占位符不走 Cascadia）
+        ph.text = placeholder; ph.font = UIDevice.current.userInterfaceIdiom == .pad ? Theme.uiUser(Self.size) : UIFont.systemFont(ofSize: Self.size)   // 占位照原样系统字（寻验 43；09-13 定：占位符不走 Cascadia）；iPad 系统字被「粗体文本」加粗，改同正文那套（11-24 寻嫌粗）
         ph.textColor = UIColor(red: 0x7E/255, green: 0x7D/255, blue: 0x77/255, alpha: 1)
         ph.tag = 9; ph.sizeToFit(); ph.frame.origin = .zero
         tv.addSubview(ph)

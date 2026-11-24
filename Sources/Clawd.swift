@@ -284,6 +284,7 @@ struct ScrollObserver: UIViewRepresentable {
                     DispatchQueue.main.asyncAfter(deadline: .now() + dur + 1.0) { [weak self] in
                         guard let self else { return }
                         self.kbBusy = false
+                        DispatchQueue.main.async { fire() }   // 收完键盘偏移留在内容底下（视口放高、没人拨偏移）＝底下一大片空：落定后钳一次（11-24 寻 iPad 报「不贴底」）
                         // 键盘落定后把底距重新记一次：起键盘那阵 lastDist 可能停在压矮前后的旧数（sim-84 收键盘时 d=301），下次起键盘会误判
                         if let sv = self.sv {
                             let inset = sv.adjustedContentInset

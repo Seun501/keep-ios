@@ -5,21 +5,28 @@ import SwiftUI
 /// 文件页盖在整屏上，一层层点进去、左上角退回。推送只收 CC师 的（登记带 scope=ccshi，网关发克的推送跳过这台）。
 struct CCShiPadRoot: View {
     @State private var sel: String? = Preview.on && Preview.screen != "ipad" ? "p1" : nil
-    @State private var side = Preview.screen != "ipadwide"   // 会话栏开着没有
+    @State private var side = Preview.screen != "ipadwide"   // 会话栏开着没有（按钮、滑动动画看它）
+    @State private var inset: CGFloat? = nil                  // 对话那边让出来的宽：不跟着动画变（每帧重排整条消息流会卡，11-24 寻），滑完/滑前一次到位
     @State private var files: [String] = Preview.screen == "ipadfiles" ? [""] : []
     @ObservedObject private var viewer = ImageViewer.shared
-    private func toggle() { withAnimation(.easeOut(duration: 0.22)) { side.toggle() } }
+    /// 开：会话栏先盖着对话滑进来，滑完对话再一次让位；关：对话先一次铺满（被会话栏挡着看不见），会话栏再滑走
+    private func toggle() {
+        let noAnim = Transaction(animation: nil)
+        if side {
+            withTransaction(noAnim) { inset = 0 }
+            withAnimation(.easeOut(duration: 0.24)) { side = false }
+        } else {
+            withAnimation(.easeOut(duration: 0.24)) { side = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) { if side { withTransaction(noAnim) { inset = nil } } }
+        }
+    }
 
     var body: some View {
         GeometryReader { g in
             ZStack {
                 Theme.bg.ignoresSafeArea()
-                HStack(spacing: 0) {
-                    if side {
-                        CCShiListScreen(onBack: {}, onOpen: { sel = $0 }, onFiles: { files = [""] }, selected: sel, showBack: false, onSidebar: toggle, tinted: true)
-                            .frame(width: min(340, max(290, g.size.width * 0.32)))   // 底色深一档代替分隔线（寻不喜欢描边）
-                            .transition(.move(edge: .leading))
-                    }
+                let w = min(340, max(290, g.size.width * 0.32))
+                ZStack(alignment: .topLeading) {
                     ZStack {
                         if let id = sel {
                             CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: side ? nil : toggle, readWidth: 780).id(id)   // 读的一栏不铺满、顶栏顶满（Claude App 同款）
@@ -34,6 +41,11 @@ struct CCShiPadRoot: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.leading, inset ?? (side ? w : 0))
+                    CCShiListScreen(onBack: {}, onOpen: { sel = $0 }, onFiles: { files = [""] }, selected: sel, showBack: false, onSidebar: toggle, tinted: true)
+                        .frame(width: w)   // 底色深一档代替分隔线（寻不喜欢描边）；收起时整块滑出屏外，不拆不建
+                        .offset(x: side ? 0 : -w)
+                        .allowsHitTesting(side)
                 }
                 ForEach(Array(files.enumerated()), id: \.offset) { i, p in
                     CCFilesScreen(path: p, onBack: { files.removeLast() }, onOpenDir: { files.append($0) }).id(p)
