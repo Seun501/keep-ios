@@ -2,7 +2,7 @@ import SwiftUI
 import Photos
 
 // MARK: - 「+」面板（11-24 寻定「学小鲸鱼」，克那边和 CC师 页全换）
-// 点「+」在输入卡下面展开：上面一排最近的照片（直接勾，勾几张就「添加 n 张」），下面拍照／相册／文件几个大格。
+// 点「+」在输入卡下面展开：上面一排最近的照片（勾一张就进输入框，再点或在输入框里点 × 就撤），下面拍照／相册／文件几个大格。
 // 读照片要「照片」权限（第一次打开面板时问；只给了部分照片也行，列的就是那部分）。
 
 /// 相册里最近的照片（只读）
@@ -69,30 +69,23 @@ final class RecentPhotos: ObservableObject {
 struct AttachPanel: View {
     var max: Int                              // 还能加几张
     var live = true                           // 克那边带 Live 视频与原图；CC师 只要静图
+    var selected: [String]                    // 已经进了输入框的那几张（asset 号；输入框里点 × 删掉，这边的勾跟着消失）
     var onCamera: () -> Void
     var onAlbum: () -> Void
     var onFile: (() -> Void)? = nil           // CC师 页才有「文件」
-    var onAdd: ([PhotoPickerBridge.Picked]) -> Void
+    var onPick: (String, PhotoPickerBridge.Picked) -> Void
+    var onUnpick: (String) -> Void
     @ObservedObject private var lib = RecentPhotos.shared
-    @State private var sel: [String] = Preview.screen.hasSuffix("plussel") ? ["p1", "p3"] : []   // 勾选顺序（asset 号）
-    @State private var adding = false
+    @State private var loading: Set<String> = []                                              // 勾了还在取原图的
+    @State private var demo: Set<String> = Preview.screen.hasSuffix("plussel") ? ["p0", "p1"] : []   // 截图班的假勾
 
     var body: some View {
         VStack(spacing: 12) {
             strip
-            if sel.isEmpty {
-                HStack(spacing: 10) {
-                    tile("拍照", "camera", onCamera)
-                    tile("相册", "photo.on.rectangle", onAlbum)
-                    if let f = onFile { tile("文件", "paperclip", f) }
-                }
-            } else {
-                Button { add() } label: {
-                    Text(adding ? "正在取…" : "添加 \(sel.count) 张").font(Theme.round(16, weight: .medium)).foregroundColor(.white)
-                        .frame(maxWidth: .infinity).frame(height: 52)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain).disabled(adding)
+            HStack(spacing: 10) {
+                tile("拍照", "camera", onCamera)
+                tile("相册", "photo.on.rectangle", onAlbum)
+                if let f = onFile { tile("文件", "paperclip", f) }
             }
         }
         .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 10)
@@ -104,7 +97,7 @@ struct AttachPanel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(0..<9) { i in
-                        cell(id: "p\(i)") { RoundedRectangle(cornerRadius: 0).fill(Color(hue: 0.08 + Double(i) * 0.05, saturation: 0.25, brightness: 0.85)) }
+                        cell(id: "p\(i)", asset: nil) { RoundedRectangle(cornerRadius: 0).fill(Color(hue: 0.08 + Double(i) * 0.05, saturation: 0.25, brightness: 0.85)) }
                     }
                 }
             }
@@ -117,7 +110,7 @@ struct AttachPanel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
                     ForEach(lib.assets, id: \.localIdentifier) { a in
-                        cell(id: a.localIdentifier) { AssetThumb(asset: a) }
+                        cell(id: a.localIdentifier, asset: a) { AssetThumb(asset: a) }
                     }
                 }
             }
@@ -125,23 +118,32 @@ struct AttachPanel: View {
         }
     }
 
-    private func cell<C: View>(id: String, @ViewBuilder _ content: () -> C) -> some View {
-        let n = sel.firstIndex(of: id).map { $0 + 1 }
+    private func cell<C: View>(id: String, asset: PHAsset?, @ViewBuilder _ content: () -> C) -> some View {
+        let on = selected.contains(id) || loading.contains(id) || demo.contains(id)
         return content()
             .frame(width: 104, height: 104)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(alignment: .topTrailing) {
                 ZStack {
-                    Circle().fill(n != nil ? Theme.accent : Color.black.opacity(0.28)).frame(width: 24, height: 24)
-                    if let n { Text("\(n)").font(Theme.round(13, weight: .semibold)).foregroundColor(.white) }
+                    Circle().fill(on ? Theme.accent : Color.black.opacity(0.28)).frame(width: 24, height: 24)
+                    if on { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(.white) }
                     else { Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5).frame(width: 22, height: 22) }
                 }
                 .padding(6)
             }
+            .opacity(loading.contains(id) ? 0.6 : 1)
             .contentShape(Rectangle())
             .onTapGesture {
-                if let i = sel.firstIndex(of: id) { sel.remove(at: i) }
-                else if sel.count < max { sel.append(id); UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                if Preview.on { if demo.contains(id) { demo.remove(id) } else { demo.insert(id) }; return }
+                if selected.contains(id) { onUnpick(id); return }
+                guard let a = asset, !loading.contains(id), max - loading.count > 0 else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                loading.insert(id)
+                Task {
+                    let p = await lib.picked(a, live: live)
+                    loading.remove(id)
+                    if let p { onPick(id, p) }
+                }
             }
     }
 
@@ -156,18 +158,6 @@ struct AttachPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func add() {
-        let ids = sel
-        let byID = Dictionary(uniqueKeysWithValues: lib.assets.map { ($0.localIdentifier, $0) })
-        adding = true
-        Task {
-            var out: [PhotoPickerBridge.Picked] = []
-            for id in ids { if let a = byID[id], let p = await lib.picked(a, live: live) { out.append(p) } }
-            adding = false; sel = []
-            onAdd(out)
-        }
     }
 }
 

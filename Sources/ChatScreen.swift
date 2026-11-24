@@ -482,6 +482,7 @@ struct ChatScreen: View {
     @StateObject private var model = ChatModel()
     @State private var draft = Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.chat") ?? "")   // 没发出去的字留着，App 被刷掉再回来还在（寻验 09-04）
     @State private var pending: [String] = []
+    @State private var stripPick: [String: String] = [:]   // 「+」面板里勾进来的：asset 号 → 那张的 dataURL（× 掉就不算勾，11-24）
     @State private var pendingLive: [String: URL] = [:]
     @State private var liveOn: Set<String> = []   // 11-07 寻：Live 默认只发静图，点亮角标才传视频
     @State private var pendingOrig: [String: (Data, String)] = [:]   // 已选的图的原样文件（11-06）   // 已选的图里哪几张是 Live：dataURL → 视频临时文件（11-06）
@@ -960,7 +961,7 @@ struct ChatScreen: View {
                                         }
                                     }
                                     .onTapGesture { composerFocused = false; Task { ImageViewer.shared.image = await StreamImageCache.load(u) } }   // 09-21 寻：选中的图点开看大图；09-28 先收键盘，不和大图打架
-                                Button { if let v = pendingLive.removeValue(forKey: u) { try? FileManager.default.removeItem(at: v) }; liveOn.remove(u); pendingOrig[u] = nil; pending.remove(at: i) } label: {
+                                Button { dropPending(i) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                         .frame(width: 18, height: 18).background(Color.black.opacity(0.55), in: Circle())
                                 }.buttonStyle(.plain).offset(x: 4, y: -4)
@@ -1068,14 +1069,28 @@ struct ChatScreen: View {
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
+    /// 撤掉待发的第 i 张（连它的 Live 视频、原图）
+    private func dropPending(_ i: Int) {
+        guard pending.indices.contains(i) else { return }
+        let u = pending[i]
+        if let v = pendingLive.removeValue(forKey: u) { try? FileManager.default.removeItem(at: v) }
+        liveOn.remove(u); pendingOrig[u] = nil; pending.remove(at: i)
+    }
     enum PlusAction { case camera, album }
     /// 「+」面板（11-24 寻定学小鲸鱼，替掉 09-21 那块小菜单）：输入卡下面一排最近照片（勾了「添加 n 张」）＋拍照／相册两格
     private var attachPanel: some View {
         AttachPanel(max: 4 - pending.count, live: true,
+                    selected: stripPick.filter { pending.contains($0.value) }.map(\.key),
                     onCamera: { pick(.camera) }, onAlbum: { pick(.album) },
-                    onAdd: { imgs in
-                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                        Task { await addImages(imgs) }
+                    onPick: { id, p in
+                        Task {
+                            let before = pending.count
+                            await addImages([p])
+                            if pending.count > before, let u = pending.last { stripPick[id] = u }
+                        }
+                    },
+                    onUnpick: { id in
+                        if let u = stripPick.removeValue(forKey: id), let i = pending.firstIndex(of: u) { dropPending(i) }
                     })
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }

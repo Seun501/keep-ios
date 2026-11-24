@@ -60,6 +60,7 @@ struct CCShiPadRoot: View {
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in   // 屏幕最左边往右一拉＝滑出会话栏（11-24 寻）
             if !side, v.startLocation.x < 30, v.translation.width > 60, abs(v.translation.height) < 80 { toggle() }
         })
+        .background(KeyboardDismisser())   // 点空白收键盘（手机上挂在克那页，iPad 没那页，11-24 寻：悬浮小键盘点空白不收）
         .onAppear { PadJank.shared.start() }
         .onChange(of: side) { v in PadJank.shared.flush(); PadJank.shared.sideOn = v }
         .onReceive(NotificationCenter.default.publisher(for: .keepOpenCCShi)) { n in   // 点了「CC师」推送：右边换成那个会话

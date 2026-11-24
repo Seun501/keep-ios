@@ -685,6 +685,7 @@ struct CCShiSessionScreen: View {
     @State private var draft = ""
     @State private var focused = false
     @State private var pending: [UIImage] = []
+    @State private var stripPick: [(id: String, img: UIImage)] = []   // 「+」面板里勾进来的（asset 号 ↔ 那张图），× 掉就不算勾
     @State private var files: [String] = []        // 已传进 给CC师读/ 的文件（发的时候附在话末尾告诉我）
     @State private var uploading = 0
     @State private var plusOpen = Preview.screen.hasPrefix("ccplus")   // 截图班 ccplus／ccplusplussel：「+」面板开着
@@ -1109,6 +1110,7 @@ struct CCShiSessionScreen: View {
     /// 「+」面板（11-24 寻定学小鲸鱼）：输入卡下面一排最近照片＋拍照／相册／文件
     private var attachPanel: some View {
         AttachPanel(max: 4 - pending.count, live: false,
+                    selected: stripPick.filter { p in pending.contains { $0 === p.img } }.map(\.id),
                     onCamera: {
                         withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
                         CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
@@ -1131,9 +1133,13 @@ struct CCShiSessionScreen: View {
                             }
                         }
                     },
-                    onAdd: { imgs in
-                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                        pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count)))
+                    onPick: { id, p in
+                        guard pending.count < 4 else { return }
+                        pending.append(p.image); stripPick.removeAll { $0.id == id }; stripPick.append((id, p.image))
+                    },
+                    onUnpick: { id in
+                        if let e = stripPick.first(where: { $0.id == id }) { pending.removeAll { $0 === e.img } }
+                        stripPick.removeAll { $0.id == id }
                     })
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
