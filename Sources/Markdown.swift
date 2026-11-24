@@ -486,8 +486,9 @@ struct HScrollTint: UIViewRepresentable {
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard obs == nil, let sv = s as? UIScrollView else { return }
             sv.horizontalScrollIndicatorInsets = UIEdgeInsets(top: 0, left: 2, bottom: 1, right: 2)
+            sv.alwaysBounceHorizontal = false   // 放得下就不让左右拖（11-24 寻：明明全露着还 Q 弹）
             Self.tint(sv)
-            obs = sv.observe(\.contentOffset, options: [.new]) { sv, _ in Self.tint(sv) }
+            obs = sv.observe(\.contentOffset, options: [.new]) { sv, _ in Self.tint(sv); if sv.alwaysBounceHorizontal { sv.alwaysBounceHorizontal = false } }
             if Preview.on, Preview.screen.hasPrefix("ccshimd") {   // 截图班：滑动条平时不露，隔一会儿闪一下好截到颜色
                 for k in 0..<16 { DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(k) * 0.5) { [weak sv] in
                     guard let sv else { return }

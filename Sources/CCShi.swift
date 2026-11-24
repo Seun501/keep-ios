@@ -266,7 +266,7 @@ struct CCShiListScreen: View {
                 HStack(spacing: 12) {
                     if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
                     if let f = onSidebar { CCSidebarButton(action: f) }
-                    Text("CC师").font(Theme.round(14)).foregroundColor(Theme.muted)
+                    Text("CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text)   // iPad：同图标一个色（11-24 寻）
                     Spacer()
                     Button(action: onFiles) {   // 文件：我的记忆、项目文档、给CC师读、临时给寻
                         Image("tool-archive").renderingMode(.template).resizable().frame(width: 19, height: 19).foregroundColor(Theme.text).frame(width: 34, height: 34)
@@ -617,7 +617,7 @@ private enum CCBlock: Identifiable {
         case .ask(let e, _), .todo(let e, _): return e.seq
         }
     }
-    static let hidden: Set<String> = ["ToolSearch", "mcp__ccshi__show"]
+    static let hidden: Set<String> = ["ToolSearch", "mcp__ccshi__show", "mcp__ccshi__title"]   // title：我给会话起名（11-24），不占一行
     static func build(_ evs: [CCEvent]) -> [CCBlock] {
         var out: [CCBlock] = []
         var results: [String: CCEvent] = [:]
@@ -857,7 +857,7 @@ struct CCShiSessionScreen: View {
             if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
             if let f = onSidebar { CCSidebarButton(action: f) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
+                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
                 if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
             }
             Spacer()
@@ -1302,7 +1302,7 @@ struct CCTextRow: View {
                 case .quote(let s):
                     HStack(alignment: .top, spacing: 10) {
                         RoundedRectangle(cornerRadius: 1.5).fill(Theme.border).frame(width: 3)
-                        RichText(attr: CCMD.ns(s, color: Theme.uiMuted))
+                        RichText(attr: CCMD.ns(s))   // 字同正文，只留左边那道线（11-24 寻：浅色不好看）
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 case .rule: Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 4)
@@ -2194,7 +2194,7 @@ struct CCShowCard: View {
                         Spacer()
                     }
                     .padding(14)
-                    .frame(width: UIScreen.main.bounds.width * 0.58)   // 寻 10-27：别占满屏宽，大约半屏
+                    .frame(width: min(UIScreen.main.bounds.width * 0.58, 240))   // 寻 10-27：别占满屏宽，大约半屏；iPad 上也只这么宽（11-24）
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card)   // 寻 10-27：白卡＋一圈晕影（同输入卡那种软投影），不描边
                         .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
                         .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6))
