@@ -9,6 +9,8 @@ struct CCShiPadRoot: View {
     @State private var inset: CGFloat? = nil                  // 对话那边让出来的宽：不跟着动画变（每帧重排整条消息流会卡，11-24 寻），滑完/滑前一次到位
     @State private var files: [String] = Preview.screen == "ipadfiles" ? [""] : []
     @ObservedObject private var viewer = ImageViewer.shared
+    @State private var dragPrepped = false                   // 往左拖着收：开拖那一下对话先铺满（同按钮收起）
+    private let drag = PadDrag.shared                        // 跟手的位移放在小对象里，只有会话栏那层跟着重画（根不重画，对话不重排）
     /// 开：会话栏先盖着对话滑进来，滑完对话再一次让位；关：对话先一次铺满（被会话栏挡着看不见），会话栏再滑走
     private func toggle() {
         let noAnim = Transaction(animation: nil)
@@ -26,7 +28,11 @@ struct CCShiPadRoot: View {
             ZStack {
                 Theme.bg.ignoresSafeArea()
                 let w = min(340, max(290, g.size.width * 0.32))
+                let pad = inset ?? (side ? w : 0)
                 ZStack(alignment: .topLeading) {
+                    // 对话跟着会话栏一起滑（11-24 寻：推着走）：滑的时候只平移，不改宽（不重排）；EquatableBox 挡住拖动时的重算
+                    SideShift(w: w, side: side, pad: pad) {
+                    EquatableBox(key: [sel ?? "", side ? "1" : "0", "\(pad)", "\(Int(g.size.width))"]) {
                     ZStack {
                         if let id = sel {
                             CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: side ? nil : toggle, readWidth: 780).id(id)   // 读的一栏不铺满、顶栏顶满（Claude App 同款）
@@ -41,11 +47,14 @@ struct CCShiPadRoot: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.leading, inset ?? (side ? w : 0))
-                    CCShiListScreen(onBack: {}, onOpen: { sel = $0 }, onFiles: { files = [""] }, selected: sel, showBack: false, onSidebar: toggle, tinted: true)
-                        .frame(width: w)   // 底色深一档代替分隔线（寻不喜欢描边）；收起时整块滑出屏外，不拆不建
-                        .offset(x: side ? 0 : -w)
-                        .allowsHitTesting(side)
+                    .padding(.leading, pad)
+                    }.equatable()
+                    }
+                    SideSlide(w: w, side: side) {
+                        CCShiListScreen(onBack: {}, onOpen: { sel = $0 }, onFiles: { files = [""] }, selected: sel, showBack: false, onSidebar: toggle, tinted: true)
+                    }
+                    .frame(width: w)   // 底色深一档代替分隔线（寻不喜欢描边）；收起时整块滑出屏外，不拆不建
+                    .allowsHitTesting(side)
                 }
                 ForEach(Array(files.enumerated()), id: \.offset) { i, p in
                     CCFilesScreen(path: p, onBack: { files.removeLast() }, onOpenDir: { files.append($0) }).id(p)
@@ -57,9 +66,35 @@ struct CCShiPadRoot: View {
                 }
             }
         }
-        .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in   // 屏幕最左边往右一拉＝滑出会话栏（11-24 寻）
-            if !side, v.startLocation.x < 30, v.translation.width > 60, abs(v.translation.height) < 80 { toggle() }
-        })
+        // 跟手拉会话栏（11-24 寻：照 Claude App）：收着时在正文上往右拖，会话栏跟着手指出来；开着时在对话那边往左拖，跟着收回去。
+        // 松手按拖了多远／甩的劲决定开还是退回
+        .simultaneousGesture(DragGesture(minimumDistance: 16, coordinateSpace: .global)
+            .onChanged { v in
+                let w = min(340, max(290, UIScreen.main.bounds.width * 0.32))
+                let dx = v.translation.width
+                guard abs(dx) > abs(v.translation.height) * 1.2 || drag.dx != 0 else { return }
+                if !side, dx > 0 { drag.dx = min(dx, w) }
+                else if side, dx < 0, v.startLocation.x > w {
+                    if !dragPrepped { dragPrepped = true; withTransaction(Transaction(animation: nil)) { inset = 0 } }
+                    drag.dx = max(dx, -w)
+                }
+            }
+            .onEnded { v in
+                let w = min(340, max(290, UIScreen.main.bounds.width * 0.32))
+                let dx = drag.dx, fling = v.predictedEndTranslation.width
+                defer { dragPrepped = false }
+                guard dx != 0 else { return }
+                if !side {
+                    if dx > w / 3 || fling > w / 2 { withAnimation(.easeOut(duration: 0.22)) { drag.dx = 0 }; toggle() }
+                    else { withAnimation(.easeOut(duration: 0.2)) { drag.dx = 0 } }
+                } else {
+                    if -dx > w / 3 || fling < -w / 2 { withAnimation(.easeOut(duration: 0.22)) { drag.dx = 0; side = false } }
+                    else {
+                        withAnimation(.easeOut(duration: 0.2)) { drag.dx = 0 }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { if side { withTransaction(Transaction(animation: nil)) { inset = nil } } }
+                    }
+                }
+            })
         .background(KeyboardDismisser())   // 点空白收键盘（手机上挂在克那页，iPad 没那页，11-24 寻：悬浮小键盘点空白不收）
         .onAppear { PadJank.shared.start() }
         .onChange(of: side) { v in PadJank.shared.flush(); PadJank.shared.sideOn = v }
@@ -67,6 +102,44 @@ struct CCShiPadRoot: View {
             if let sid = n.object as? String, !sid.isEmpty { files = []; sel = sid }
         }
     }
+}
+
+/// 会话栏跟手的位移（拖着时实时变；松手归零）
+final class PadDrag: ObservableObject {
+    static let shared = PadDrag()
+    @Published var dx: CGFloat = 0
+}
+
+/// 会话栏那层：只它看 PadDrag，拖的时候只重画这一层
+struct SideSlide<Content: View>: View {
+    let w: CGFloat
+    let side: Bool
+    @ViewBuilder var content: () -> Content
+    @ObservedObject private var drag = PadDrag.shared
+    var body: some View {
+        content().offset(x: side ? min(0, drag.dx) : min(0, -w + max(0, drag.dx)))
+    }
+}
+
+/// 对话那层的平移：会话栏露出多宽，对话就比它眼下的左边距多挪多少
+struct SideShift<Content: View>: View {
+    let w: CGFloat
+    let side: Bool
+    let pad: CGFloat
+    @ViewBuilder var content: () -> Content
+    @ObservedObject private var drag = PadDrag.shared
+    var body: some View {
+        let shown = side ? w + min(0, drag.dx) : max(0, drag.dx)
+        content().offset(x: shown - pad)
+    }
+}
+
+/// 只在 key 变了才重算里面（拖动时外层每帧重画，里面的对话不跟着重算）
+struct EquatableBox<Content: View>: View, Equatable {
+    let key: [String]
+    @ViewBuilder var content: () -> Content
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
 }
 
 /// iPad 掉帧仪（11-24 寻：开着会话栏就卡）：一直数帧，每 20 秒有卡帧就报一行 diag（会话栏开没开、卡帧数、最长一帧），一次启动最多 30 行
