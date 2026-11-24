@@ -201,6 +201,8 @@ struct ScrollObserver: UIViewRepresentable {
         private var lastDist: CGFloat = 0    // 视口底边以下还有多少内容——一直记着「键盘来之前」那个数（底边锚定，iMessage 做法）
         private var lastH: CGFloat = 0
         private var kbBusy = false
+        private var kbUp = false             // 键盘这会儿在不在屏上（最近一次通知的落点）
+        static var padDiag = 0
         private var trailY: CGFloat = -1
         private var kbAt: CFTimeInterval = 0
         private var bounce = true
@@ -270,6 +272,7 @@ struct ScrollObserver: UIViewRepresentable {
                     let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
                     let hiding = n == UIResponder.keyboardWillHideNotification
                     let showing = !hiding && (end.map { $0.minY < UIScreen.main.bounds.height - 1 } ?? false)
+                    self.kbUp = showing
                     if ScrollObserver.followsKeyboard.contains(self.name ?? ""), self.lastDist < 40, showing || hiding {   // CC师 会话页同一套（10-28 寻：那边太硬）
                         self.startFollow(dur)
                         ScrollObserver.note = String(format: "kb %@ dur=%.2f end=%.0f d=%.0f", hiding ? "hide" : "show", dur, end?.minY ?? -1, self.lastDist)
@@ -284,6 +287,15 @@ struct ScrollObserver: UIViewRepresentable {
                     DispatchQueue.main.asyncAfter(deadline: .now() + dur + 1.0) { [weak self] in
                         guard let self else { return }
                         self.kbBusy = false
+                        // iPad「不贴底」第二回（11-24 寻：收完键盘底下仍一大片空）：疑是让位的底部内边距没退——键盘不在了还留着就清掉；先报几行实数看准
+                        if let sv = self.sv, self.name == "ccsess", UIDevice.isPad {
+                            let before = sv.contentInset.bottom, adj = sv.adjustedContentInset.bottom
+                            if !self.kbUp, before > 0.5 { sv.contentInset.bottom = 0 }
+                            if Self.padDiag < 6 {
+                                Self.padDiag += 1
+                                PushRegistrar.diag(String(format: "ccsess-kb up=%d inset=%.0f adj=%.0f off=%.0f cs=%.0f bh=%.0f", self.kbUp ? 1 : 0, before, adj, sv.contentOffset.y, sv.contentSize.height, sv.bounds.height))
+                            }
+                        }
                         DispatchQueue.main.async { fire() }   // 收完键盘偏移留在内容底下（视口放高、没人拨偏移）＝底下一大片空：落定后钳一次（11-24 寻 iPad 报「不贴底」）
                         // 键盘落定后把底距重新记一次：起键盘那阵 lastDist 可能停在压矮前后的旧数（sim-84 收键盘时 d=301），下次起键盘会误判
                         if let sv = self.sv {

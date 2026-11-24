@@ -66,14 +66,14 @@ struct CCShiPadRoot: View {
                 }
             }
         }
-        // 跟手拉会话栏（11-24 寻：照 Claude App）：收着时在正文上往右拖，会话栏跟着手指出来；开着时在对话那边往左拖，跟着收回去。
+        // 跟手拉会话栏（11-24 寻：照 Claude App）：收着时从屏幕左边缘往右拖，会话栏跟着手指出来（只认左边 28pt 起手，正文中间的手势不算，11-24 寻）；开着时在对话那边往左拖，跟着收回去。
         // 松手按拖了多远／甩的劲决定开还是退回
         .simultaneousGesture(DragGesture(minimumDistance: 16, coordinateSpace: .global)
             .onChanged { v in
                 let w = min(340, max(290, UIScreen.main.bounds.width * 0.32))
                 let dx = v.translation.width
                 guard abs(dx) > abs(v.translation.height) * 1.2 || drag.dx != 0 else { return }
-                if !side, dx > 0 { drag.dx = min(dx, w) }
+                if !side, dx > 0, v.startLocation.x < 28 { drag.dx = min(dx, w) }
                 else if side, dx < 0, v.startLocation.x > w {
                     if !dragPrepped { dragPrepped = true; withTransaction(Transaction(animation: nil)) { inset = 0 } }
                     drag.dx = max(dx, -w)

@@ -819,7 +819,7 @@ struct CCShiSessionScreen: View {
                 if plusOpen { attachPanel.frame(maxWidth: readWidth).frame(maxWidth: .infinity) }
             }
         }
-        .background(EdgeSwipe(onBack: onBack))
+        .background { if showBack { EdgeSwipe(onBack: onBack) } }   // iPad 分栏没有返回：左边缘留给拉会话栏
         .overlay(alignment: .topTrailing) {
             if infoOpen {
                 ZStack(alignment: .topTrailing) {
