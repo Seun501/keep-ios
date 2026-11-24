@@ -82,6 +82,7 @@ final class ClawdModel: ObservableObject {
         guard area.width > 200, area.height > 200 else { return }   // 还没量到真尺寸别落位（否则 clamp 到左上角）
         let y0 = -size * 0.42, y1 = max(y0, area.height - size + size * 0.11)
         zone = CGRect(x: 8, y: y0, width: max(0, area.width - size - 16), height: max(0, y1 - y0))
+        areaW = area.width
         if !placed {
             placed = true
             pos = CGPoint(x: zone.midX, y: clampY(Self.splashBoxTop(UIScreen.main.bounds.height) - areaTop))
@@ -92,6 +93,8 @@ final class ClawdModel: ObservableObject {
     }
     /// iPad：只在正文栏两边的留白里溜达（11-24 寻：别挡字）；空＝哪儿都能去
     var lanes: [ClosedRange<CGFloat>] = []
+    @Published var ghost: CGFloat = 0   // 换边时：从这边屏幕边走出去，同时从那边屏幕边走进来（另一只画在 pos.x＋ghost）
+    private var areaW: CGFloat = 0
     private func clampX(_ x: CGFloat) -> CGFloat {
         let c = min(max(x, zone.minX), zone.maxX)
         guard !lanes.isEmpty else { return c }
@@ -115,9 +118,22 @@ final class ClawdModel: ObservableObject {
     }
     private func walk() {
         if dragging { return }
-        if lanes.count > 1, Double.random(in: 0..<1) < 0.2 {   // 偶尔换到另一边（隔着正文，直接过去，不从字上走）
-            let others = lanes.filter { !$0.contains(pos.x) }
-            if let l = others.randomElement() { pos = CGPoint(x: CGFloat.random(in: l), y: pos.y); flip = l.lowerBound < zone.midX; idle(); return }
+        // 偶尔换到另一边（11-24 寻）：不从字上走，朝屏幕外边走出去，半个身子在这边、半个身子从对面边上冒出来（像吃豆人穿墙）
+        if lanes.count > 1, areaW > 0, Double.random(in: 0..<1) < 0.2,
+           let cur = lanes.first(where: { $0.contains(pos.x) }), let other = lanes.first(where: { !$0.contains(pos.x) }) {
+            let goLeft = cur.lowerBound < zone.midX
+            let final = CGFloat.random(in: other)
+            let target = goLeft ? final - areaW : final + areaW
+            ghost = goLeft ? areaW : -areaW
+            flip = goLeft; state = "walk"
+            let dur = max(0.2, Double(abs(target - pos.x) / 40))
+            withAnimation(.linear(duration: dur)) { pos = CGPoint(x: target, y: pos.y) }
+            later(dur) { [weak self] in
+                guard let self else { return }
+                withTransaction(Transaction(animation: nil)) { self.pos = CGPoint(x: final, y: self.pos.y); self.ghost = 0 }
+                self.idle()
+            }
+            return
         }
         let raw = clampX(pos.x + CGFloat.random(in: -150...150))
         let tx = lanes.first(where: { $0.contains(pos.x) }).map { min(max(raw, $0.lowerBound), $0.upperBound) } ?? raw   // 有分道时只在本边走
@@ -156,6 +172,19 @@ struct ClawdView: View {
     @State private var moved = false
     @State private var grabTimer: DispatchWorkItem? = nil
     var body: some View {
+        ZStack {
+            if !m.lanes.isEmpty {   // iPad 换边时对面那半只（平时透明、不吃触摸）
+                ClawdWeb(state: m.state, flip: m.flip)
+                    .frame(width: 150, height: 150)
+                    .offset(y: m.hop ? -12 : 0)
+                    .opacity(m.ghost == 0 ? 0 : 1)
+                    .allowsHitTesting(false)
+                    .position(x: m.pos.x + m.ghost + 75, y: m.pos.y + 75)
+            }
+            body1
+        }
+    }
+    private var body1: some View {
         ClawdWeb(state: m.state, flip: m.flip)
             .frame(width: 150, height: 150)
             .offset(y: m.hop ? -12 : 0)
