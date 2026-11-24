@@ -48,6 +48,7 @@ struct CCEvent: Decodable {
     var pre: Int?
     var post: Int?
     var out: Int?
+    var until: Double?            // kind=quota：到顶那条亮到几点（epoch，11-24）
     // live（不落盘，SSE 顺带推）
     var verb: String?
     var started: Double?
@@ -766,6 +767,14 @@ struct CCShiSessionScreen: View {
                                     pin.atBottom = near
                                     if far == near { far = !near }
                                 }
+                                // 在底部时内容长高（流式出字、新一段）就顺着滑下去（11-24 寻：在底部消息不往下走）
+                                if ch > pin.lastCh + 1, pin.atBottom, !pin.loadingOlder, let sv, !sv.isTracking, !sv.isDragging, !sv.isDecelerating {
+                                    let target = max(0, ch - vh) - sv.adjustedContentInset.top
+                                    if sv.contentOffset.y < target - 1 {
+                                        UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut, .allowUserInteraction, .beginFromCurrentState]) { sv.contentOffset.y = target }
+                                    }
+                                }
+                                pin.lastCh = ch
                             })
                         }
                         .scrollIndicators(.visible)
@@ -870,7 +879,8 @@ struct CCShiSessionScreen: View {
             if let f = onSidebar { CCSidebarButton(action: f) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
-                if let q = quotaFlash { quotaRow(q) }
+                if let h = quotaHit { quotaRow(h, hit: true) }
+                else if let q = quotaFlash { quotaRow(q) }
                 else if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
             }
             Spacer()
@@ -1155,16 +1165,24 @@ struct CCShiSessionScreen: View {
     @State private var bgOpen = false
     @State private var quotaFlash: String? = nil
     /// 额度到 90%（网关插一条 quota 事件）：会话名下那行亮 12 秒黄字再撤（11-24 寻：照 Claude Code，英文）；十分钟前的旧事件不再亮
+    /// 到顶（state=hit）：红字一直挂到刷新点（11-24 寻：原处红字 limit reached，不另加中文）
+    private var quotaHit: String? {
+        if Preview.screen == "ccshiquotahit" { return "5-hour limit reached · resets 20:00" }
+        guard let e = m.events.last(where: { $0.kind == "quota" }), e.state == "hit", (e.until ?? 0) > Date().timeIntervalSince1970 else { return nil }
+        return e.text
+    }
     private func flashQuota() {
-        guard let e = m.events.last(where: { $0.kind == "quota" }), let t = e.text,
+        guard let e = m.events.last(where: { $0.kind == "quota" }), e.state != "hit", let t = e.text,
               let at = e.ts.flatMap(TimeFmt.parse), Date().timeIntervalSince(at) < 600 else { return }
         withAnimation(.easeOut(duration: 0.2)) { quotaFlash = t }
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { if quotaFlash == t { withAnimation(.easeOut(duration: 0.4)) { quotaFlash = nil } } }
     }
-    private func quotaRow(_ t: String) -> some View {
-        Text(t).font(Theme.mono(10.5)).foregroundColor(Color(red: 0.70, green: 0.50, blue: 0.02))
+    private func quotaRow(_ t: String, hit: Bool = false) -> some View {
+        // 黄、红照 Claude Code 主题色（浅色 warning 150,108,30／error 171,43,63；深色 255,193,7／255,107,128）
+        let c = hit ? Theme.dyn(0xAB2B3F, 0xFF6B80) : Theme.dyn(0x966C1E, 0xFFC107)
+        return Text(t).font(Theme.mono(10.5)).foregroundColor(c)
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(Color(red: 0.96, green: 0.78, blue: 0.20).opacity(0.18), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .background(c.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             .padding(.leading, -6).lineLimit(1)
             .transition(.opacity)
     }
@@ -1262,7 +1280,7 @@ struct CCShiSessionScreen: View {
 }
 
 /// 会话页「她在不在底部」：类而不是 @State 值——滚动时每帧都在写，不能让它带着整页重算
-final class CCPin { var atBottom = true; var loadingOlder = false }
+final class CCPin { var atBottom = true; var loadingOlder = false; var lastCh: CGFloat = 0 }
 
 /// 我的一段正文：圆体；长按复制／从这里重来（新开一个分叉，原会话不动）
 struct CCTextRow: View {
