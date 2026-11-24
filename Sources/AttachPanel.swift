@@ -83,9 +83,9 @@ struct AttachPanel: View {
         VStack(spacing: 12) {
             strip
             HStack(spacing: 10) {
-                tile("拍照", "camera", onCamera)
-                tile("相册", "photo.on.rectangle", onAlbum)
-                if let f = onFile { tile("文件", "paperclip", f) }
+                tile("拍照", "att-camera", onCamera)   // Lucide 细线（11-24 寻：系统图标开了粗体文本太粗）
+                tile("相册", "att-image", onAlbum)
+                if let f = onFile { tile("文件", "att-clip", f) }
             }
         }
         .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 10)
@@ -147,10 +147,10 @@ struct AttachPanel: View {
             }
     }
 
-    private func tile(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
+    private func tile(_ title: String, _ icon: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             VStack(spacing: 6) {
-                Image(systemName: sys).font(.system(size: 21, weight: .regular)).foregroundColor(Theme.text)
+                Image(icon).renderingMode(.template).resizable().frame(width: 23, height: 23).foregroundColor(Theme.text)
                 Text(title).font(Theme.round(14)).foregroundColor(Theme.text)
             }
             .frame(maxWidth: .infinity).frame(height: 76)

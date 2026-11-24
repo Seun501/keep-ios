@@ -879,7 +879,7 @@ struct ChatScreen: View {
 
     private func jumpButton(_ proxy: ScrollViewProxy) -> some View {
         Button { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
-            Image("chev").renderingMode(.template).resizable().frame(width: 20, height: 20)
+            Image("chev-thin").renderingMode(.template).resizable().frame(width: 20, height: 20)   // 细线（11-24 寻）
                 .foregroundColor(Theme.jumpArrow)
                 .frame(width: 38, height: 38)
                 .background(Theme.jumpBg, in: Circle())
