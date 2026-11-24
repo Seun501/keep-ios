@@ -627,7 +627,7 @@ struct ChatScreen: View {
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
-        .onChange(of: composerFocused) { on in if on { plusOpen = false } }
+        // 「+」面板开着时点输入框不收面板（11-24 寻：点空白才收）
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { line in
             model.addLocalPing(line)
             mealOk = true; DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { mealOk = false }
@@ -789,6 +789,7 @@ struct ChatScreen: View {
                 }
             }
             .background(KeyboardDismisser())
+            .simultaneousGesture(TapGesture().onEnded { if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } } })   // 点消息区空白收「+」面板（11-24 寻）
             .onChange(of: model.items.count) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { userUp = false } }   // 她自己发了一句＝回到底
             // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」

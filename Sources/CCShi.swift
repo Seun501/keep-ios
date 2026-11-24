@@ -823,7 +823,7 @@ struct CCShiSessionScreen: View {
                     }
                 }
                 .coordinateSpace(name: "clawdZone")
-                .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
+                .simultaneousGesture(TapGesture().onEnded { clawd.touched(); if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } } })
                 if !m.err.isEmpty && !(m.running && m.live != nil) {   // 干活时断线由转星那行变红表示（同 Claude Code），这行只在闲着时出
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
                 }
@@ -856,7 +856,7 @@ struct CCShiSessionScreen: View {
         .onAppear { let model = m; model.onNew = { [weak model] in model?.markRead() }; model.start(); Self.openID = m.id }
         .onDisappear { m.markRead(); m.stopStream(); if Self.openID == m.id { Self.openID = nil } }
         .onChange(of: phase) { p in if p == .active { m.start() } }
-        .onChange(of: focused) { on in if on { plusOpen = false } }
+        // 「+」面板开着时点输入框不收面板，点消息区空白才收（11-24 寻）
         .onChange(of: m.running) { r in clawd.busy(r) }
         .onChange(of: m.err) { e in if !e.isEmpty { clawd.alert() } }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }
