@@ -502,7 +502,7 @@ private final class ZoomCell: UIScrollView, UIScrollViewDelegate {
     init(page: AnyView) {
         host = UIHostingController(rootView: page)
         super.init(frame: .zero)
-        host.safeAreaRegions = []
+        if #available(iOS 16.4, *) { host.safeAreaRegions = [] }   // 16.4 以下（寻的 iPad 16.2）退回系统默认
         host.view.backgroundColor = .clear
         delegate = self
         minimumZoomScale = 1
