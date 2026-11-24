@@ -210,6 +210,7 @@ struct ThinkView: View {
                     RichText(attr: MD.ns(text.trimmingCharacters(in: .whitespacesAndNewlines), base: Theme.uiSerif(14), bold: Theme.uiSerif(14, weight: .semibold),
                                           mono: Theme.uiMono(12, weight: .regular), color: Theme.uiMuted, lineHeight: 1.6))
                 }
+                .fixedSize(horizontal: false, vertical: true)   // 高度按字定，竖线跟着字走（11-24 寻 iPad：思考下面一大片留白、竖线拖到底）
                 .padding(.vertical, 4)
             }
         }
