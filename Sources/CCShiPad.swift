@@ -194,3 +194,15 @@ extension View {
 extension UIDevice {
     static var isPad: Bool { current.userInterfaceIdiom == .pad }
 }
+
+/// 小 Clawd 在 iPad 上：会话栏开着就隐身（留白被会话栏占了），跟着滑的进度淡入淡出（11-24 寻）
+struct PadClawdFade<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    @ObservedObject private var drag = PadDrag.shared
+    var body: some View {
+        if UIDevice.isPad {
+            let p = min(1, max(0, drag.shown / max(1, drag.w)))
+            content().opacity(1 - p).allowsHitTesting(p < 0.5)
+        } else { content() }
+    }
+}

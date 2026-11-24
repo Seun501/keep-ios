@@ -808,11 +808,11 @@ struct CCShiSessionScreen: View {
                     }
                     // 小 Clawd（11-24 寻：照搬克那页）：在消息流上溜达，我干活时打字、出错警觉
                     GeometryReader { g in
-                        Color.clear.onAppear { clawd.layout(area: g.size, areaTop: g.frame(in: .global).minY) }
-                            .onChange(of: g.size) { sz in clawd.layout(area: sz, areaTop: g.frame(in: .global).minY) }
+                        Color.clear.onAppear { clawd.lanes = clawdLanes(g.size.width); clawd.layout(area: g.size, areaTop: g.frame(in: .global).minY) }
+                            .onChange(of: g.size) { sz in clawd.lanes = clawdLanes(sz.width); clawd.layout(area: sz, areaTop: g.frame(in: .global).minY) }
                     }
                     .allowsHitTesting(false)
-                    ClawdView(m: clawd).zIndex(5)
+                    PadClawdFade { ClawdView(m: clawd) }.zIndex(5)
                     if rec.recording {
                         VStack(spacing: 0) {
                             LiveCard(rec: rec).padding(.bottom, 8)
@@ -858,6 +858,15 @@ struct CCShiSessionScreen: View {
         .onChange(of: m.running) { r in clawd.busy(r) }
         .onChange(of: m.err) { e in if !e.isEmpty { clawd.alert() } }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }
+    }
+
+    /// iPad：正文栏两边的留白各一条道（Clawd 的框 150 宽，小螃蟹本身约占中间一半，边上让 35 也不压字）
+    private func clawdLanes(_ W: CGFloat) -> [ClosedRange<CGFloat>] {
+        guard UIDevice.isPad, readWidth < W else { return [] }
+        let side = (W - readWidth) / 2, slack: CGFloat = 35
+        let l = max(8, -slack)...max(8, side - 150 + slack)
+        let r = min(W - 158, W - side - slack)...(W - 158)
+        return [l, r]
     }
 
     /// 钉底：懒列表头一回按估算高度定位，滚一次常停在半路（截图 435）——隔几拍再补两次

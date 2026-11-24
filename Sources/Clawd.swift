@@ -90,7 +90,13 @@ final class ClawdModel: ObservableObject {
             pos = CGPoint(x: clampX(pos.x), y: clampY(pos.y))
         }
     }
-    private func clampX(_ x: CGFloat) -> CGFloat { min(max(x, zone.minX), zone.maxX) }
+    /// iPad：只在正文栏两边的留白里溜达（11-24 寻：别挡字）；空＝哪儿都能去
+    var lanes: [ClosedRange<CGFloat>] = []
+    private func clampX(_ x: CGFloat) -> CGFloat {
+        let c = min(max(x, zone.minX), zone.maxX)
+        guard !lanes.isEmpty else { return c }
+        return lanes.map { min(max(c, $0.lowerBound), $0.upperBound) }.min(by: { abs($0 - c) < abs($1 - c) })!
+    }
     private func clampY(_ y: CGFloat) -> CGFloat { min(max(y, zone.minY), zone.maxY) }
     private func later(_ s: Double, _ fn: @escaping () -> Void) {
         timer?.invalidate()
@@ -109,7 +115,12 @@ final class ClawdModel: ObservableObject {
     }
     private func walk() {
         if dragging { return }
-        let tx = clampX(pos.x + CGFloat.random(in: -150...150))
+        if lanes.count > 1, Double.random(in: 0..<1) < 0.2 {   // 偶尔换到另一边（隔着正文，直接过去，不从字上走）
+            let others = lanes.filter { !$0.contains(pos.x) }
+            if let l = others.randomElement() { pos = CGPoint(x: CGFloat.random(in: l), y: pos.y); flip = l.lowerBound < zone.midX; idle(); return }
+        }
+        let raw = clampX(pos.x + CGFloat.random(in: -150...150))
+        let tx = lanes.first(where: { $0.contains(pos.x) }).map { min(max(raw, $0.lowerBound), $0.upperBound) } ?? raw   // 有分道时只在本边走
         let ty = clampY(pos.y + CGFloat.random(in: -80...80))
         flip = tx < pos.x
         state = "walk"
