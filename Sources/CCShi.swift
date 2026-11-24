@@ -2292,7 +2292,7 @@ struct CCShowCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if event.type == "image", let f = event.file {
-                CCFileImage(sid: sid, name: f, all: all)
+                CCFileImage(sid: sid, name: f, all: all).frame(maxWidth: .infinity)   // 递来的图居中（11-24 寻）
             } else {
                 Button { Task { await open() } } label: {
                     HStack(spacing: 10) {
