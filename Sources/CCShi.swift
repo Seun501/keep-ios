@@ -68,6 +68,7 @@ struct CCUsage: Decodable {
     var five_hour: Double?
     var seven_day: Double?
     var seven_day_resets: Double?
+    var five_hour_resets: Double?
     var line: String {
         guard let f = five_hour, let w = seven_day else { return "" }
         var s = "5h \(Int((f * 100).rounded()))% · week \(Int((w * 100).rounded()))%"
@@ -871,7 +872,7 @@ struct CCShiSessionScreen: View {
         return a.isEmpty ? CCFmt.modelShort(m.meta?.model_actual) : a
     }
     @State private var infoOpen = false
-    @State private var usageLine = ""
+    @State private var usage: CCUsage? = nil
     private var ctxMax: Int { max(1, m.meta?.ctx_max ?? 200_000) }
     private var header: some View {
         HStack(spacing: 12) {
@@ -890,42 +891,92 @@ struct CCShiSessionScreen: View {
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6).frame(minHeight: 44)
         .onChange(of: m.events.last(where: { $0.kind == "quota" })?.seq) { _ in flashQuota() }
         .onAppear { if Preview.screen == "ccshiquota" { quotaFlash = "Approaching 5-hour limit · 90% · resets 20:00" } else { flashQuota() } }
-        .task { if let u = await CCShiAPI.usage() { usageLine = u.line } else if Preview.on { usageLine = "5h 36% · week 6% · Sat" } }
+        .task { if let u = await CCShiAPI.usage() { usage = u } else if Preview.on { usage = CCUsage(five_hour: 0.36, seven_day: 0.62, seven_day_resets: Date().timeIntervalSince1970 + 3 * 86400, five_hour_resets: Date().timeIntervalSince1970 + 7800) } }
     }
     /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
     private var infoCard: some View {
+        // 照 Claude App「Usage」（11-24 寻定 HTML 稿）：每项一行粗字＋右边数，一根条，下面一行小字；条子颜色同圆环
         let c = m.meta?.ctx ?? 0
-        let hot = Double(c) / Double(ctxMax) >= 0.75
-        return VStack(alignment: .leading, spacing: 8) {
-            // 上下文＋压缩同一行（寻 10-27：瘦长简洁，压缩别做成大块按钮）
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(CCFmt.tokShort(c) + " / " + CCFmt.tokShort(ctxMax)).font(Theme.mono(13, weight: .medium))
-                    .foregroundColor(hot ? CCRing.color(Double(c) / Double(ctxMax)) : Theme.text)
-                Spacer(minLength: 6)
-                Button {
-                    withAnimation(.easeOut(duration: 0.15)) { infoOpen = false; modelOpen = false }
-                    m.compact()
-                } label: {
-                    Text("压缩").font(Theme.round(12.5, weight: .medium)).foregroundColor(m.running ? Theme.muted : Theme.accent)
-                }.buttonStyle(.plain).disabled(m.running)
-            }
-            if !usageLine.isEmpty { Text(usageLine).font(Theme.mono(11.5)).foregroundColor(Theme.muted) }
-            Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1)
-            // 在役模型；点开旁边弹小窗选别的
-            Button { withAnimation(.easeOut(duration: 0.15)) { modelOpen.toggle() } } label: {
-                HStack(spacing: 6) {
-                    Text(modelLabel.isEmpty ? "模型" : modelLabel).font(Theme.mono(12.5)).foregroundColor(Theme.text)
-                    Spacer(minLength: 4)
-                    Image("chev").renderingMode(.template).resizable().frame(width: 12, height: 12)
-                        .rotationEffect(.degrees(modelOpen ? -90 : 90)).foregroundColor(Theme.muted)
+        let cf = Double(c) / Double(ctxMax)
+        return VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Context").font(Theme.mono(13, weight: .semibold)).foregroundColor(Theme.text)
+                    Spacer(minLength: 6)
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { infoOpen = false; modelOpen = false }
+                        m.compact()
+                    } label: {
+                        Text("Compact").font(Theme.mono(12.5, weight: .medium)).foregroundColor(m.running ? Theme.muted : Theme.accent)
+                    }.buttonStyle(.plain).disabled(m.running)
                 }
-                .contentShape(Rectangle())
-            }.buttonStyle(.plain)
+                usageBar(cf)
+                HStack {
+                    Text(CCFmt.tokShort(c) + " / " + CCFmt.tokShort(ctxMax)).font(Theme.mono(11)).foregroundColor(Theme.muted)
+                    Spacer()
+                    Text("\(Int((cf * 100).rounded()))%").font(Theme.mono(11)).foregroundColor(Theme.muted)
+                }
+            }
+            if let u = usage, let f = u.five_hour {
+                usageSection("Current session", f, sub: Self.resetsIn(u.five_hour_resets))
+            }
+            if let u = usage, let w = u.seven_day {
+                usageSection("Weekly", w, sub: Self.resetsAt(u.seven_day_resets))
+            }
+            VStack(spacing: 11) {
+                Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1)
+                // 在役模型；点开旁边弹小窗选别的
+                Button { withAnimation(.easeOut(duration: 0.15)) { modelOpen.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Text(modelLabel.isEmpty ? "模型" : modelLabel).font(Theme.mono(12.5)).foregroundColor(Theme.text)
+                        Spacer(minLength: 4)
+                        Image("chev").renderingMode(.template).resizable().frame(width: 12, height: 12)
+                            .rotationEffect(.degrees(modelOpen ? -90 : 90)).foregroundColor(Theme.muted)
+                    }
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-        .frame(width: 196)
+        .frame(width: 262)
         .background(Self.popBg)
         .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
+    }
+    private func usageBar(_ f: Double) -> some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.08))
+                Capsule().fill(CCRing.color(f)).frame(width: max(4, g.size.width * min(1, f)))
+            }
+        }
+        .frame(height: 6).padding(.top, 7).padding(.bottom, 5)
+    }
+    /// 一项额度：90% 起百分比黄、到顶红（同会话名下那行，照 Claude Code 主题色）
+    private func usageSection(_ title: String, _ f: Double, sub: String) -> some View {
+        let full = f >= 0.995
+        let warn = Theme.dyn(0x966C1E, 0xFFC107), err = Theme.dyn(0xAB2B3F, 0xFF6B80)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(Theme.mono(13, weight: .semibold)).foregroundColor(Theme.text)
+                Spacer(minLength: 6)
+                Text("\(Int((f * 100).rounded()))% used").font(Theme.mono(12)).foregroundColor(full ? err : f >= 0.9 ? warn : Theme.muted)
+            }
+            usageBar(f)
+            Text(full ? "Limit reached · " + sub.replacingOccurrences(of: "Resets", with: "resets") : sub)
+                .font(Theme.mono(11)).foregroundColor(full ? err : Theme.muted).lineLimit(1)
+        }
+    }
+    static func resetsIn(_ r: Double?) -> String {
+        guard let r else { return "" }
+        let s = Int(r - Date().timeIntervalSince1970)
+        if s <= 0 { return "Resets soon" }
+        let h = s / 3600, mm = (s % 3600) / 60
+        return "Resets in " + (h > 0 ? "\(h) hr \(mm) min" : "\(max(1, mm)) min")
+    }
+    static func resetsAt(_ r: Double?) -> String {
+        guard let r else { return "" }
+        let fm = DateFormatter(); fm.locale = Locale(identifier: "en_US"); fm.dateFormat = "EEE HH:mm"
+        return "Resets " + fm.string(from: Date(timeIntervalSince1970: r))
     }
     @State private var modelOpen = false
     /// 换模型的小窗（贴在小卡左边）：一行一个，当前那个打勾；换了从下一轮起生效
@@ -2243,7 +2294,7 @@ struct CCShowCard: View {
                         Spacer()
                     }
                     .padding(14)
-                    .frame(width: min(UIScreen.main.bounds.width * 0.58, 240))   // 寻 10-27：别占满屏宽，大约半屏；iPad 上也只这么宽（11-24）
+                    .frame(width: min(UIScreen.main.bounds.width * 0.66, 280))   // 寻 10-27：别占满屏宽；11-24 寻：再宽一点点；iPad 上也只这么宽
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card)   // 寻 10-27：白卡＋一圈晕影（同输入卡那种软投影），不描边
                         .shadow(color: Color.black.opacity(0.05), radius: 3, y: 1)
                         .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6))
