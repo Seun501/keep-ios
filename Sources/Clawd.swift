@@ -178,6 +178,7 @@ struct HeaderClawd: View {
         // 画框 B：蟹身宽 B/3、中心在框高 0.79 处（svg viewBox −25…20，身子 y 6…15）——往上提 0.29B 就和圈圈齐
         ClawdWeb(state: m.state, flip: false, px: Self.box)
             .frame(width: Self.box, height: Self.box)
+            .background(Preview.screen == "ccshisessdbg" ? Color.red.opacity(0.25) : Color.clear)
             .offset(y: (m.hop ? -5 : 0) - Self.box * 0.29)
             .frame(width: 34, height: 30)
             .contentShape(Rectangle())
