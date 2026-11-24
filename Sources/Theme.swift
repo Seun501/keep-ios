@@ -81,7 +81,7 @@ enum Theme {
     /// 寻的汉字＝系统字（苹方）。09-21 查明：之前写的 STSongti-SC 在 iPhone 上根本没有，一直落到这里——她看惯的就是苹方，明写。
     static func uiUserCJK(_ size: CGFloat, bold: Bool = false) -> UIFont {
         let size = size * padK
-        return UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        return UIFont.systemFont(ofSize: size, weight: uiWeight(bold ? .semibold : .regular))
     }
     // MARK: Cascadia Mono（寻 09-13）：界面和她的气泡里的字母、数字、英文标点走 Cascadia Mono。
     // 打包的是只含 ASCII（U+0020–007E）的子集（38 KB，可变字重 200–700）——其余字符它根本没有，
@@ -96,7 +96,16 @@ enum Theme {
         return UIFontDescriptor(name: casName, size: size)
             .addingAttributes([variation: [2003265652: wght], .cascadeList: cascade])   // 'wght' 轴
     }
+    /// iPad 上寻开着「粗体文本」（系统字整体加粗一档多，她觉得系统好看、App 里太粗，11-24）：系统字那层往细调两档抵回去；Cascadia 不受粗体文本影响，不动
+    private static let thinner = UIDevice.current.userInterfaceIdiom == .pad
     private static func uiWeight(_ w: Font.Weight) -> UIFont.Weight {
+        let base = uiWeightRaw(w)
+        guard thinner, UIAccessibility.isBoldTextEnabled else { return base }
+        let steps: [UIFont.Weight] = [.ultraLight, .thin, .light, .regular, .medium, .semibold, .bold, .heavy, .black]
+        let i = steps.firstIndex(of: base) ?? 3
+        return steps[max(0, i - 2)]
+    }
+    private static func uiWeightRaw(_ w: Font.Weight) -> UIFont.Weight {
         switch w {
         case .ultraLight: return .ultraLight
         case .thin: return .thin
@@ -148,7 +157,7 @@ enum Theme {
     /// 寻那一套（09-13 起）：字母数字英文标点 Cascadia → 汉字苹方；粗体 Cascadia 600 → 苹方半粗
     static func uiUser(_ size: CGFloat, bold: Bool = false) -> UIFont {
         let size = size * padK
-        let cjk = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular).fontDescriptor   // 同 uiUserCJK（那边自己会再乘 padK，这里直接写）
+        let cjk = UIFont.systemFont(ofSize: size, weight: uiWeight(bold ? .semibold : .regular)).fontDescriptor   // 同 uiUserCJK（那边自己会再乘 padK，这里直接写）
         // 寻 09-13 晚：400 档挨着汉字显粗、320 又太细 → 360（可变字重 200–700 之间随调）
         guard let d = casDescriptor(size, wght: bold ? 600 : 360, cascade: [cjk]) else { return UIFont(descriptor: cjk, size: size) }
         return UIFont(descriptor: d, size: size)
