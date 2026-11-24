@@ -486,8 +486,10 @@ struct MDCode: View {
                 Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12).padding(.vertical, 10)
+                    .fixedSize()                 // 整段按原样量高（11-24 寻：iPad 16.2 上代码块只剩第一行——横向滚动区把高压成一行）
                     .background(HScrollTint())   // 克那页的滑动条也染赤陶（11-24 寻：统一）
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
