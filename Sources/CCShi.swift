@@ -277,7 +277,7 @@ struct CCShiListScreen: View {
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8).frame(minHeight: 52)
                 OrangeScroll(name: "ccshi") {
-                    LazyVStack(spacing: 10) {
+                    LazyVStack(spacing: tinted ? 8 : 10) {
                         if !m.err.isEmpty {
                             Text(m.err).font(Theme.round(13)).foregroundColor(Theme.knockText).padding(.vertical, 20)
                         }
@@ -322,7 +322,7 @@ struct CCShiListScreen: View {
 
     private func card(_ s: CCSession) -> some View {
         // 不用 Button 包（10-30 寻：左滑很难停住）：Button 自己的按压手势会和横拖抢，松手时常被它吃掉
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: tinted ? 4 : 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if s.running { Circle().fill(Theme.accent).frame(width: 7, height: 7).alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5.5 } }   // 圆点＝在干活；中心对汉字中线（15 号字约基线上 5.5，10-28 寻）
                 Text(s.title).font(Theme.cjk(15, weight: .medium)).foregroundColor(Theme.text).lineLimit(1)
@@ -331,14 +331,14 @@ struct CCShiListScreen: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 Text(s.last_text?.isEmpty == false ? s.last_text! : "（还没说话）")
-                    .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
+                    .font(Theme.round(13)).foregroundColor(Theme.muted).lineLimit(tinted ? 1 : 2).multilineTextAlignment(.leading)   // iPad 会话栏：一行、卡片矮一点（11-24 寻嫌胖）
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let n = s.unread, n > 0 { CCBadge(n: n) }
             }
         }
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay { if s.id == selected { RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accent.opacity(0.09)).allowsHitTesting(false) } }
+        .padding(EdgeInsets(top: tinted ? 10 : 14, leading: 16, bottom: tinted ? 10 : 14, trailing: 16))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: tinted ? 14 : 18, style: .continuous))
+        .overlay { if s.id == selected { RoundedRectangle(cornerRadius: tinted ? 14 : 18, style: .continuous).fill(Theme.accent.opacity(0.09)).allowsHitTesting(false) } }
         .contentShape(Rectangle())
         .onTapGesture { if swiped != nil { withAnimation(.easeOut(duration: 0.2)) { swiped = nil } } else { onOpen(s.id) } }   // 有卡开着时点卡片＝收起
     }
@@ -467,11 +467,17 @@ struct CCBadge: View {
     /// 现拼一遍不光费时，还让每段都成了「新的」，整页跟着重画
     private var blockKey: (Int, Int) = (-1, -1)
     private var blockCache: [CCBlock] = []
+    private var imageCache: [String] = []
     private var unreadCache: Set<Int> = []
     private var endTextCache: [Int: CCEvent] = [:]
     fileprivate var blocks: [CCBlock] {
         refreshCache()
         return blockCache
+    }
+    /// 会话里所有的图（她发的＋我递的），按出现先后——看大图时左右翻（11-24 寻）
+    var imageNames: [String] {
+        refreshCache()
+        return imageCache
     }
     /// 插话里还没 read 回执的那几条（seq）
     var unreadInterjects: Set<Int> {
@@ -483,6 +489,10 @@ struct CCBadge: View {
         guard k != blockKey else { return }
         blockKey = k
         blockCache = CCBlock.build(events)
+        imageCache = events.flatMap { e -> [String] in
+            if e.kind == "user" { return e.images ?? [] }
+            return e.type == "image" ? [e.file].compactMap { $0 } : []
+        }
         unreadCache = computeUnread()
         // 每轮收尾那行（✻ Brewed for…）后面挂复制／分叉（10-30 寻：照 claude.ai，放字后边）：记下这一轮最后一段话
         var map: [Int: CCEvent] = [:], lastText: CCEvent? = nil
@@ -924,7 +934,7 @@ struct CCShiSessionScreen: View {
         case .user(let e):
             VStack(alignment: .trailing, spacing: 6) {
                 if let imgs = e.images, !imgs.isEmpty {
-                    HStack(spacing: 6) { ForEach(imgs, id: \.self) { n in CCFileImage(sid: m.id, name: n, maxW: 120, maxH: 120) } }
+                    HStack(spacing: 6) { ForEach(imgs, id: \.self) { n in CCFileImage(sid: m.id, name: n, maxW: 120, maxH: 120, all: m.imageNames) } }
                 }
                 UserRowView(text: (e.text == "（图）" && e.images?.isEmpty == false) ? "" : (e.text ?? ""), stamp: TimeFmt.stamp(e.ts), images: [], pick: e.interject == true ? "插话" : nil, size: 16)   // 干活时发的话＝插进那一轮
             }
@@ -948,7 +958,7 @@ struct CCShiSessionScreen: View {
         case .text(let e):
             CCTextRow(event: e, onRewind: { Task { if let s = await CCShiAPI.rewind(m.id, seq: e.seq) { onOpen(s.id) } } }).equatable()
         case .show(let e):
-            CCShowCard(sid: m.id, event: e, onOpen: { webDoc = $0 }).padding(.vertical, 8)
+            CCShowCard(sid: m.id, event: e, onOpen: { webDoc = $0 }, all: m.imageNames).padding(.vertical, 8)
         case .compact(let e, let secs):
             CCCompactDivider(event: e, secs: secs).padding(.vertical, 14)
         case .end(let e):
@@ -2125,18 +2135,37 @@ struct CCFileImage: View {
     let name: String
     var maxW: CGFloat = 260
     var maxH: CGFloat = 320
+    var all: [String] = []     // 这个会话里所有的图（按出现先后）：点开能左右翻（11-24 寻）
     @State private var img: UIImage? = nil
     var body: some View {
         Group {
             if let img {
                 Image(uiImage: img).resizable().scaledToFit().frame(maxWidth: maxW, maxHeight: maxH)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .onTapGesture { ImageViewer.shared.image = img }
+                    .onTapGesture {
+                        if all.count > 1, let i = all.firstIndex(of: name) { ImageViewer.shared.cc = .init(sid: sid, names: all, index: i) }
+                        else { ImageViewer.shared.image = img }
+                    }
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.userBubble).frame(width: min(maxW, 120), height: min(maxH, 90))
             }
         }
         .task { if img == nil, let d = await CCShiAPI.file(sid, name) { img = UIImage(data: d) } }
+    }
+}
+
+/// 大图里的一页：按需取（CCShiAPI.file 自带缓存），没到先垫淡底
+struct CCFullImage: View {
+    let sid: String
+    let name: String
+    @State private var img: UIImage? = nil
+    var body: some View {
+        Group {
+            if let img { Image(uiImage: img).resizable().scaledToFit() }
+            else { ProgressView().tint(.white) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: name) { if img == nil, let d = await CCShiAPI.file(sid, name) { img = UIImage(data: d) } }
     }
 }
 
@@ -2146,10 +2175,11 @@ struct CCShowCard: View {
     let sid: String
     let event: CCEvent
     let onOpen: (CCWebDoc) -> Void
+    var all: [String] = []
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if event.type == "image", let f = event.file {
-                CCFileImage(sid: sid, name: f)
+                CCFileImage(sid: sid, name: f, all: all)
             } else {
                 Button { Task { await open() } } label: {
                     HStack(spacing: 10) {

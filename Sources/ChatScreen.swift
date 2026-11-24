@@ -563,8 +563,8 @@ struct ChatScreen: View {
                     let sid = n.object as? String ?? ""
                     path = sid.isEmpty ? [.ccshi] : [.ccshi, .ccshiSession(sid)]
                 }
-            if viewer.image != nil || viewer.gallery != nil {
-                ImageViewerView(image: viewer.image, gallery: viewer.gallery, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
+            if viewer.image != nil || viewer.gallery != nil || viewer.cc != nil {
+                ImageViewerView(image: viewer.image, gallery: viewer.gallery, cc: viewer.cc, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
             }
         }
     }

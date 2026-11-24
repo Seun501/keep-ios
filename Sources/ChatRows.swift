@@ -556,6 +556,8 @@ final class ImageViewer: ObservableObject {
     struct Gallery { var items: [GalleryItem]; var index: Int }
     @Published var image: UIImage? = nil       // 单张（CC师 页、输入框里选好的图）
     @Published var gallery: Gallery? = nil
+    struct CCGallery { var sid: String; var names: [String]; var index: Int }
+    @Published var cc: CCGallery? = nil        // CC师 会话里的图：整个会话连成一串左右翻（11-24 寻）
     private var scopes: [(key: String, items: [GalleryItem])] = []
     /// 登记一串（先登记的排前、后登记的先找：档案馆盖在聊天上时点档案里的图，在当天那串里翻）。
     /// 已登记过的就地换内容不挪位——聊天每次重排都会重登，不能因此跑到档案馆前头去
@@ -569,12 +571,13 @@ final class ImageViewer: ObservableObject {
         }
         gallery = Gallery(items: [GalleryItem(src: src, live: live)], index: 0)
     }
-    func close() { image = nil; gallery = nil }
+    func close() { image = nil; gallery = nil; cc = nil }
 }
 
 struct ImageViewerView: View {
     var image: UIImage? = nil
     var gallery: ImageViewer.Gallery? = nil
+    var cc: ImageViewer.CCGallery? = nil
     var onClose: () -> Void
     @State private var index = 0
     @State private var drop: CGFloat = 0   // 往下拖退出的距离（黑底跟着淡）
@@ -582,7 +585,11 @@ struct ImageViewerView: View {
         let items = gallery?.items ?? []
         ZStack {
             Color.black.opacity(0.93 * (1 - min(drop / 320, 1) * 0.75)).ignoresSafeArea()
-            if let image {
+            if let cc {
+                ZoomPager(count: cc.names.count, index: $index, live: { _ in nil }, onTap: onClose) { i in
+                    CCFullImage(sid: cc.sid, name: cc.names[i])
+                }.ignoresSafeArea()
+            } else if let image {
                 ZoomPager(count: 1, index: .constant(0), live: { _ in nil }, onTap: onClose) { _ in
                     Image(uiImage: image).resizable().scaledToFit()
                 }.ignoresSafeArea()
@@ -594,7 +601,7 @@ struct ImageViewerView: View {
         }
         .ignoresSafeArea()
         .onPreferenceChange(ViewerDismissKey.self) { drop = $0 }
-        .onAppear { index = gallery?.index ?? 0 }
+        .onAppear { index = cc?.index ?? gallery?.index ?? 0 }
         .background(EdgeSwipe(onBack: onClose))
     }
 }

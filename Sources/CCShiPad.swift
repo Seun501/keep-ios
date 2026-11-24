@@ -41,8 +41,8 @@ struct CCShiPadRoot: View {
                         .zIndex(Double(100 + i))
                         .transaction { $0.animation = nil }
                 }
-                if viewer.image != nil || viewer.gallery != nil {
-                    ImageViewerView(image: viewer.image, gallery: viewer.gallery, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
+                if viewer.image != nil || viewer.gallery != nil || viewer.cc != nil {
+                    ImageViewerView(image: viewer.image, gallery: viewer.gallery, cc: viewer.cc, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
                 }
             }
         }
