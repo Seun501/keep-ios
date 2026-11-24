@@ -6,6 +6,7 @@ struct ClawdWeb: UIViewRepresentable {
     let state: String
     let flip: Bool
     var onReady: (() -> Void)? = nil     // 画真正装好（含 SVG）才回调——开屏句子等它一起出
+    var px: CGFloat = 150                // 画框边长（顶栏那只用小框，别靠 scaleEffect 缩网页）
     func makeCoordinator() -> Coordinator { Coordinator(onReady: onReady) }
     /// 09-15 寻：开屏蟹比句子慢半拍——didFinish 只是网页壳装好，SVG 那张图还在路上；改听 img 的 onload，图真到了才算 ready
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -41,7 +42,7 @@ struct ClawdWeb: UIViewRepresentable {
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent;overflow:hidden}
-        img{width:150px;height:150px;display:block}img.flip{transform:scaleX(-1)}</style></head>
+        img{width:\(Int(px))px;height:\(Int(px))px;display:block}img.flip{transform:scaleX(-1)}</style></head>
         <body><img id="i" src="\(Self.files[state] ?? "clawd-mini-idle").svg" class="\(flip ? "flip" : "")"
         onload="requestAnimationFrame(function(){window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.ready&&window.webkit.messageHandlers.ready.postMessage(1)})"></body></html>
         """
@@ -172,14 +173,13 @@ final class ClawdModel: ObservableObject {
 /// 顶栏里蹲着的那只（手机 CC师 页圈圈左边，11-25 寻）：同一套画，缩小、不走，点一下照样有反应
 struct HeaderClawd: View {
     @ObservedObject var m: ClawdModel
-    static let k: CGFloat = 0.55
+    static let box: CGFloat = 90   // 蟹身约 30pt 宽
     var body: some View {
-        ClawdWeb(state: m.state, flip: false)
-            .frame(width: 150, height: 150)
-            .scaleEffect(Self.k)
-            .frame(width: 150 * Self.k, height: 150 * Self.k)
-            .offset(y: (m.hop ? -5 : 0) - 38)   // 蟹身在画框偏下（约 0.79 处），往上提到和圈圈齐
-            .frame(width: 44, height: 34)
+        // 画框 B：蟹身宽 B/3、中心在框高 0.79 处（svg viewBox −25…20，身子 y 6…15）——往上提 0.29B 就和圈圈齐
+        ClawdWeb(state: m.state, flip: false, px: Self.box)
+            .frame(width: Self.box, height: Self.box)
+            .offset(y: (m.hop ? -5 : 0) - Self.box * 0.29)
+            .frame(width: 34, height: 30)
             .contentShape(Rectangle())
             .onTapGesture { m.tap() }
             .onAppear { m.parked = true; m.idle() }
