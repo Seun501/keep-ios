@@ -400,6 +400,8 @@ struct KeyboardDismisser: UIViewRepresentable {
             while let cur = v {
                 if let tv = cur as? UITextView, tv.isEditable { return }
                 if cur is UITextField || cur is UIControl { return }
+                let cls = String(describing: type(of: cur))   // 粘贴／拷贝那条菜单上的按钮也不算空白
+                if cls.contains("Menu") || cls.contains("Callout") { return }
                 v = cur.superview
             }
             g.view?.endEditing(true)

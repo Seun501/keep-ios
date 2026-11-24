@@ -1104,6 +1104,11 @@ struct CCShiSessionScreen: View {
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Theme.hairRing, lineWidth: 1.5))
         .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .onTapGesture { if !focused { focused = true } }
+        .background(GeometryReader { g in   // 点输入卡里不收键盘（11-24 寻：iPad 上点输入框要粘贴，键盘却收了）
+            Color.clear.onAppear { KeyboardDismisser.keep["cccomposer"] = g.frame(in: .global) }
+                .onChange(of: g.frame(in: .global)) { r in KeyboardDismisser.keep["cccomposer"] = r }
+                .onDisappear { KeyboardDismisser.keep["cccomposer"] = nil }
+        })
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)
     }
 
