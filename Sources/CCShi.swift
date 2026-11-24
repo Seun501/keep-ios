@@ -697,11 +697,13 @@ struct CCShiSessionScreen: View {
     @Environment(\.scenePhase) private var phase
     private var showBack = true    // iPad 分栏里不画返回（11-24）
     private var onSidebar: (() -> Void)? = nil   // iPad：会话栏收起时左上角放「展开」
+    private var readWidth: CGFloat = .infinity   // iPad：消息流和输入框居中成一栏，顶栏照旧顶满左右（11-24 寻）
     /// 正开着的会话：前台来的同会话推送不弹（PushRegistrar willPresent，10-30 寻）
     static var openID: String? = nil
 
-    init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }, showBack: Bool = true, onSidebar: (() -> Void)? = nil) {
+    init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }, showBack: Bool = true, onSidebar: (() -> Void)? = nil, readWidth: CGFloat = .infinity) {
         self.onBack = onBack
+        self.readWidth = readWidth
         self.showBack = showBack
         self.onSidebar = onSidebar
         self.onOpen = onOpen
@@ -740,6 +742,7 @@ struct CCShiSessionScreen: View {
                                 Color.clear.frame(height: 8).id("bottom")
                             }
                             .padding(.horizontal, 18).padding(.top, 6)
+                            .frame(maxWidth: readWidth).frame(maxWidth: .infinity)
                             // 同克主页那只观察者（10-28 寻：键盘起收太硬）：染指示条、键盘动画里逐帧钉底；顺带记她在不在底部——只认她亲手滚的
                             .background(ScrollObserver(name: "ccsess") { y, ch, vh in
                                 let near = ch - y - vh < 80
@@ -788,7 +791,7 @@ struct CCShiSessionScreen: View {
                 if !m.err.isEmpty && !(m.running && m.live != nil) {   // 干活时断线由转星那行变红表示（同 Claude Code），这行只在闲着时出
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
                 }
-                composer
+                composer.frame(maxWidth: readWidth).frame(maxWidth: .infinity)
             }
         }
         .background(EdgeSwipe(onBack: onBack))

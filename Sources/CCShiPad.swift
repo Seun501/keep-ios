@@ -22,8 +22,7 @@ struct CCShiPadRoot: View {
                     }
                     ZStack {
                         if let id = sel {
-                            CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: side ? nil : toggle).id(id)
-                                .frame(maxWidth: 780)   // 宽屏上读的一栏不铺满（Claude App 同款）
+                            CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: side ? nil : toggle, readWidth: 780).id(id)   // 读的一栏不铺满、顶栏顶满（Claude App 同款）
                         } else {
                             VStack(spacing: 0) {
                                 HStack { if !side { CCSidebarButton(action: toggle) }; Spacer() }
