@@ -14,7 +14,9 @@ struct KeepApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if token != nil {
+            if token != nil && UIDevice.isPad {
+                HostBox(content: CCShiPadRoot()).ignoresSafeArea()   // iPad 只用 CC师（11-24 寻定）
+            } else if token != nil {
                 // 聊天页装在自己的宿主控制器里：键盘让位交给系统（曲线与键盘一致），
                 // 吃吃笺/抽屉打字时用宿主的 safeAreaRegions 开关把让位关掉——主页纹丝不动
                 HostBox(content: ChatScreen(onLogout: {

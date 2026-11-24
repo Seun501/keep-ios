@@ -7,7 +7,7 @@ options:
   # 也没声明支持哪些语言——App 的「语言」是含糊的。两处都钉成简体中文，Info 再声明只支持 zh-Hans
   developmentLanguage: zh-Hans
   deploymentTarget:
-    iOS: "16.4"
+    iOS: "16.0"          # 11-24：寻的 iPad 9 停在 iPadOS 16.2（再升只给 27，不合适）
     watchOS: "10.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
@@ -39,6 +39,12 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # 11-24 寻定 iPad 只用 CC师：分屏多任务要求 iPad 四个方向都认
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UIViewControllerBasedStatusBarAppearance: true
         UIRequiresFullScreen: false
         ITSAppUsesNonExemptEncryption: false
@@ -81,7 +87,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cn.seunk.keep
-        TARGETED_DEVICE_FAMILY: "1"          # 只做 iPhone（项目级写法被目标级默认盖掉，09-02 查包发现）
+        TARGETED_DEVICE_FAMILY: "1,2"        # iPhone＋iPad（11-24 寻定 iPad 只开 CC师）；目标级写，项目级会被默认盖掉（09-02）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         # 描述文件按目标各一份（09-10 加手表端后不能再在命令行统一指定）

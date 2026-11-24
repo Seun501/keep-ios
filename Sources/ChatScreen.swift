@@ -793,7 +793,7 @@ struct ChatScreen: View {
         ScrollView { listContent }
             .modifier(BottomAnchor())                 // iOS 18+：视口高一变（键盘起/收）底边锚定，和键盘同一条曲线，不再事后补滚
             .scrollIndicators(.visible)               // 系统原生指示条（染成赤陶，见 ScrollObserver）：能拖、拉到头会缩、和网页同款
-            .scrollBounceBehavior(.always, axes: .vertical)
+            .bounceVertical(true)
             .scrollDismissesKeyboard(.interactively)
             .overlay(alignment: .topLeading) { if Preview.on { Text(dbg + " n=\(model.items.count)").font(Theme.ui(9)).foregroundColor(.red).padding(4) } }
             // 什么都没拉到（没缓存、两次都连不上）：一行小字，点一下再试（展示样式待寻审）

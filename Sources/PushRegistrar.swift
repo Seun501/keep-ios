@@ -13,6 +13,7 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         Self.registerIfAuthorized()
+        if UIDevice.isPad { return true }   // iPad 只用 CC师（11-24）：不碰健康、手表、围栏
         Task { @MainActor in HealthSync.shared.setupBackground() }   // 健康库后台投递：每次启动都要装（09-08）
         PhoneLink.shared.activate()   // 手表端（09-10）：激活完把登录票传过去
         Task { @MainActor in Fences.shared.start() }   // 常去的地方（09-10）：围栏事件把 App 拉起来时收件人得在
@@ -81,8 +82,9 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         req.httpMethod = "POST"
         req.setValue("Bearer \(auth)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: String] = ["token": hex, "env": Self.environment,
+        var body: [String: String] = ["token": hex, "env": Self.environment,
                                       "device": UIDevice.current.name]
+        if UIDevice.isPad { body["scope"] = "ccshi" }   // 网关只给这台发 CC师 的推送（11-24 寻定）
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: req) { _, resp, err in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1

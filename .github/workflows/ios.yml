@@ -28,6 +28,10 @@ on:
         description: "截图班要截的页（空格分隔）；macOS 分钟按十倍计费，只截要看的"
         type: string
         default: "chat drawer board boardpop boardreply greet"
+      sim:
+        description: "截图用的模拟器（空＝iPhone 17；iPad 版填 iPad，挑清单里第一台 iPad，11-24）"
+        type: string
+        default: ""
       wscreens:
         description: "手表截图班要截的页（wchat wchatlow wrec；空＝不截手表）"
         type: string
@@ -39,7 +43,7 @@ concurrency:
 
 env:
   SCHEME: Keep
-  SIM_NAME: iPhone 17     # 打包机 Xcode 26.6 的模拟器清单只有 17 系（09-02 实测）
+  SIM_NAME: ${{ github.event.inputs.sim || 'iPhone 17' }}     # 打包机 Xcode 26.6 的模拟器清单只有 17 系（09-02 实测）
 
 jobs:
   build:
@@ -62,7 +66,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project Keep.xcodeproj -scheme "$SCHEME" \
-            -destination "platform=iOS Simulator,name=$SIM_NAME" \
+            -destination "generic/platform=iOS Simulator" \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | grep -E "error:|BUILD|\*\* " | tail -80
@@ -71,6 +75,8 @@ jobs:
         run: |
           set -e
           UDID=$(xcrun simctl list devices available | grep "$SIM_NAME (" | head -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep -E "^ +$SIM_NAME" | head -1 | sed -E 's/.*\(([0-9A-F-]+)\) \(.*/\1/')
+          xcrun simctl list devices available | grep -E "^ +$SIM_NAME" | head -1
           echo "sim=$UDID"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b

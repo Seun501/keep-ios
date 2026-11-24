@@ -248,6 +248,10 @@ struct CCShiListScreen: View {
     var onBack: () -> Void
     var onOpen: (String) -> Void
     var onFiles: () -> Void = {}
+    var selected: String? = nil     // iPad 分栏：右边正开着的那个会话，卡片染淡橙（11-24）
+    var showBack = true             // iPad 上列表就是首页，没有可退的
+    var onSidebar: (() -> Void)? = nil   // iPad：左上角换成收起会话栏（同 Claude App，11-24 寻）
+    var tinted = false              // iPad 会话栏：底色比对话那边深一档
     @StateObject private var m = CCShiListModel()
     @State private var renaming: CCSession? = nil
     @State private var swiped: String? = Preview.screen == "ccshiswipe" ? "p1" : nil   // 左滑开着的那张（同时只开一张）
@@ -257,9 +261,11 @@ struct CCShiListScreen: View {
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
+            if tinted { Theme.muted.opacity(0.06).ignoresSafeArea() }
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+                    if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
+                    if let f = onSidebar { CCSidebarButton(action: f) }
                     Text("CC师").font(Theme.round(14)).foregroundColor(Theme.muted)
                     Spacer()
                     Button(action: onFiles) {   // 文件：我的记忆、项目文档、给CC师读、临时给寻
@@ -332,6 +338,7 @@ struct CCShiListScreen: View {
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay { if s.id == selected { RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accent.opacity(0.09)).allowsHitTesting(false) } }
         .contentShape(Rectangle())
         .onTapGesture { if swiped != nil { withAnimation(.easeOut(duration: 0.2)) { swiped = nil } } else { onOpen(s.id) } }   // 有卡开着时点卡片＝收起
     }
@@ -678,11 +685,15 @@ struct CCShiSessionScreen: View {
     @State private var shown = 120     // 消息流只排最近这么多段（非懒列表，10-28）
     @ObservedObject private var rec = VoiceRecorder.shared
     @Environment(\.scenePhase) private var phase
+    private var showBack = true    // iPad 分栏里不画返回（11-24）
+    private var onSidebar: (() -> Void)? = nil   // iPad：会话栏收起时左上角放「展开」
     /// 正开着的会话：前台来的同会话推送不弹（PushRegistrar willPresent，10-30 寻）
     static var openID: String? = nil
 
-    init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }) {
+    init(id: String, onBack: @escaping () -> Void, onOpen: @escaping (String) -> Void = { _ in }, showBack: Bool = true, onSidebar: (() -> Void)? = nil) {
         self.onBack = onBack
+        self.showBack = showBack
+        self.onSidebar = onSidebar
         self.onOpen = onOpen
         _m = StateObject(wrappedValue: CCShiSessionModel(id: id))
         _draft = State(initialValue: Preview.on ? "" : (UserDefaults.standard.string(forKey: "draft.ccshi.\(id)") ?? ""))   // 没发出去的字按会话留着，退出页面、App 被刷掉都还在（10-28 寻，同克那边）
@@ -830,7 +841,8 @@ struct CCShiSessionScreen: View {
     private var ctxMax: Int { max(1, m.meta?.ctx_max ?? 200_000) }
     private var header: some View {
         HStack(spacing: 12) {
-            Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8)
+            if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
+            if let f = onSidebar { CCSidebarButton(action: f) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(Theme.muted).lineLimit(1)
                 if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）

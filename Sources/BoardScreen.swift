@@ -335,7 +335,7 @@ struct OrangeScroll<Content: View>: View {
             content().background(ScrollObserver(name: name, bounce: bounce) { _, _, _ in })
         }
         .scrollIndicators(.visible)
-        .scrollBounceBehavior(bounce ? .always : .basedOnSize, axes: .vertical)
+        .bounceVertical(bounce)
     }
 }
 
