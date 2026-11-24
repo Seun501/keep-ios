@@ -457,32 +457,37 @@ struct KeMarkdown: View {
 struct MDCode: View {
     let code: String
     var round = false
+    var lang = ""
     @State private var copied = false
+    private var bg: Color { Color(uiColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27)) }
     var body: some View {
-        if round { box.overlay(alignment: .topTrailing) { copyButton } } else { box }
-    }
-    /// CC师 页右上角的复制（11-24 寻：iPad 上长按选不中代码框）
-    private var copyButton: some View {
-        Button {
-            UIPasteboard.general.string = code
-            withAnimation(.easeOut(duration: 0.15)) { copied = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(.easeOut(duration: 0.2)) { copied = false } }
-        } label: {
-            Image(copied ? "tool-check" : "tool-copy").renderingMode(.template).resizable().frame(width: 15, height: 15)
-                .foregroundColor(Theme.muted).frame(width: 34, height: 30)
-                .background(Color(uiColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27)).opacity(0.92), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain).padding(4)
-    }
-    private var box: some View {
-        ScrollView(.horizontal, showsIndicators: round) {
-            Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
-                .textSelection(.enabled)
-                .padding(.horizontal, 12).padding(.trailing, round ? 34 : 0).padding(.vertical, 10)   // 右边给复制钮让位
-                .background(round ? HScrollTint() : nil)
+        VStack(alignment: .leading, spacing: 0) {
+            if round {   // CC师 页：顶上一行「语言 …… ⧉」＋一道细线（11-24 寻：学小鲸鱼）
+                HStack(spacing: 0) {
+                    Text(lang.isEmpty ? "code" : lang).font(Theme.mono(12)).foregroundColor(Theme.muted)
+                    Spacer()
+                    Button {
+                        UIPasteboard.general.string = code
+                        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(.easeOut(duration: 0.2)) { copied = false } }
+                    } label: {
+                        Image(copied ? "tool-check" : "tool-copy").renderingMode(.template).resizable().frame(width: 14, height: 14)   // 只图标不写字（寻）
+                            .foregroundColor(Theme.muted).padding(.vertical, 7).padding(.horizontal, 8).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 12).padding(.trailing, 10).padding(.top, 4)
+                Rectangle().fill(Theme.border).frame(height: 0.5).padding(.horizontal, 12)
+            }
+            ScrollView(.horizontal, showsIndicators: round) {
+                Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(round ? HScrollTint() : nil)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: Theme.uiDyn(0xF2EDE3, 0x2A2A27)), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

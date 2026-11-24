@@ -1245,7 +1245,7 @@ final class CCPin { var atBottom = true; var loadingOlder = false }
 struct CCTextRow: View {
     let event: CCEvent
     let onRewind: () -> Void
-    enum Part { case text(String); case table([String], [[String]]); case code(String); case quote(String); case rule }
+    enum Part { case text(String); case table([String], [[String]]); case code(String, String); case quote(String); case rule }
     /// md 表格单拎出来画成格子（10-28 寻：表格要渲染），其余照旧一份富文本。判表格同 MD.parse：带 | 的行＋下一行是 |---| 分隔
     /// 引用（> 开头的连续行）带左边一道细线、分割线（--- / *** / ___）画成一根细线，也单拎（11-22 寻：标题不像标题、排版不好看）
     static func split(_ t: String) -> [Part] {
@@ -1274,7 +1274,8 @@ struct CCTextRow: View {
             if lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```"),
                let end = lines[(i + 1)...].firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("```") }) {
                 flush()
-                out.append(.code(lines[(i + 1)..<end].joined(separator: "\n"))); i = end + 1; continue
+                let lang = String(lines[i].trimmingCharacters(in: .whitespaces).dropFirst(3)).trimmingCharacters(in: .whitespaces)   // 围栏上写的语言（代码框顶上那行用，11-24）
+                out.append(.code(lines[(i + 1)..<end].joined(separator: "\n"), lang)); i = end + 1; continue
             }
             if lines[i].contains("|"), i + 1 < lines.count, isSep(lines[i + 1]) {
                 flush()
@@ -1301,7 +1302,7 @@ struct CCTextRow: View {
                 switch part {
                 case .text(let s): RichText(attr: CCMD.ns(s))
                 case .table(let h, let r): MDTable(head: h, rows: r, round: true)
-                case .code(let c): MDCode(code: c, round: true)
+                case .code(let c, let l): MDCode(code: c, round: true, lang: l)
                 case .quote(let s):
                     HStack(alignment: .top, spacing: 10) {
                         RoundedRectangle(cornerRadius: 1.5).fill(Theme.border).frame(width: 3)
