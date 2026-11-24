@@ -172,13 +172,13 @@ final class ClawdModel: ObservableObject {
 /// 顶栏里蹲着的那只（手机 CC师 页圈圈左边，11-25 寻）：同一套画，缩小、不走，点一下照样有反应
 struct HeaderClawd: View {
     @ObservedObject var m: ClawdModel
-    static let k: CGFloat = 0.42
+    static let k: CGFloat = 0.55
     var body: some View {
         ClawdWeb(state: m.state, flip: false)
             .frame(width: 150, height: 150)
             .scaleEffect(Self.k)
             .frame(width: 150 * Self.k, height: 150 * Self.k)
-            .offset(y: m.hop ? -5 : 0)
+            .offset(y: (m.hop ? -5 : 0) - 24)   // 蟹身在画框偏下（约 0.79 处），往上提到和圈圈齐
             .frame(width: 44, height: 34)
             .contentShape(Rectangle())
             .onTapGesture { m.tap() }
