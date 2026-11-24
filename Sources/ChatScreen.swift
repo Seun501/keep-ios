@@ -611,6 +611,7 @@ struct ChatScreen: View {
                 .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
             }
             composer
+            if plusOpen { attachPanel }
         }
         .background(Theme.bg.ignoresSafeArea())
         // 键盘让位交给系统（与键盘同曲线同时长）；吃吃笺/抽屉/别的页开着时把宿主的让位关掉，主页不动
@@ -625,23 +626,6 @@ struct ChatScreen: View {
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }
         })   // 屏幕左缘右滑唤出抽屉
-        // 「+」菜单：按「+」的锚点画在它正上方、左边对齐；点菜单外任何地方收起
-        .overlayPreferenceValue(PlusAnchorKey.self) { a in
-            if plusOpen, let a {
-                GeometryReader { g in
-                    let r = g[a]
-                    ZStack(alignment: .topLeading) {
-                        Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
-                        // 系统款是从按钮上长出来、盖住按钮的：底边压到「+」下沿上 4 点，左边比「+」进 2 点
-                        plusMenu
-                            .frame(width: 176, height: max(0, r.maxY - 4), alignment: .bottomLeading)
-                            .offset(x: r.minX + 2)
-                            .transition(.scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
-                    }
-                }
-                .zIndex(50)
-            }
-        }
         .onChange(of: composerFocused) { on in if on { plusOpen = false } }
         .overlay { if showMeal { MealSheet(shown: $showMeal, onSent: { line in
             model.addLocalPing(line)
@@ -1026,13 +1010,13 @@ struct ChatScreen: View {
                 // 挂在「+」正上方（锚点走 anchorPreference，overlay 画在最外层，不被输入卡裁）
                 Button {
                     composerFocused = false
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen = true }
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen.toggle() }
                 } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
+                        .rotationEffect(.degrees(plusOpen ? 45 : 0))   // 开着时转成 ×，再点收起（11-24）
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .anchorPreference(key: PlusAnchorKey.self, value: .bounds) { $0 }
                 .padding(.leading, -4)
                 // 松手后的语音小签：麦克风＋秒数，× 丢掉（字和音频一起丢）
                 if let vd = voiceDraft {
@@ -1085,32 +1069,15 @@ struct ChatScreen: View {
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pending.isEmpty }
     enum PlusAction { case camera, album }
-    /// 「+」菜单（照寻 09-21 发来的 iOS 26 系统菜单截图）：赤陶色图标在左、字跟在后、一行 56 高、没有分隔线、
-    /// 整块圆角 28、近白的毛玻璃底、软投影；「相册」在上「拍照」在下（系统把离按钮近的排下面）。只把宽收到内容宽（176）。
-    private var plusMenu: some View {
-        VStack(spacing: 0) {
-            plusRow("相册", "photo.on.rectangle") { pick(.album) }
-            plusRow("拍照", "camera") { pick(.camera) }
-        }
-        .padding(.vertical, 4)
-        .frame(width: 176)
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.regularMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.bg.opacity(0.6)))
-        }
-        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
-    }
-    private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            HStack(spacing: 14) {
-                Image(systemName: sys).font(.system(size: 20)).foregroundColor(Color(uiColor: Theme.uiScrollTint)).frame(width: 26)
-                Text(title).font(.system(size: 17)).foregroundColor(Theme.text)
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, 22).padding(.trailing, 16).frame(height: 56)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+    /// 「+」面板（11-24 寻定学小鲸鱼，替掉 09-21 那块小菜单）：输入卡下面一排最近照片（勾了「添加 n 张」）＋拍照／相册两格
+    private var attachPanel: some View {
+        AttachPanel(max: 4 - pending.count, live: true,
+                    onCamera: { pick(.camera) }, onAlbum: { pick(.album) },
+                    onAdd: { imgs in
+                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        Task { await addImages(imgs) }
+                    })
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
     private func pick(_ a: PlusAction) {
         withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }

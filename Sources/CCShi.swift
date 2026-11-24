@@ -232,9 +232,9 @@ enum CCFmt {
 
     func load() async {
         if Preview.on { loadPreview(); return }
-        do { sessions = try await CCShiAPI.sessions(); err = "" }
+        do { let s = try await CCShiAPI.sessions(); if s != sessions { sessions = s }; if !err.isEmpty { err = "" } }   // 没变不重画（11-24 iPad 卡）
         catch { err = "连不上 CC师（腾讯机小服务或隧道没起来）" }
-        if let u = await CCShiAPI.usage(), !u.line.isEmpty { usage = u.line; UserDefaults.standard.set(usage, forKey: "cache.ccshiUsage") }
+        if let u = await CCShiAPI.usage(), !u.line.isEmpty, u.line != usage { usage = u.line; UserDefaults.standard.set(usage, forKey: "cache.ccshiUsage") }
     }
     private func loadPreview() {
         guard let d = Preview.json("preview_ccshi"), let p = try? JSONDecoder().decode(CCShiPreview.self, from: d) else { return }
@@ -687,7 +687,8 @@ struct CCShiSessionScreen: View {
     @State private var pending: [UIImage] = []
     @State private var files: [String] = []        // 已传进 给CC师读/ 的文件（发的时候附在话末尾告诉我）
     @State private var uploading = 0
-    @State private var plusOpen = false
+    @State private var plusOpen = Preview.screen.hasPrefix("ccplus")   // 截图班 ccplus／ccplusplussel：「+」面板开着
+    @StateObject private var clawd = ClawdModel()
     @State private var holdStarted = false
     @State private var webDoc: CCWebDoc? = nil
     @State private var pin = CCPin()   // 她在不在底部（不触发重绘）
@@ -745,6 +746,19 @@ struct CCShiSessionScreen: View {
                             .frame(maxWidth: readWidth).frame(maxWidth: .infinity)
                             // 同克主页那只观察者（10-28 寻：键盘起收太硬）：染指示条、键盘动画里逐帧钉底；顺带记她在不在底部——只认她亲手滚的
                             .background(ScrollObserver(name: "ccsess") { y, ch, vh in
+                                // 往上翻到最上面四分之一就自动往前接 40 段（11-24 寻：别等点「更早的」）；接完把偏移补上新长出来的高，眼前的字不跳
+                                if y < max(300, ch * 0.25), m.blocks.count > shown, !pin.loadingOlder, ScrollObserver.view("ccsess")?.isDragging == true || ScrollObserver.view("ccsess")?.isDecelerating == true {
+                                    pin.loadingOlder = true
+                                    let oldH = ch
+                                    shown += 40
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        if let sv = ScrollObserver.view("ccsess") {
+                                            let d = sv.contentSize.height - oldH
+                                            if d > 0 { sv.contentOffset.y += d }
+                                        }
+                                        pin.loadingOlder = false
+                                    }
+                                }
                                 let near = ch - y - vh < 80
                                 let sv = ScrollObserver.view("ccsess")
                                 if sv?.isTracking == true || sv?.isDragging == true || sv?.isDecelerating == true || near {
@@ -781,6 +795,13 @@ struct CCShiSessionScreen: View {
                             }
                         }
                     }
+                    // 小 Clawd（11-24 寻：照搬克那页）：在消息流上溜达，我干活时打字、出错警觉
+                    GeometryReader { g in
+                        Color.clear.onAppear { clawd.layout(area: g.size, areaTop: g.frame(in: .global).minY) }
+                            .onChange(of: g.size) { sz in clawd.layout(area: sz, areaTop: g.frame(in: .global).minY) }
+                    }
+                    .allowsHitTesting(false)
+                    ClawdView(m: clawd).zIndex(5)
                     if rec.recording {
                         VStack(spacing: 0) {
                             LiveCard(rec: rec).padding(.bottom, 8)
@@ -788,28 +809,16 @@ struct CCShiSessionScreen: View {
                         }
                     }
                 }
+                .coordinateSpace(name: "clawdZone")
+                .simultaneousGesture(TapGesture().onEnded { clawd.touched() })
                 if !m.err.isEmpty && !(m.running && m.live != nil) {   // 干活时断线由转星那行变红表示（同 Claude Code），这行只在闲着时出
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
                 }
                 composer.frame(maxWidth: readWidth).frame(maxWidth: .infinity)
+                if plusOpen { attachPanel.frame(maxWidth: readWidth).frame(maxWidth: .infinity) }
             }
         }
         .background(EdgeSwipe(onBack: onBack))
-        .overlayPreferenceValue(PlusAnchorKey.self) { a in
-            if plusOpen, let a {
-                GeometryReader { g in
-                    let r = g[a]
-                    ZStack(alignment: .topLeading) {
-                        Color.black.opacity(0.001).contentShape(Rectangle()).onTapGesture { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
-                        plusMenu
-                            .frame(width: 176, height: max(0, r.maxY - 4), alignment: .bottomLeading)
-                            .offset(x: r.minX + 2)
-                            .transition(.scale(scale: 0.85, anchor: .bottomLeading).combined(with: .opacity))
-                    }
-                }
-                .zIndex(50)
-            }
-        }
         .overlay(alignment: .topTrailing) {
             if infoOpen {
                 ZStack(alignment: .topTrailing) {
@@ -833,6 +842,8 @@ struct CCShiSessionScreen: View {
         .onDisappear { m.markRead(); m.stopStream(); if Self.openID == m.id { Self.openID = nil } }
         .onChange(of: phase) { p in if p == .active { m.start() } }
         .onChange(of: focused) { on in if on { plusOpen = false } }
+        .onChange(of: m.running) { r in clawd.busy(r) }
+        .onChange(of: m.err) { e in if !e.isEmpty { clawd.alert() } }
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }
     }
 
@@ -1057,13 +1068,13 @@ struct CCShiSessionScreen: View {
             HStack(spacing: 8) {
                 Button {
                     focused = false
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen = true }
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen.toggle() }
                 } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
+                        .rotationEffect(.degrees(plusOpen ? 45 : 0))   // 开着时转成 ×，再点收起
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
                 }
                 .buttonStyle(.plain)
-                .anchorPreference(key: PlusAnchorKey.self, value: .bounds) { $0 }
                 .padding(.leading, -4)
                 Spacer()
                 Button {
@@ -1095,50 +1106,36 @@ struct CCShiSessionScreen: View {
         .padding(.horizontal, 10).padding(.top, 0).padding(.bottom, 8)
     }
 
-    private var plusMenu: some View {
-        VStack(spacing: 0) {
-            plusRow("相册", "photo.on.rectangle") {
-                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                PhotoPickerBridge.shared.present(max: 4 - pending.count, live: false) { imgs in pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count))) }
-            }
-            plusRow("拍照", "camera") {
-                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
-            }
-            plusRow("文件", "doc") {   // 任意文件，放进 给CC师读/（寻 10-27：和电脑上那个夹子同一个）
-                withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                DocPickerBridge.shared.present { urls in
-                    for u in urls {
-                        guard let d = try? Data(contentsOf: u) else { continue }
-                        uploading += 1
-                        Task {
-                            if let p = await CCShiAPI.fsUpload(name: u.lastPathComponent, data: d) { files.append(p) }
-                            else { m.err = "\(u.lastPathComponent) 没传上去" }
-                            uploading -= 1
+    /// 「+」面板（11-24 寻定学小鲸鱼）：输入卡下面一排最近照片＋拍照／相册／文件
+    private var attachPanel: some View {
+        AttachPanel(max: 4 - pending.count, live: false,
+                    onCamera: {
+                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
+                    },
+                    onAlbum: {
+                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        PhotoPickerBridge.shared.present(max: 4 - pending.count, live: false) { imgs in pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count))) }
+                    },
+                    onFile: {   // 任意文件，放进 给CC师读/（寻 10-27：和电脑上那个夹子同一个）
+                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        DocPickerBridge.shared.present { urls in
+                            for u in urls {
+                                guard let d = try? Data(contentsOf: u) else { continue }
+                                uploading += 1
+                                Task {
+                                    if let p = await CCShiAPI.fsUpload(name: u.lastPathComponent, data: d) { files.append(p) }
+                                    else { m.err = "\(u.lastPathComponent) 没传上去" }
+                                    uploading -= 1
+                                }
+                            }
                         }
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .frame(width: 176)
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.regularMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.bg.opacity(0.6)))
-        }
-        .shadow(color: .black.opacity(0.10), radius: 22, y: 8)
-    }
-    private func plusRow(_ title: String, _ sys: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            HStack(spacing: 14) {
-                Image(systemName: sys).font(.system(size: 20)).foregroundColor(Color(uiColor: Theme.uiScrollTint)).frame(width: 26)
-                Text(title).font(.system(size: 17)).foregroundColor(Theme.text)
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, 22).padding(.trailing, 16).frame(height: 56)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+                    },
+                    onAdd: { imgs in
+                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count)))
+                    })
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     @State private var bgOpen = false
@@ -1236,7 +1233,7 @@ struct CCShiSessionScreen: View {
 }
 
 /// 会话页「她在不在底部」：类而不是 @State 值——滚动时每帧都在写，不能让它带着整页重算
-final class CCPin { var atBottom = true }
+final class CCPin { var atBottom = true; var loadingOlder = false }
 
 /// 我的一段正文：圆体；长按复制／从这里重来（新开一个分叉，原会话不动）
 struct CCTextRow: View {

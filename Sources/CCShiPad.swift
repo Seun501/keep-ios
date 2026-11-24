@@ -57,9 +57,39 @@ struct CCShiPadRoot: View {
                 }
             }
         }
+        .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in   // 屏幕最左边往右一拉＝滑出会话栏（11-24 寻）
+            if !side, v.startLocation.x < 30, v.translation.width > 60, abs(v.translation.height) < 80 { toggle() }
+        })
+        .onAppear { PadJank.shared.start() }
+        .onChange(of: side) { v in PadJank.shared.flush(); PadJank.shared.sideOn = v }
         .onReceive(NotificationCenter.default.publisher(for: .keepOpenCCShi)) { n in   // 点了「CC师」推送：右边换成那个会话
             if let sid = n.object as? String, !sid.isEmpty { files = []; sel = sid }
         }
+    }
+}
+
+/// iPad 掉帧仪（11-24 寻：开着会话栏就卡）：一直数帧，每 20 秒有卡帧就报一行 diag（会话栏开没开、卡帧数、最长一帧），一次启动最多 30 行
+final class PadJank {
+    static let shared = PadJank()
+    var sideOn = true
+    private var link: CADisplayLink?
+    private var last: CFTimeInterval = 0, t0: CFTimeInterval = 0
+    private var big = 0, frames = 0, maxGap = 0.0, sent = 0
+    func start() {
+        guard link == nil, !Preview.on else { return }
+        let l = CADisplayLink(target: self, selector: #selector(tick(_:))); l.add(to: .main, forMode: .common); link = l
+    }
+    @objc private func tick(_ l: CADisplayLink) {
+        if last > 0 { let g = (l.timestamp - last) * 1000; frames += 1; if g > 50 { big += 1 }; if g > maxGap { maxGap = g } } else { t0 = l.timestamp }
+        last = l.timestamp
+        if l.timestamp - t0 > 20 { flush() }
+    }
+    func flush() {
+        if big > 0 && sent < 30 && UIApplication.shared.applicationState == .active {
+            sent += 1
+            PushRegistrar.diag(String(format: "ipad-jank side=%d frames=%d big=%d max=%.0fms", sideOn ? 1 : 0, frames, big, maxGap))
+        }
+        big = 0; frames = 0; maxGap = 0; last = 0
     }
 }
 
