@@ -76,12 +76,12 @@ enum Theme {
     /// 中文回落字体本体（量自然行高用）
     static func uiCJK(_ size: CGFloat, weight: Font.Weight = .regular) -> UIFont {
         let size = size * padK
-        UIFont(name: cjkName(weight), size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
+        return UIFont(name: cjkName(weight), size: size) ?? UIFont(name: "Songti SC", size: size) ?? UIFont.systemFont(ofSize: size)
     }
     /// 寻的汉字＝系统字（苹方）。09-21 查明：之前写的 STSongti-SC 在 iPhone 上根本没有，一直落到这里——她看惯的就是苹方，明写。
     static func uiUserCJK(_ size: CGFloat, bold: Bool = false) -> UIFont {
         let size = size * padK
-        UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        return UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
     // MARK: Cascadia Mono（寻 09-13）：界面和她的气泡里的字母、数字、英文标点走 Cascadia Mono。
     // 打包的是只含 ASCII（U+0020–007E）的子集（38 KB，可变字重 200–700）——其余字符它根本没有，
