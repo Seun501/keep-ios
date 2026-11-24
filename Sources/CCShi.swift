@@ -719,7 +719,7 @@ struct CCShiSessionScreen: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                PadHeaderEdge { header }   // iPad：顶栏顶满会话栏右边，跟着一起滑（11-24 寻）
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -834,9 +834,11 @@ struct CCShiSessionScreen: View {
             if infoOpen {
                 ZStack(alignment: .topTrailing) {
                     Color.black.opacity(0.001).ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.15)) { infoOpen = false; modelOpen = false } }
+                    PadHeaderEdge(leading: false) {
                     HStack(alignment: .top, spacing: 8) {
                         if modelOpen { modelCard.padding(.top, 70).transition(.opacity) }
                         infoCard
+                    }
                     }
                     .padding(.top, 52).padding(.trailing, 14)
                         .transition(.scale(scale: 0.9, anchor: .topTrailing).combined(with: .opacity))
@@ -877,7 +879,7 @@ struct CCShiSessionScreen: View {
     private var header: some View {
         HStack(spacing: 12) {
             if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
-            if let f = onSidebar { CCSidebarButton(action: f) }
+            if let f = onSidebar { CCSidebarButton(action: f, collapsing: true) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
                 if let h = quotaHit { quotaRow(h, hit: true) }

@@ -5,43 +5,35 @@ import SwiftUI
 /// 文件页盖在整屏上，一层层点进去、左上角退回。推送只收 CC师 的（登记带 scope=ccshi，网关发克的推送跳过这台）。
 struct CCShiPadRoot: View {
     @State private var sel: String? = Preview.on && Preview.screen != "ipad" ? "p1" : nil
-    @State private var side = Preview.screen != "ipadwide"   // 会话栏开着没有（按钮、滑动动画看它）
-    @State private var inset: CGFloat? = nil                  // 对话那边让出来的宽：不跟着动画变（每帧重排整条消息流会卡，11-24 寻），滑完/滑前一次到位
+    @State private var side = Preview.screen != "ipadwide"   // 会话栏开着没有（按钮、点按看它；滑的那几层看 PadDrag.side）
     @State private var files: [String] = Preview.screen == "ipadfiles" ? [""] : []
     @ObservedObject private var viewer = ImageViewer.shared
-    @State private var dragPrepped = false                   // 往左拖着收：开拖那一下对话先铺满（同按钮收起）
-    private let drag = PadDrag.shared                        // 跟手的位移放在小对象里，只有会话栏那层跟着重画（根不重画，对话不重排）
-    /// 开：会话栏先盖着对话滑进来，滑完对话再一次让位；关：对话先一次铺满（被会话栏挡着看不见），会话栏再滑走
-    private func toggle() {
-        let noAnim = Transaction(animation: nil)
-        if side {
-            withTransaction(noAnim) { inset = 0 }
-            withAnimation(.easeOut(duration: 0.24)) { side = false }
-        } else {
-            withAnimation(.easeOut(duration: 0.24)) { side = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) { if side { withTransaction(noAnim) { inset = nil } } }
-        }
+    private let drag = PadDrag.shared                        // 跟手的位移放在小对象里，只有滑的那几层跟着重画（根不重画，对话不重排）
+    /// 开关会话栏：只动平移，不重排（11-24 寻：开收两头读的那一栏一样宽，字不跑；顶栏跟着一起滑）
+    private func setSide(_ v: Bool, _ anim: Animation = .easeOut(duration: 0.24)) {
+        withAnimation(anim) { side = v; drag.side = v; drag.dx = 0 }
     }
+    private func toggle() { setSide(!side) }
 
-    /// 读的那一栏（780 居中）在让出 inset 之后左边缘在哪
-    static func colLeft(_ W: CGFloat, _ inset: CGFloat) -> CGFloat { inset + max(0, (W - inset - 780) / 2) }
+    /// 会话栏宽
+    static func barW(_ W: CGFloat) -> CGFloat { min(340, max(290, W * 0.32)) }
 
     var body: some View {
         GeometryReader { g in
             ZStack {
                 Theme.bg.ignoresSafeArea()
-                let w = min(340, max(290, g.size.width * 0.32))
-                let pad = inset ?? (side ? w : 0)
+                let w = Self.barW(g.size.width)
+                // 读的那一栏开收都一样宽＝开着时会话栏右边剩下的宽（不超过 780）：收着时它居中，开着时正好填满右边，挪 w/2 就到位
+                let rw = min(780, g.size.width - w)
                 ZStack(alignment: .topLeading) {
-                    // 对话跟着会话栏一起滑（11-24 寻：推着走）：滑的时候只平移，不改宽（不重排）；EquatableBox 挡住拖动时的重算
-                    SideShift(w: w, side: side, pad: pad, travel: Self.colLeft(g.size.width, w) - Self.colLeft(g.size.width, 0)) {
-                    EquatableBox(key: [sel ?? "", side ? "1" : "0", "\(pad)", "\(Int(g.size.width))"]) {
+                    SideShift(w: w) {
+                    EquatableBox(key: [sel ?? "", "\(Int(g.size.width))"]) {   // 开关会话栏不进 key：里面不重算
                     ZStack {
                         if let id = sel {
-                            CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: side ? nil : toggle, readWidth: 780).id(id)   // 读的一栏不铺满、顶栏顶满（Claude App 同款）
+                            CCShiSessionScreen(id: id, onBack: {}, onOpen: { sel = $0 }, showBack: false, onSidebar: toggle, readWidth: rw).id(id)
                         } else {
                             VStack(spacing: 0) {
-                                HStack { if !side { CCSidebarButton(action: toggle) }; Spacer() }
+                                PadHeaderEdge { HStack { CCSidebarButton(action: toggle, collapsing: true); Spacer() } }
                                     .padding(.horizontal, 16).padding(.top, 12).frame(minHeight: 52)
                                 Spacer()
                                 Text("从左边挑一个会话，或者点 + 开一个。").font(Theme.round(14)).foregroundColor(Theme.muted)
@@ -50,10 +42,9 @@ struct CCShiPadRoot: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.leading, pad)
                     }.equatable()
                     }
-                    SideSlide(w: w, side: side) {
+                    SideSlide(w: w) {
                         CCShiListScreen(onBack: {}, onOpen: { sel = $0 }, onFiles: { files = [""] }, selected: sel, showBack: false, onSidebar: toggle, tinted: true)
                     }
                     .frame(width: w)   // 底色深一档代替分隔线（寻不喜欢描边）；收起时整块滑出屏外，不拆不建
@@ -68,38 +59,28 @@ struct CCShiPadRoot: View {
                     ImageViewerView(image: viewer.image, gallery: viewer.gallery, cc: viewer.cc, onClose: { viewer.close() }).zIndex(300).transaction { $0.animation = nil }
                 }
             }
+            .onAppear { drag.w = Self.barW(g.size.width) }
+            .onChange(of: g.size.width) { W in drag.w = Self.barW(W) }
         }
-        // 跟手拉会话栏（11-24 寻：照 Claude App）：收着时从屏幕左边缘往右拖，会话栏跟着手指出来（只认左边 28pt 起手，正文中间的手势不算，11-24 寻）；开着时在对话那边往左拖，跟着收回去。
+        // 跟手拉会话栏（11-24 寻：照 Claude App）：收着时从屏幕左边缘往右拖，会话栏跟着手指出来（只认左边 28pt 起手，正文中间的手势不算）；开着时在对话那边往左拖，跟着收回去。
         // 松手按拖了多远／甩的劲决定开还是退回
         .simultaneousGesture(DragGesture(minimumDistance: 16, coordinateSpace: .global)
             .onChanged { v in
-                let w = min(340, max(290, UIScreen.main.bounds.width * 0.32))
+                let w = drag.w
                 let dx = v.translation.width
                 guard abs(dx) > abs(v.translation.height) * 1.2 || drag.dx != 0 else { return }
                 if !side, dx > 0, v.startLocation.x < 28 { drag.dx = min(dx, w) }
-                else if side, dx < 0, v.startLocation.x > w {
-                    if !dragPrepped { dragPrepped = true; withTransaction(Transaction(animation: nil)) { inset = 0 } }
-                    drag.dx = max(dx, -w)
-                }
+                else if side, dx < 0, v.startLocation.x > w { drag.dx = max(dx, -w) }
             }
             .onEnded { v in
-                let w = min(340, max(290, UIScreen.main.bounds.width * 0.32))
+                let w = drag.w
                 let dx = drag.dx, fling = v.predictedEndTranslation.width
-                defer { dragPrepped = false }
                 guard dx != 0 else { return }
-                if !side {
-                    if dx > w / 3 || fling > w / 2 { withAnimation(.easeOut(duration: 0.22)) { drag.dx = 0 }; toggle() }
-                    else { withAnimation(.easeOut(duration: 0.2)) { drag.dx = 0 } }
-                } else {
-                    if -dx > w / 3 || fling < -w / 2 { withAnimation(.easeOut(duration: 0.22)) { drag.dx = 0; side = false } }
-                    else {
-                        withAnimation(.easeOut(duration: 0.2)) { drag.dx = 0 }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { if side { withTransaction(Transaction(animation: nil)) { inset = nil } } }
-                    }
-                }
+                if !side { setSide(dx > w / 3 || fling > w / 2, .easeOut(duration: 0.22)) }
+                else { setSide(!(-dx > w / 3 || fling < -w / 2), .easeOut(duration: 0.22)) }
             })
         .background(KeyboardDismisser())   // 点空白收键盘（手机上挂在克那页，iPad 没那页，11-24 寻：悬浮小键盘点空白不收）
-        .onAppear { PadJank.shared.start() }
+        .onAppear { PadJank.shared.start(); drag.side = side }
         .onChange(of: side) { v in PadJank.shared.flush(); PadJank.shared.sideOn = v }
         .onReceive(NotificationCenter.default.publisher(for: .keepOpenCCShi)) { n in   // 点了「CC师」推送：右边换成那个会话
             if let sid = n.object as? String, !sid.isEmpty { files = []; sel = sid }
@@ -107,35 +88,46 @@ struct CCShiPadRoot: View {
     }
 }
 
-/// 会话栏跟手的位移（拖着时实时变；松手归零）
+/// 会话栏开没开、跟手的位移（拖着时实时变；松手归零）；滑的那几层只看它
 final class PadDrag: ObservableObject {
     static let shared = PadDrag()
     @Published var dx: CGFloat = 0
+    @Published var side = true
+    var w: CGFloat = 340
+    /// 会话栏露出多宽
+    var shown: CGFloat { side ? w + min(0, dx) : max(0, dx) }
 }
 
-/// 会话栏那层：只它看 PadDrag，拖的时候只重画这一层
+/// 会话栏那层
 struct SideSlide<Content: View>: View {
     let w: CGFloat
-    let side: Bool
     @ViewBuilder var content: () -> Content
     @ObservedObject private var drag = PadDrag.shared
     var body: some View {
-        content().offset(x: side ? min(0, drag.dx) : min(0, -w + max(0, drag.dx)))
+        content().offset(x: drag.shown - w)
     }
 }
 
-/// 对话那层的平移：会话栏露出多少，读的那一栏就按比例挪多少——挪到头正好是收／开之后那一栏的左边缘，
-/// 松手重排时字的左边不跳（11-24 寻看小鲸鱼录屏：正文左边一路平滑，只有右边换行）。顶栏左头那几样滑的时候压在会话栏底下
+/// 对话那层：读的那一栏开收一样宽，会话栏露出多少，它就挪一半（收着居中→开着填满右边），只平移不重排
 struct SideShift<Content: View>: View {
     let w: CGFloat
-    let side: Bool
-    let pad: CGFloat
-    let travel: CGFloat   // 收着→开着，读的那一栏左边缘要走多远
     @ViewBuilder var content: () -> Content
     @ObservedObject private var drag = PadDrag.shared
     var body: some View {
-        let shown = side ? w + min(0, drag.dx) : max(0, drag.dx)
-        content().offset(x: (shown - pad) * travel / max(1, w))
+        content().offset(x: drag.shown / 2)
+    }
+}
+
+/// 顶栏（和右上角弹的小卡）在 iPad 上顶满「会话栏右边到屏幕右边」：对话整层挪了 shown/2，顶栏两头各收 shown/2 抵回来；手机上不动
+struct PadHeaderEdge<Content: View>: View {
+    var leading = true
+    var trailing = true
+    @ViewBuilder var content: () -> Content
+    @ObservedObject private var drag = PadDrag.shared
+    var body: some View {
+        if UIDevice.isPad {
+            content().padding(.leading, leading ? drag.shown / 2 : 0).padding(.trailing, trailing ? drag.shown / 2 : 0)
+        } else { content() }
     }
 }
 
@@ -175,12 +167,20 @@ final class PadJank {
 /// 收起／展开会话栏（Lucide panel-left）
 struct CCSidebarButton: View {
     var action: () -> Void
+    var collapsing = false   // 对话顶栏那只：会话栏开着时收起（开着时按钮在会话栏里），跟着滑的进度一起淡出、让位
+    @ObservedObject private var drag = PadDrag.shared
     var body: some View {
+        let p = collapsing ? min(1, max(0, drag.shown / max(1, drag.w))) : 0
         Button(action: action) {
             Image("tool-panel-left").renderingMode(.template).resizable().frame(width: 19, height: 19)
                 .foregroundColor(Theme.text).frame(width: 34, height: 34)
         }
-        .buttonStyle(.plain).padding(.leading, -6)
+        .buttonStyle(.plain)
+        .frame(width: 34 * (1 - p), alignment: .leading).clipped()
+        .opacity(1 - p)
+        .allowsHitTesting(p < 0.5)
+        .padding(.leading, -6 * (1 - p))
+        .padding(.trailing, -12 * p)   // 顶栏 HStack 间距 12 一起让掉
     }
 }
 

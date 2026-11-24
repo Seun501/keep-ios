@@ -396,6 +396,9 @@ struct KeyboardDismisser: UIViewRepresentable {
         @objc func tap(_ g: UITapGestureRecognizer) {
             let p = g.location(in: g.view)
             if KeyboardDismisser.keep.values.contains(where: { $0.contains(p) }) { return }
+            // 正在打字的那只输入框（连同四周一圈）里点按不收：iPad 上对话那层带平移，登记的框对不上屏上位置（11-24 寻：点输入框要粘贴，键盘收了）
+            if let w = g.view, let tv = Self.firstResponder(in: w) as? UITextView,
+               tv.convert(tv.bounds, to: w).insetBy(dx: -40, dy: -50).contains(p) { return }
             var v = g.view?.hitTest(p, with: nil)
             while let cur = v {
                 if let tv = cur as? UITextView, tv.isEditable { return }
@@ -407,6 +410,11 @@ struct KeyboardDismisser: UIViewRepresentable {
             g.view?.endEditing(true)
         }
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
+        static func firstResponder(in v: UIView) -> UIView? {
+            if v.isFirstResponder { return v }
+            for s in v.subviews { if let r = firstResponder(in: s) { return r } }
+            return nil
+        }
     }
 }
 
