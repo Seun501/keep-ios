@@ -117,8 +117,10 @@ final class ClawdModel: ObservableObject {
             else { self.walk() }
         }
     }
+    var parked = false   // 蹲在顶栏（手机 CC师 页，11-25 寻）：不走动，别的照演
     private func walk() {
         if dragging { return }
+        if parked { idle(); return }
         // 偶尔换到另一边（11-24 寻）：不从字上走，朝屏幕外边走出去，半个身子在这边、半个身子从对面边上冒出来（像吃豆人穿墙）
         if lanes.count > 1, areaW > 0, Double.random(in: 0..<1) < 0.2,
            let cur = lanes.first(where: { $0.contains(pos.x) }), let other = lanes.first(where: { !$0.contains(pos.x) }) {
@@ -165,6 +167,23 @@ final class ClawdModel: ObservableObject {
     }
     func alert() { if dragging { return }; timer?.invalidate(); state = "alert"; later(2.6) { [weak self] in self?.idle() } }
     func touched() { lastTouch = Date() }
+}
+
+/// 顶栏里蹲着的那只（手机 CC师 页圈圈左边，11-25 寻）：同一套画，缩小、不走，点一下照样有反应
+struct HeaderClawd: View {
+    @ObservedObject var m: ClawdModel
+    static let k: CGFloat = 0.42
+    var body: some View {
+        ClawdWeb(state: m.state, flip: false)
+            .frame(width: 150, height: 150)
+            .scaleEffect(Self.k)
+            .frame(width: 150 * Self.k, height: 150 * Self.k)
+            .offset(y: m.hop ? -5 : 0)
+            .frame(width: 44, height: 34)
+            .contentShape(Rectangle())
+            .onTapGesture { m.tap() }
+            .onAppear { m.parked = true; m.idle() }
+    }
 }
 
 struct ClawdView: View {

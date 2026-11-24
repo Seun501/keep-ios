@@ -811,13 +811,15 @@ struct CCShiSessionScreen: View {
                             }
                         }
                     }
-                    // 小 Clawd（11-24 寻：照搬克那页）：在消息流上溜达，我干活时打字、出错警觉
+                    // 小 Clawd（11-24 寻：照搬克那页）：iPad 在正文两边留白溜达；手机蹲在顶栏圈圈左边（11-25 寻），我干活时打字、出错警觉
+                    if UIDevice.isPad || Preview.screen.hasPrefix("ipad") {
                     GeometryReader { g in
                         Color.clear.onAppear { clawd.lanes = clawdLanes(g.size.width); clawd.layout(area: g.size, areaTop: g.frame(in: .global).minY) }
                             .onChange(of: g.size) { sz in clawd.lanes = clawdLanes(sz.width); clawd.layout(area: sz, areaTop: g.frame(in: .global).minY) }
                     }
                     .allowsHitTesting(false)
                     PadClawdFade { ClawdView(m: clawd) }.zIndex(5)
+                    }
                     if rec.recording {
                         VStack(spacing: 0) {
                             LiveCard(rec: rec).padding(.bottom, 8)
@@ -902,6 +904,7 @@ struct CCShiSessionScreen: View {
                 else if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
             }
             Spacer()
+            if !UIDevice.isPad && !Preview.screen.hasPrefix("ipad") { HeaderClawd(m: clawd) }
             Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: m.meta?.ctx ?? 0, max: ctxMax) }
                 .buttonStyle(.plain)
         }
