@@ -892,7 +892,8 @@ struct CCShiSessionScreen: View {
             if showBack { Button(action: onBack) { BackChevron() }.buttonStyle(.plain).padding(.leading, -8) }
             if let f = onSidebar { CCSidebarButton(action: f, collapsing: true) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.meta?.title ?? "CC师").font(Theme.round(14)).foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
+                Text(m.meta?.title ?? "CC师").font(Theme.round(14, weight: UIDevice.isPad ? .medium : .regular))   // iPad 加粗一档（11-24 寻）
+                    .foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
                 if let h = quotaHit { quotaRow(h, hit: true) }
                 else if let q = quotaFlash { quotaRow(q) }
                 else if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
