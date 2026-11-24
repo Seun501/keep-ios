@@ -7,6 +7,7 @@ struct ClawdWeb: UIViewRepresentable {
     let flip: Bool
     var onReady: (() -> Void)? = nil     // 画真正装好（含 SVG）才回调——开屏句子等它一起出
     var px: CGFloat = 150                // 画框边长（顶栏那只用小框，别靠 scaleEffect 缩网页）
+    var cropX: CGFloat = 0, cropY: CGFloat = 0   // 只露画框里这一角（左上偏移）：顶栏那只网页视图只开蟹身那么大，不伸出顶栏
     func makeCoordinator() -> Coordinator { Coordinator(onReady: onReady) }
     /// 09-15 寻：开屏蟹比句子慢半拍——didFinish 只是网页壳装好，SVG 那张图还在路上；改听 img 的 onload，图真到了才算 ready
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -42,7 +43,7 @@ struct ClawdWeb: UIViewRepresentable {
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent;overflow:hidden}
-        img{width:\(Int(px))px;height:\(Int(px))px;display:block}img.flip{transform:scaleX(-1)}</style></head>
+        img{width:\(Int(px))px;height:\(Int(px))px;display:block;position:absolute;left:-\(Int(cropX))px;top:-\(Int(cropY))px}img.flip{transform:scaleX(-1)}</style></head>
         <body><img id="i" src="\(Self.files[state] ?? "clawd-mini-idle").svg" class="\(flip ? "flip" : "")"
         onload="requestAnimationFrame(function(){window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.ready&&window.webkit.messageHandlers.ready.postMessage(1)})"></body></html>
         """
@@ -176,11 +177,11 @@ struct HeaderClawd: View {
     static let box: CGFloat = 90   // 蟹身约 30pt 宽
     var body: some View {
         // 画框 B：蟹身宽 B/3、中心在框高 0.79 处（svg viewBox −25…20，身子 y 6…15）——往上提 0.29B 就和圈圈齐
-        ClawdWeb(state: m.state, flip: false, px: Self.box)
-            .frame(width: Self.box, height: Self.box)
+        // 只开画框里 x 0.22–0.78、y 0.57–1.0 那一块（蟹身中心正落在这块中间），网页视图不伸出顶栏
+        ClawdWeb(state: m.state, flip: false, px: Self.box, cropX: Self.box * 0.22, cropY: Self.box * 0.57)
+            .frame(width: Self.box * 0.56, height: Self.box * 0.43)
             .background(Preview.screen == "ccshisessdbg" ? Color.red.opacity(0.25) : Color.clear)
-            .offset(y: (m.hop ? -5 : 0) - Self.box * 0.29)
-            .frame(width: 34, height: 30)
+            .offset(y: m.hop ? -5 : 0)
             .contentShape(Rectangle())
             .onTapGesture { m.tap() }
             .onAppear { m.parked = true; m.idle() }
