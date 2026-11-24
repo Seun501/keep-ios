@@ -150,6 +150,9 @@ enum MD {
         while let r = t.range(of: "```") {
             guard let r2 = t.range(of: "```", range: r.upperBound..<t.endIndex) else { break }
             var code = String(t[r.upperBound..<r2.lowerBound])
+            // ```python 那行的语言名不算代码（11-24 寻：克那边代码框第一行露着「python」）
+            if let nl = code.firstIndex(of: "\n"), code[..<nl].count <= 20, !code[..<nl].isEmpty,
+               code[..<nl].allSatisfy({ $0.isLetter || $0.isNumber || "_+#.-".contains($0) }) { code.removeSubrange(..<nl) }
             if code.hasPrefix("\n") { code.removeFirst() }
             if code.hasSuffix("\n") { code.removeLast() }
             blocks.append(code)
@@ -479,11 +482,11 @@ struct MDCode: View {
                 .padding(.leading, 12).padding(.trailing, 10).padding(.top, 4)
                 Rectangle().fill(Theme.border).frame(height: 0.5).padding(.horizontal, 12)
             }
-            ScrollView(.horizontal, showsIndicators: round) {
+            ScrollView(.horizontal, showsIndicators: true) {
                 Text(code).font(round ? Font(Theme.uiMono(13, casW: 360)) : Theme.mono(13.5)).foregroundColor(Theme.text)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12).padding(.vertical, 10)
-                    .background(round ? HScrollTint() : nil)
+                    .background(HScrollTint())   // 克那页的滑动条也染赤陶（11-24 寻：统一）
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

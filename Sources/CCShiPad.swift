@@ -23,6 +23,9 @@ struct CCShiPadRoot: View {
         }
     }
 
+    /// 读的那一栏（780 居中）在让出 inset 之后左边缘在哪
+    static func colLeft(_ W: CGFloat, _ inset: CGFloat) -> CGFloat { inset + max(0, (W - inset - 780) / 2) }
+
     var body: some View {
         GeometryReader { g in
             ZStack {
@@ -31,7 +34,7 @@ struct CCShiPadRoot: View {
                 let pad = inset ?? (side ? w : 0)
                 ZStack(alignment: .topLeading) {
                     // 对话跟着会话栏一起滑（11-24 寻：推着走）：滑的时候只平移，不改宽（不重排）；EquatableBox 挡住拖动时的重算
-                    SideShift(w: w, side: side, pad: pad) {
+                    SideShift(w: w, side: side, pad: pad, travel: Self.colLeft(g.size.width, w) - Self.colLeft(g.size.width, 0)) {
                     EquatableBox(key: [sel ?? "", side ? "1" : "0", "\(pad)", "\(Int(g.size.width))"]) {
                     ZStack {
                         if let id = sel {
@@ -121,16 +124,18 @@ struct SideSlide<Content: View>: View {
     }
 }
 
-/// 对话那层的平移：会话栏露出多宽，对话就比它眼下的左边距多挪多少
+/// 对话那层的平移：会话栏露出多少，读的那一栏就按比例挪多少——挪到头正好是收／开之后那一栏的左边缘，
+/// 松手重排时字的左边不跳（11-24 寻看小鲸鱼录屏：正文左边一路平滑，只有右边换行）。顶栏左头那几样滑的时候压在会话栏底下
 struct SideShift<Content: View>: View {
     let w: CGFloat
     let side: Bool
     let pad: CGFloat
+    let travel: CGFloat   // 收着→开着，读的那一栏左边缘要走多远
     @ViewBuilder var content: () -> Content
     @ObservedObject private var drag = PadDrag.shared
     var body: some View {
         let shown = side ? w + min(0, drag.dx) : max(0, drag.dx)
-        content().offset(x: shown - pad)
+        content().offset(x: (shown - pad) * travel / max(1, w))
     }
 }
 

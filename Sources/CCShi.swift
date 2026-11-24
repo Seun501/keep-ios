@@ -1385,7 +1385,8 @@ enum CCMD {
                 let ns = NSMutableAttributedString()
                 let lh = size * 1.6
                 ns.append(NSAttributedString(string: (mark ?? (depth == 0 ? "•" : "◦")) + "\t",
-                                             attributes: [.font: Theme.uiRound(size, casW: 360), .foregroundColor: Theme.uiMuted,
+                                             attributes: [.font: Theme.uiRound(size, casW: 360),   // 1. 2. 3. 用浅橙（11-24 寻），圆点照旧灰
+                                                          .foregroundColor: mark == nil ? Theme.uiMuted : UIColor(red: 217/255, green: 119/255, blue: 87/255, alpha: 0.85),
                                                           .baselineOffset: max(0, (lh - Theme.uiRound(size).lineHeight) / 2)]))
                 ns.append(MD.ns(t + nl, base: Theme.uiRound(size, casW: 360), bold: Theme.uiRound(size, weight: .semibold),
                                 mono: Theme.uiMono(13, casW: 360), color: color, lineHeight: 1.6))
@@ -2152,7 +2153,10 @@ struct CCFileImage: View {
     var body: some View {
         Group {
             if let img {
-                Image(uiImage: img).resizable().scaledToFit().frame(maxWidth: maxW, maxHeight: maxH)
+                // 按图的长宽比算出框（11-24 寻：宽图上下留一大片空——scaledToFit＋maxHeight 会把框撑到 maxH）
+                let ar = img.size.height > 0 ? img.size.width / img.size.height : 1
+                let w = min(maxW, maxH * ar)
+                Image(uiImage: img).resizable().scaledToFit().frame(width: w, height: w / ar)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .onTapGesture {
                         if all.count > 1, let i = all.firstIndex(of: name) { ImageViewer.shared.cc = .init(sid: sid, names: all, index: i) }
