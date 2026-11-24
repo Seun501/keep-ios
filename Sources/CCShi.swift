@@ -193,6 +193,8 @@ enum CCFmt {
     static func tokShort(_ n: Int) -> String {
         n >= 10000 ? (n % 10000 == 0 ? "\(n / 10000)万" : String(format: "%.1f万", Double(n) / 10000)) : String(n)
     }
+    /// 84K / 200K（圆环小卡，全英文）
+    static func kk(_ n: Int) -> String { n >= 1000 ? "\(Int((Double(n) / 1000).rounded()))K" : String(n) }
     /// 4.2 万 / 1237
     static func tok(_ n: Int) -> String { n >= 10000 ? String(format: "%.1f 万", Double(n) / 10000) : String(n) }
     /// ↓5.7k（同 Claude Code 那行）
@@ -923,7 +925,7 @@ struct CCShiSessionScreen: View {
                 }
                 usageBar(cf)
                 HStack {
-                    Text(CCFmt.tokShort(c) + " / " + CCFmt.tokShort(ctxMax)).font(Theme.mono(11)).foregroundColor(Theme.muted)
+                    Text(CCFmt.kk(c) + " / " + CCFmt.kk(ctxMax))   // 卡上全英文（11-24 寻：别写「万」）.font(Theme.mono(11)).foregroundColor(Theme.muted)
                     Spacer()
                     Text("\(Int((cf * 100).rounded()))%").font(Theme.mono(11)).foregroundColor(Theme.muted)
                 }
@@ -2311,7 +2313,10 @@ struct CCShowCard: View {
                 }.buttonStyle(.plain)
             }
             if let t = event.title, !t.isEmpty {
+                let img = event.type == "image"   // 图下的说明跟着图居中（11-24 寻）
                 Text(t).font(Theme.round(12.5)).foregroundColor(Theme.muted)
+                    .multilineTextAlignment(img ? .center : .leading)
+                    .frame(maxWidth: img ? .infinity : nil)
             }
         }
     }

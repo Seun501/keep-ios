@@ -85,7 +85,8 @@ final class ClawdModel: ObservableObject {
         areaW = area.width
         if !placed {
             placed = true
-            pos = CGPoint(x: zone.midX, y: clampY(Self.splashBoxTop(UIScreen.main.bounds.height) - areaTop))
+            pos = CGPoint(x: lanes.randomElement().map { CGFloat.random(in: $0) } ?? zone.midX,   // iPad 有分道：一出来就在两边留白里（11-24 寻：新开的会话它站在正文上）
+                          y: clampY(Self.splashBoxTop(UIScreen.main.bounds.height) - areaTop))
             idle()
         } else if !dragging {
             pos = CGPoint(x: clampX(pos.x), y: clampY(pos.y))
@@ -420,6 +421,7 @@ final class HookView: UIView {
 struct KeyboardDismisser: UIViewRepresentable {
     /// 点这些框里不收键盘（窗口坐标）：输入卡整张——寻验 85「点到输入框上沿到文字之间的空白也退出输入框，选字时老误触」
     static var keep: [String: CGRect] = [:]
+    static var diagLeft = 5
     func makeUIView(context: Context) -> HookView {
         let v = HookView(); v.isUserInteractionEnabled = false
         v.onWindow = { [weak v] in
@@ -447,9 +449,23 @@ struct KeyboardDismisser: UIViewRepresentable {
                 if cls.contains("Menu") || cls.contains("Callout") { return }
                 v = cur.superview
             }
+            if UIDevice.isPad, KeyboardDismisser.diagLeft > 0 {   // iPad 还在报「点输入框收键盘」：记下点在哪、点到的是什么（11-24）
+                KeyboardDismisser.diagLeft -= 1
+                var names: [String] = []; var h = g.view?.hitTest(p, with: nil)
+                while let c = h, names.count < 6 { names.append(String(describing: type(of: c))); h = c.superview }
+                let fr = g.view.flatMap { Self.firstResponder(in: $0) }
+                let r = fr.map { $0.convert($0.bounds, to: g.view) } ?? .zero
+                PushRegistrar.diag(String(format: "kb-dismiss p=%.0f,%.0f fr=%@ fr=%.0f,%.0f,%.0f,%.0f hit=%@", p.x, p.y, fr.map { String(describing: type(of: $0)) } ?? "nil", r.minX, r.minY, r.width, r.height, names.joined(separator: ">")))
+            }
             g.view?.endEditing(true)
         }
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith o: UIGestureRecognizer) -> Bool { true }
+        /// 按下那一刻落在输入框（或它里面）就不接这一下——比事后 hitTest 准
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive t: UITouch) -> Bool {
+            var v = t.view
+            while let c = v { if (c as? UITextView)?.isEditable == true || c is UITextField { return false }; v = c.superview }
+            return true
+        }
         static func firstResponder(in v: UIView) -> UIView? {
             if v.isFirstResponder { return v }
             for s in v.subviews { if let r = firstResponder(in: s) { return r } }
