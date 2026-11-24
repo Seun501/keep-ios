@@ -724,7 +724,7 @@ struct CCShiSessionScreen: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                PadHeaderEdge { header }   // iPad：顶栏顶满会话栏右边，跟着一起滑（11-24 寻）
+                PadHeaderEdge { header }.zIndex(2)   // iPad：顶栏顶满会话栏右边，跟着一起滑（11-24 寻）；zIndex：顶栏里的 Clawd 画框超出顶栏，别被消息流盖住
                 ZStack(alignment: .bottom) {
                     ScrollViewReader { proxy in
                         ScrollView {

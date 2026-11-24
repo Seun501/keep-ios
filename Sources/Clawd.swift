@@ -178,7 +178,7 @@ struct HeaderClawd: View {
             .frame(width: 150, height: 150)
             .scaleEffect(Self.k)
             .frame(width: 150 * Self.k, height: 150 * Self.k)
-            .offset(y: (m.hop ? -5 : 0) - 24)   // 蟹身在画框偏下（约 0.79 处），往上提到和圈圈齐
+            .offset(y: (m.hop ? -5 : 0) - 38)   // 蟹身在画框偏下（约 0.79 处），往上提到和圈圈齐
             .frame(width: 44, height: 34)
             .contentShape(Rectangle())
             .onTapGesture { m.tap() }
