@@ -1307,7 +1307,8 @@ struct CCShiSessionScreen: View {
         let imgs = pending.compactMap { Self.jpeg($0) }
         let keepText = draft, keepImgs = pending, keepFiles = files
         pin.atBottom = true   // 自己发的话要看见
-        draft = ""; pending = []; files = []; focused = false
+        draft = ""; pending = []; files = []; stripPick = []; focused = false
+        if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
         Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs; files = keepFiles } }
     }
     /// 长边 1568 的 jpeg（同克那边：Anthropic 最优尺寸）
@@ -1340,7 +1341,8 @@ struct CCShiSessionScreen: View {
             guard let r = await rec.finish() else { return }
             try? FileManager.default.removeItem(at: r.0)
             if mode == .send && !r.2.isEmpty {
-                let imgs = pending.compactMap { Self.jpeg($0) }; pending = []
+                let imgs = pending.compactMap { Self.jpeg($0) }; pending = []; stripPick = []
+                if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
                 _ = await m.send(r.2, images: imgs)
             } else {
                 draft = r.2; focused = true

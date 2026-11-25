@@ -1127,7 +1127,8 @@ struct ChatScreen: View {
             guard let r = await rec.finish() else { UIImpactFeedbackGenerator(style: .light).impactOccurred(); return }
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
-                let imgs = pending, vids = takeLives(), ogs = pendingOrig; pending = []; pendingOrig = [:]   // 09-21 寻：已选的图随语音一起走
+                let imgs = pending, vids = takeLives(), ogs = pendingOrig; pending = []; pendingOrig = [:]; stripPick = [:]
+                if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 09-21 寻：已选的图随语音一起走
                 model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs, videos: vids, origs: ogs)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
@@ -1155,8 +1156,9 @@ struct ChatScreen: View {
     private func sendNow() {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let imgs = pending, vids = takeLives(), ogs = pendingOrig
-        draft = ""; pending = []; pendingOrig = [:]
+        draft = ""; pending = []; pendingOrig = [:]; stripPick = [:]
         composerFocused = false
+        if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
         if let vd = voiceDraft, !t.isEmpty {
             voiceDraft = nil
             model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig, images: imgs, videos: vids, origs: ogs)   // 09-21 寻：带图也是语音条，图一起走
