@@ -836,8 +836,8 @@ struct CCShiSessionScreen: View {
                 if plusOpen { attachPanel.frame(maxWidth: readWidth).frame(maxWidth: .infinity) }
             }
         }
-        .onChange(of: focused) { f in   // 手机屏小：点输入框就收「+」面板；iPad 不收（寻 11-25）
-            if f && plusOpen && !UIDevice.isPad { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in   // 手机屏小：键盘起来就收「+」面板，跟键盘同一拍同曲线（寻 11-25：先收面板再起键盘，输入框先掉后弹）；iPad 不收
+            if plusOpen && !UIDevice.isPad { withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)) { plusOpen = false } }
         }
         .background { if showBack { EdgeSwipe(onBack: onBack) } }   // iPad 分栏没有返回：左边缘留给拉会话栏
         .overlay(alignment: .topTrailing) {
@@ -1233,7 +1233,7 @@ struct CCShiSessionScreen: View {
                         if let e = stripPick.first(where: { $0.id == id }) { pending.removeAll { $0 === e.img } }
                         stripPick.removeAll { $0.id == id }
                     })
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))   // 收起只淡出：键盘顶上来时不和它对着滑
     }
 
     @State private var bgOpen = false

@@ -621,10 +621,10 @@ struct ChatScreen: View {
         .onChange(of: showMeal || drawerOn) { off in
             if off && kbUp { composerFocused = false } else { syncAvoid() }
         }
-        .onChange(of: composerFocused) { f in   // 手机屏小：点输入框就收「+」面板；iPad 不收（寻 11-25）
-            if f && plusOpen && !UIDevice.isPad { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in   // 手机屏小：键盘起来就收「+」面板，跟键盘同一拍同曲线（寻 11-25：先收面板再起键盘，输入框先掉后弹）；iPad 不收
+            kbUp = true
+            if plusOpen && !UIDevice.isPad { withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)) { plusOpen = false } }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in kbUp = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbUp = false; syncAvoid() }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
@@ -1096,7 +1096,7 @@ struct ChatScreen: View {
                     onUnpick: { id in
                         if let u = stripPick.removeValue(forKey: id), let i = pending.firstIndex(of: u) { dropPending(i) }
                     })
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))   // 收起只淡出：键盘顶上来时不和它对着滑
     }
     private func pick(_ a: PlusAction) {
         withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
