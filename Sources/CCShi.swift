@@ -909,7 +909,7 @@ struct CCShiSessionScreen: View {
             if let f = onSidebar { CCSidebarButton(action: f, collapsing: true) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.meta?.title ?? "CC师").font(Theme.round(14, weight: UIDevice.isPad ? .medium : .regular))   // iPad 加粗一档（11-24 寻）
-                    .foregroundColor(showBack ? Theme.muted : Theme.text).lineLimit(1)   // iPad：同图标一个色（11-24 寻）
+                    .foregroundColor(Theme.text).lineLimit(1)   // 手机也用深字，同 iPad（11-25 寻）
                 if let h = quotaHit { quotaRow(h, hit: true) }
                 else if let q = quotaFlash { quotaRow(q) }
                 else if let bg = m.meta?.bg, !bg.isEmpty { bgRow(bg) }   // 后台任务挂在会话名下（10-28 寻：放门楣，别占输入框上头）
@@ -982,8 +982,8 @@ struct CCShiSessionScreen: View {
         }
         .frame(height: 6).padding(.top, 7).padding(.bottom, 5)
     }
-    static let quotaWarn = Theme.dyn(0xE8AE00, 0xFFC61A)   // 警戒线黄（11-25 寻）
-    static let quotaErr = Theme.dyn(0x8E1B2B, 0xD65A6E)    // 圣诞酒红（11-25 寻）
+    static let quotaWarn = Theme.dyn(0xD9B44A, 0xE3C25E)   // 同条子／圆环的黄（11-25 寻：好看统一）
+    static let quotaErr = Theme.dyn(0xC8483B, 0xDB6152)    // 同条子／圆环的红
     /// 一项额度：90% 起百分比黄；到顶右边写「Limit reached」红字，下行照旧几点刷新（11-25 寻：原先下行拼一长串被截断）
     private func usageSection(_ title: String, _ f: Double, sub: String) -> some View {
         let full = f >= 0.995
@@ -1261,7 +1261,7 @@ struct CCShiSessionScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { if quotaFlash == t { withAnimation(.easeOut(duration: 0.4)) { quotaFlash = nil } } }
     }
     private func quotaRow(_ t: String, hit: Bool = false) -> some View {
-        // 11-25 寻：黄用警戒线那种黄、红用圣诞酒红；不要底色；手机上改短（原句被截成…看不到几点刷新）
+        // 11-25 寻：黄红同条子；不要底色；手机上改短（原句被截成…看不到几点刷新）
         let c = hit ? Self.quotaErr : Self.quotaWarn
         return Text(UIDevice.isPad ? t : Self.shortQuota(t)).font(Theme.mono(10.5)).foregroundColor(c)
             .lineLimit(1).transition(.opacity)
