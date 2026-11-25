@@ -106,6 +106,7 @@ struct DrawerView: View {
         }
         .allowsHitTesting(shown)
         .task(id: shown) { if shown { await load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .ccshiRead)) { _ in Task { ccBadge = await CCShiAPI.unread() ?? ccBadge } }   // 看完 CC师 当场消红圈（寻 11-25）
     }
 
     private var hair: some View { Rectangle().fill(Theme.dyn(0x302D27, 0xFFFFFF).opacity(0.07)).frame(height: 1) }

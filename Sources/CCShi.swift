@@ -124,7 +124,10 @@ enum CCShiAPI {
     static func compact(_ id: String) async { _ = try? await get("sessions/\(id)/compact", method: "POST", body: [:]) as Queued }
     static func setModel(_ id: String, _ m: String) async -> CCSession? { try? await get("sessions/\(id)/model", method: "POST", body: ["model": m]) }
     static func rewind(_ id: String, seq: Int) async -> CCSession? { try? await get("sessions/\(id)/rewind", method: "POST", body: ["seq": seq]) }
-    static func markRead(_ id: String, seq: Int) async { _ = try? await get("sessions/\(id)/read", method: "POST", body: ["seq": seq]) as OK }
+    static func markRead(_ id: String, seq: Int) async {
+        guard (try? await get("sessions/\(id)/read", method: "POST", body: ["seq": seq]) as OK) != nil else { return }
+        await MainActor.run { NotificationCenter.default.post(name: .ccshiRead, object: id) }   // 列表、抽屉的小红圈当场消，不等下一次 8 秒刷新（寻 11-25 嫌慢）
+    }
     static func events(_ id: String, after: Int) async throws -> Events { try await get("sessions/\(id)/events?after=\(after)") }
 
     /// 她发的图：jpeg 字节直传，回服务端给的文件名
@@ -186,6 +189,8 @@ enum CCShiAPI {
 extension Notification.Name {
     /// 点了「CC师」推送：object＝会话号（电脑上的会话是空串＝只开列表）
     static let keepOpenCCShi = Notification.Name("keep.openCCShi")
+    /// 某个会话标了已读：object＝会话号
+    static let ccshiRead = Notification.Name("keep.ccshiRead")
 }
 
 enum CCFmt {
@@ -312,6 +317,9 @@ struct CCShiListScreen: View {
         .background(EdgeSwipe(onBack: onBack))
         .task { await m.load() }
         .onReceive(tick) { _ in if !Preview.on { Task { await m.load() } } }
+        .onReceive(NotificationCenter.default.publisher(for: .ccshiRead)) { n in
+            if let id = n.object as? String, let i = m.sessions.firstIndex(where: { $0.id == id }), (m.sessions[i].unread ?? 0) > 0 { m.sessions[i].unread = 0 }
+        }
         // 改名：底下升起的白笺（10-28 寻：系统弹窗不像 Keep；同记忆页词条笺）
         .overlay {
             if let s = renaming {
