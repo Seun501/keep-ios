@@ -391,6 +391,7 @@ struct WordSheet: View {
                             ForEach(m.data?.files ?? [d.file], id: \.self) { f in MemChip(t: f, on: d.file == f) { d.file = f } }
                         }
                     }
+                    .scrollIndicators(.hidden)   // 外层 OrangeScroll 的 .visible 会传进来盖掉 showsIndicators（寻 11-25：横条不要）
                 }
                 MemField(label: "哪一类") {
                     PlainField(text: $d.section, focused: $fSec, placeholder: "护肤、同学、常去的店…", font: Theme.uiSys(14), returnKey: .next,
@@ -401,6 +402,7 @@ struct WordSheet: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) { ForEach(secs, id: \.self) { s in MemChip(t: s, on: false) { d.section = s } } }
                         }
+                        .scrollIndicators(.hidden)
                         .padding(.top, 6)
                     }
                 }
