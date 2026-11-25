@@ -621,6 +621,9 @@ struct ChatScreen: View {
         .onChange(of: showMeal || drawerOn) { off in
             if off && kbUp { composerFocused = false } else { syncAvoid() }
         }
+        .onChange(of: composerFocused) { f in   // 手机屏小：点输入框就收「+」面板；iPad 不收（寻 11-25）
+            if f && plusOpen && !UIDevice.isPad { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in kbUp = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbUp = false; syncAvoid() }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色

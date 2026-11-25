@@ -836,6 +836,9 @@ struct CCShiSessionScreen: View {
                 if plusOpen { attachPanel.frame(maxWidth: readWidth).frame(maxWidth: .infinity) }
             }
         }
+        .onChange(of: focused) { f in   // 手机屏小：点输入框就收「+」面板；iPad 不收（寻 11-25）
+            if f && plusOpen && !UIDevice.isPad { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+        }
         .background { if showBack { EdgeSwipe(onBack: onBack) } }   // iPad 分栏没有返回：左边缘留给拉会话栏
         .overlay(alignment: .topTrailing) {
             if infoOpen {
