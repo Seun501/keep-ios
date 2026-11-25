@@ -865,7 +865,7 @@ struct CCShiSessionScreen: View {
         }
         .sheet(item: $webDoc) { d in CCWebSheet(doc: d) }
         .onAppear {
-            if Preview.on && ["ccshiinfo", "ccshimodel"].contains(Preview.screen) {
+            if Preview.on && ["ccshiinfo", "ccshiinfohit", "ccshimodel"].contains(Preview.screen) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) { infoOpen = true; modelOpen = Preview.screen == "ccshimodel" }
             }
         }
@@ -922,7 +922,7 @@ struct CCShiSessionScreen: View {
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6).frame(minHeight: 44)
         .onChange(of: m.events.last(where: { $0.kind == "quota" })?.seq) { _ in flashQuota() }
         .onAppear { if Preview.screen == "ccshiquota" { quotaFlash = "Approaching 5-hour limit · 90% · resets 20:00" } else { flashQuota() } }
-        .task { if let u = await CCShiAPI.usage() { usage = u } else if Preview.on { usage = CCUsage(five_hour: 0.36, seven_day: 0.62, seven_day_resets: Date().timeIntervalSince1970 + 3 * 86400, five_hour_resets: Date().timeIntervalSince1970 + 7800) } }
+        .task { if let u = await CCShiAPI.usage() { usage = u } else if Preview.on { usage = CCUsage(five_hour: Preview.screen == "ccshiinfohit" ? 1 : 0.36, seven_day: Preview.screen == "ccshiinfohit" ? 0.93 : 0.62, seven_day_resets: Date().timeIntervalSince1970 + 3 * 86400, five_hour_resets: Date().timeIntervalSince1970 + 7800) } }
     }
     /// 点圆环出来的小卡：上下文、压缩、额度（寻 10-27：一行字＋按钮放顶上容易误点，收进圆环里）
     private var infoCard: some View {
@@ -982,19 +982,20 @@ struct CCShiSessionScreen: View {
         }
         .frame(height: 6).padding(.top, 7).padding(.bottom, 5)
     }
-    /// 一项额度：90% 起百分比黄、到顶红（同会话名下那行，照 Claude Code 主题色）
+    static let quotaWarn = Theme.dyn(0xE8AE00, 0xFFC61A)   // 警戒线黄（11-25 寻）
+    static let quotaErr = Theme.dyn(0x8E1B2B, 0xD65A6E)    // 圣诞酒红（11-25 寻）
+    /// 一项额度：90% 起百分比黄；到顶右边写「Limit reached」红字，下行照旧几点刷新（11-25 寻：原先下行拼一长串被截断）
     private func usageSection(_ title: String, _ f: Double, sub: String) -> some View {
         let full = f >= 0.995
-        let warn = Theme.dyn(0x966C1E, 0xFFC107), err = Theme.dyn(0xAB2B3F, 0xFF6B80)
+        let warn = Self.quotaWarn, err = Self.quotaErr
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).font(Theme.mono(13, weight: .semibold)).foregroundColor(Theme.text)
                 Spacer(minLength: 6)
-                Text("\(Int((f * 100).rounded()))% used").font(Theme.mono(12)).foregroundColor(full ? err : f >= 0.9 ? warn : Theme.muted)
+                Text(full ? "Limit reached" : "\(Int((f * 100).rounded()))% used").font(Theme.mono(12)).foregroundColor(full ? err : f >= 0.9 ? warn : Theme.muted)
             }
             usageBar(f)
-            Text(full ? "Limit reached · " + sub.replacingOccurrences(of: "Resets", with: "resets") : sub)
-                .font(Theme.mono(11)).foregroundColor(full ? err : Theme.muted).lineLimit(1)
+            Text(sub).font(Theme.mono(11)).foregroundColor(Theme.muted).lineLimit(1)
         }
     }
     static func resetsIn(_ r: Double?) -> String {
@@ -1261,7 +1262,7 @@ struct CCShiSessionScreen: View {
     }
     private func quotaRow(_ t: String, hit: Bool = false) -> some View {
         // 11-25 寻：黄用警戒线那种黄、红用圣诞酒红；不要底色；手机上改短（原句被截成…看不到几点刷新）
-        let c = hit ? Theme.dyn(0x8E1B2B, 0xD65A6E) : Theme.dyn(0xE8AE00, 0xFFC61A)
+        let c = hit ? Self.quotaErr : Self.quotaWarn
         return Text(UIDevice.isPad ? t : Self.shortQuota(t)).font(Theme.mono(10.5)).foregroundColor(c)
             .lineLimit(1).transition(.opacity)
     }
