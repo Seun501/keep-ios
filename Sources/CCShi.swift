@@ -870,10 +870,10 @@ struct CCShiSessionScreen: View {
         .onChange(of: draft) { d in if !Preview.on { UserDefaults.standard.set(d, forKey: "draft.ccshi.\(m.id)") } }
     }
 
-    /// iPad：正文栏两边的留白各一条道（Clawd 的框 150 宽，小螃蟹本身约占中间一半，边上让 35 也不压字）
+    /// iPad：正文栏两边的留白各一条道（Clawd 的框 150 宽；原先让 35 进栏，寻 11-25 看到蟹钳伸进正文，收到 10）
     private func clawdLanes(_ W: CGFloat) -> [ClosedRange<CGFloat>] {
         guard UIDevice.isPad, readWidth < W else { return [] }
-        let side = (W - readWidth) / 2, slack: CGFloat = 35
+        let side = (W - readWidth) / 2, slack: CGFloat = 10
         let l = max(8, -slack)...max(8, side - 150 + slack)
         let r = min(W - 158, W - side - slack)...(W - 158)
         return [l, r]
