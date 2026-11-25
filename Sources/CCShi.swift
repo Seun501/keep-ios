@@ -917,7 +917,7 @@ struct CCShiSessionScreen: View {
             Spacer()
             if !UIDevice.isPad && !Preview.screen.hasPrefix("ipad") { HeaderClawd(m: clawd) }
             Button { withAnimation(.easeOut(duration: 0.15)) { infoOpen.toggle() } } label: { CCRing(used: m.meta?.ctx ?? 0, max: ctxMax) }
-                .buttonStyle(.plain)
+                .buttonStyle(.plain).fixedSize()   // 会话名下那行再长也不挤圆环（11-25 寻：到顶时显示不全）
         }
         .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 6).frame(minHeight: 44)
         .onChange(of: m.events.last(where: { $0.kind == "quota" })?.seq) { _ in flashQuota() }
@@ -1260,13 +1260,19 @@ struct CCShiSessionScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { if quotaFlash == t { withAnimation(.easeOut(duration: 0.4)) { quotaFlash = nil } } }
     }
     private func quotaRow(_ t: String, hit: Bool = false) -> some View {
-        // 黄、红照 Claude Code 主题色（浅色 warning 150,108,30／error 171,43,63；深色 255,193,7／255,107,128）
-        let c = hit ? Theme.dyn(0xAB2B3F, 0xFF6B80) : Theme.dyn(0x966C1E, 0xFFC107)
-        return Text(t).font(Theme.mono(10.5)).foregroundColor(c)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(c.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .padding(.leading, -6).lineLimit(1)
-            .transition(.opacity)
+        // 11-25 寻：黄用警戒线那种黄、红用圣诞酒红；不要底色；手机上改短（原句被截成…看不到几点刷新）
+        let c = hit ? Theme.dyn(0x8E1B2B, 0xD65A6E) : Theme.dyn(0xE8AE00, 0xFFC61A)
+        return Text(UIDevice.isPad ? t : Self.shortQuota(t)).font(Theme.mono(10.5)).foregroundColor(c)
+            .lineLimit(1).transition(.opacity)
+    }
+    /// 「Approaching 5-hour limit · 90% · resets 20:00」→「5h 90% · resets 20:00」；「Weekly limit reached · …」→「Week limit · …」
+    static func shortQuota(_ t: String) -> String {
+        var s = t
+        for (a, b) in [("Approaching 5-hour limit ·", "5h"), ("Approaching weekly limit ·", "Week"),
+                       ("5-hour limit reached", "5h limit"), ("Weekly limit reached", "Week limit")] {
+            s = s.replacingOccurrences(of: a, with: b)
+        }
+        return s
     }
     /// 照 Claude Code「1 shell still running」：后台还有任务在跑；点开看是哪几个
     private func bgRow(_ bg: [CCBgTask]) -> some View {
