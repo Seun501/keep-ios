@@ -863,7 +863,7 @@ struct CCShiSessionScreen: View {
                 }
             }
         }
-        .sheet(item: $webDoc) { d in CCWebSheet(doc: d) }
+        .ccDocSheet(item: $webDoc)
         .onAppear {
             if Preview.on && ["ccshiinfo", "ccshiinfohit", "ccshimodel"].contains(Preview.screen) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) { infoOpen = true; modelOpen = Preview.screen == "ccshimodel" }
@@ -2359,6 +2359,17 @@ struct CCShowCard: View {
     }
 }
 
+extension View {
+    /// 递来的文件：iPhone 照旧下拉卡片；iPad 上卡片只占中间一小块，改成铺满整屏（寻 11-26），右上「完成」关
+    @ViewBuilder func ccDocSheet(item: Binding<CCWebDoc?>) -> some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            self.fullScreenCover(item: item) { d in CCWebSheet(doc: d) }
+        } else {
+            self.sheet(item: item) { d in CCWebSheet(doc: d) }
+        }
+    }
+}
+
 struct CCWebSheet: View {
     let doc: CCWebDoc
     @Environment(\.dismiss) private var dismiss
@@ -2491,7 +2502,7 @@ struct CCFilesScreen: View {
             }
         }
         .background(EdgeSwipe(onBack: onBack))
-        .sheet(item: $doc) { d in CCWebSheet(doc: d) }
+        .ccDocSheet(item: $doc)
         .task {
             list = await CCShiAPI.fsList(path)
             if list == nil { err = "打不开这个夹子" }
