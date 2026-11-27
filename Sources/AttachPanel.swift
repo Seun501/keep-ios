@@ -72,11 +72,11 @@ extension Animation {
 }
 
 /// 「+」的点击区：打字时只认上半截（11-27 寻：键盘候选字就在「+」正下方，选字老按到「+」）。
-/// 上沿、左右各往外让一点，补回点不着的下半截
+/// 上沿不往外扩（再往上是输入的字，选字别又按到「+」），只左右各让一点
 struct PlusHit: Shape {
     var typing: Bool
     func path(in r: CGRect) -> Path {
-        Path(typing ? CGRect(x: r.minX - 6, y: r.minY - 10, width: r.width + 12, height: r.height * 0.5 + 10) : r)
+        Path(typing ? CGRect(x: r.minX - 6, y: r.minY, width: r.width + 12, height: r.height * 0.5) : r)
     }
 }
 
