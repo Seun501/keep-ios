@@ -558,16 +558,10 @@ struct MDTable: View {
         }
     }
     var body: some View {
-        // 放得下就是一张不动的格子；放不下先收窄宽列、让字在格内折行，实在挤不下才横滑（11-27 寻：克那页表格明明差不多全露着还能左右拖）
-        ViewThatFits(in: .horizontal) {
+        ScrollView(.horizontal, showsIndicators: round) {
             grid(widths(cap: 220))
-            grid(widths(cap: 150))
-            grid(widths(cap: 110))
-            ScrollView(.horizontal, showsIndicators: round) {
-                grid(widths(cap: 220))
-                    .padding(.bottom, round ? 7 : 0)              // CC师 页：滑动条落在表格底下，不压最后一行
-                    .background(HScrollTint())                    // 放得下不让拖；CC师 页的滑动条染赤陶
-            }
+                .padding(.bottom, round ? 7 : 0)              // CC师 页：滑动条落在表格底下，不压最后一行
+                .background(HScrollTint())                    // 放得下就不让左右拖（11-27 寻：克那页也要）；CC师 页的滑动条染赤陶
         }
     }
     private func grid(_ ws: [CGFloat]) -> some View {
