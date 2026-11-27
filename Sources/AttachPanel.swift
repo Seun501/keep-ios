@@ -66,6 +66,11 @@ final class RecentPhotos: ObservableObject {
     }
 }
 
+extension Animation {
+    /// 「+」面板开合、输入框里添图都用键盘那条曲线（11-27 寻：开面板时输入框先冲过头再回、收键盘和起面板各走各的，看着跳）
+    static let plusPanel = Animation.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)
+}
+
 struct AttachPanel: View {
     var max: Int                              // 还能加几张
     var live = true                           // 克那边带 Live 视频与原图；CC师 只要静图
@@ -115,6 +120,8 @@ struct AttachPanel: View {
                 }
             }
             .frame(height: 104)
+        } else {
+            Color.clear.frame(height: 104)   // 照片还没读出来先占住这排的高（11-27 寻：第一次打开面板读完照片再长高一截，输入框又跳一下）
         }
     }
 

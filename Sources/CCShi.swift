@@ -836,7 +836,7 @@ struct CCShiSessionScreen: View {
                     }
                 }
                 .coordinateSpace(name: "clawdZone")
-                .simultaneousGesture(TapGesture().onEnded { clawd.touched(); if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } } })
+                .simultaneousGesture(TapGesture().onEnded { clawd.touched(); if plusOpen { withAnimation(.plusPanel) { plusOpen = false } } })
                 if !m.err.isEmpty && !(m.running && m.live != nil) {   // 干活时断线由转星那行变红表示（同 Claude Code），这行只在闲着时出
                     Text(m.err).font(Theme.round(12)).foregroundColor(Theme.knockText).padding(.bottom, 4)
                 }
@@ -845,7 +845,7 @@ struct CCShiSessionScreen: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in   // 手机屏小：键盘起来就收「+」面板，跟键盘同一拍同曲线（寻 11-25：先收面板再起键盘，输入框先掉后弹）；iPad 不收
-            if plusOpen && !UIDevice.isPad { withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)) { plusOpen = false } }
+            if plusOpen && !UIDevice.isPad { withAnimation(.plusPanel) { plusOpen = false } }
         }
         .background { if showBack { EdgeSwipe(onBack: onBack) } }   // iPad 分栏没有返回：左边缘留给拉会话栏
         .overlay(alignment: .topTrailing) {
@@ -1165,7 +1165,7 @@ struct CCShiSessionScreen: View {
             HStack(spacing: 8) {
                 Button {
                     focused = false
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen.toggle() }
+                    withAnimation(.plusPanel) { plusOpen.toggle() }
                 } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .rotationEffect(.degrees(plusOpen ? 45 : 0))   // 开着时转成 ×，再点收起
@@ -1213,15 +1213,15 @@ struct CCShiSessionScreen: View {
         AttachPanel(max: 4 - pending.count, live: false,
                     selected: stripPick.filter { p in pending.contains { $0 === p.img } }.map(\.id),
                     onCamera: {
-                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                        CameraBridge.shared.present { img in if pending.count < 4 { pending.append(img) } }
+                        withAnimation(.plusPanel) { plusOpen = false }
+                        CameraBridge.shared.present { img in if pending.count < 4 { withAnimation(.plusPanel) { pending.append(img) } } }
                     },
                     onAlbum: {
-                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
-                        PhotoPickerBridge.shared.present(max: 4 - pending.count, live: false) { imgs in pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count))) }
+                        withAnimation(.plusPanel) { plusOpen = false }
+                        PhotoPickerBridge.shared.present(max: 4 - pending.count, live: false) { imgs in withAnimation(.plusPanel) { pending.append(contentsOf: imgs.map(\.image).prefix(max(0, 4 - pending.count))) } }
                     },
                     onFile: {   // 任意文件，放进 给CC师读/（寻 10-27：和电脑上那个夹子同一个）
-                        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+                        withAnimation(.plusPanel) { plusOpen = false }
                         DocPickerBridge.shared.present { urls in
                             for u in urls {
                                 guard let d = try? Data(contentsOf: u) else { continue }
@@ -1236,7 +1236,7 @@ struct CCShiSessionScreen: View {
                     },
                     onPick: { id, p in
                         guard pending.count < 4 else { return }
-                        pending.append(p.image); stripPick.removeAll { $0.id == id }; stripPick.append((id, p.image))
+                        withAnimation(.plusPanel) { pending.append(p.image) }; stripPick.removeAll { $0.id == id }; stripPick.append((id, p.image))
                     },
                     onUnpick: { id in
                         if let e = stripPick.first(where: { $0.id == id }) { pending.removeAll { $0 === e.img } }
@@ -1326,7 +1326,7 @@ struct CCShiSessionScreen: View {
         let keepText = draft, keepImgs = pending, keepFiles = files
         pin.atBottom = true   // 自己发的话要看见
         draft = ""; pending = []; files = []; stripPick = []; focused = false
-        if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
+        if plusOpen { withAnimation(.plusPanel) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
         Task { if !(await m.send(t.isEmpty ? "（图）" : t, images: imgs)) { draft = keepText; pending = keepImgs; files = keepFiles } }
     }
     /// 长边 1568 的 jpeg（同克那边：Anthropic 最优尺寸）
@@ -1360,7 +1360,7 @@ struct CCShiSessionScreen: View {
             try? FileManager.default.removeItem(at: r.0)
             if mode == .send && !r.2.isEmpty {
                 let imgs = pending.compactMap { Self.jpeg($0) }; pending = []; stripPick = []
-                if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }
+                if plusOpen { withAnimation(.plusPanel) { plusOpen = false } }
                 _ = await m.send(r.2, images: imgs)
             } else {
                 draft = r.2; focused = true

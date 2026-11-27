@@ -623,7 +623,7 @@ struct ChatScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in   // 手机屏小：键盘起来就收「+」面板，跟键盘同一拍同曲线（寻 11-25：先收面板再起键盘，输入框先掉后弹）；iPad 不收
             kbUp = true
-            if plusOpen && !UIDevice.isPad { withAnimation(.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)) { plusOpen = false } }
+            if plusOpen && !UIDevice.isPad { withAnimation(.plusPanel) { plusOpen = false } }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbUp = false; syncAvoid() }
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
@@ -792,7 +792,7 @@ struct ChatScreen: View {
                 }
             }
             .background(KeyboardDismisser())
-            .simultaneousGesture(TapGesture().onEnded { if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } } })   // 点消息区空白收「+」面板（11-24 寻）
+            .simultaneousGesture(TapGesture().onEnded { if plusOpen { withAnimation(.plusPanel) { plusOpen = false } } })   // 点消息区空白收「+」面板（11-24 寻）
             .onChange(of: model.items.count) { _ in if atBottom, !userUp { scrollBottom(proxy) } }
             .onChange(of: model.sending) { s in if s { userUp = false } }   // 她自己发了一句＝回到底
             // 流式：字长出来就跟着到底（寻验：看不见流式）。键盘起收途中 atBottom 是过程值（视口在变），一帧量成「离底」
@@ -1015,7 +1015,7 @@ struct ChatScreen: View {
                 // 挂在「+」正上方（锚点走 anchorPreference，overlay 画在最外层，不被输入卡裁）
                 Button {
                     composerFocused = false
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { plusOpen.toggle() }
+                    withAnimation(.plusPanel) { plusOpen.toggle() }
                 } label: {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .rotationEffect(.degrees(plusOpen ? 45 : 0))   // 开着时转成 ×，再点收起（11-24）
@@ -1099,7 +1099,7 @@ struct ChatScreen: View {
         .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))   // 收起只淡出：键盘顶上来时不和它对着滑
     }
     private func pick(_ a: PlusAction) {
-        withAnimation(.easeOut(duration: 0.15)) { plusOpen = false }
+        withAnimation(.plusPanel) { plusOpen = false }
         switch a {
         case .camera: CameraBridge.shared.present { img in Task { await addImages([.init(image: img, orig: img.jpegData(compressionQuality: 0.92).map { ($0, "jpg") })]) } }   // 拍的照原尺寸存一份 jpg 当原图
         case .album: PhotoPickerBridge.shared.present(max: 4 - pending.count) { imgs in Task { await addImages(imgs) } }
@@ -1131,7 +1131,7 @@ struct ChatScreen: View {
             if let old = voiceDraft { try? FileManager.default.removeItem(at: old.file) }
             if mode == .send && !r.2.isEmpty {
                 let imgs = pending, vids = takeLives(), ogs = pendingOrig; pending = []; pendingOrig = [:]; stripPick = [:]
-                if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 09-21 寻：已选的图随语音一起走
+                if plusOpen { withAnimation(.plusPanel) { plusOpen = false } }   // 09-21 寻：已选的图随语音一起走
                 model.sendVoice(file: r.0, dur: r.1, text: r.2, orig: rec.rawText, images: imgs, videos: vids, origs: ogs)   // orig＝识别原文（字典改之前），学编辑用
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 return
@@ -1161,7 +1161,7 @@ struct ChatScreen: View {
         let imgs = pending, vids = takeLives(), ogs = pendingOrig
         draft = ""; pending = []; pendingOrig = [:]; stripPick = [:]
         composerFocused = false
-        if plusOpen { withAnimation(.easeOut(duration: 0.15)) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
+        if plusOpen { withAnimation(.plusPanel) { plusOpen = false } }   // 发出去就收「+」面板（寻 11-25）
         if let vd = voiceDraft, !t.isEmpty {
             voiceDraft = nil
             model.sendVoice(file: vd.file, dur: vd.dur, text: t, orig: vd.orig, images: imgs, videos: vids, origs: ogs)   // 09-21 寻：带图也是语音条，图一起走
@@ -1204,9 +1204,9 @@ struct ChatScreen: View {
             let img = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in ui.draw(in: CGRect(origin: .zero, size: size)) }
             if let jpg = img.jpegData(compressionQuality: 0.85) {
                 let u = "data:image/jpeg;base64," + jpg.base64EncodedString()
-                pending.append(u)
                 if let v = pk.live { pendingLive[u] = v }
                 if let o = pk.orig { pendingOrig[u] = o }
+                withAnimation(.plusPanel) { pending.append(u) }   // 缩略图那排长出来跟着曲线走，不一下顶高输入框（11-27 寻）
             }
         }
     }

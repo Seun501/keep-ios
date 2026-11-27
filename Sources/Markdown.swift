@@ -549,29 +549,37 @@ struct MDTable: View {
               : MD.keNS(s, size: 15, weight: .semibold, lineHeight: 1.4).size().width
     }
     private var cols: Int { max(head.count, rows.map(\.count).max() ?? 0) }
-    private var widths: [CGFloat] {
+    private func widths(cap: CGFloat) -> [CGFloat] {
         let all = [head] + rows
         return (0..<cols).map { c in
             var w: CGFloat = 0
             for r in all where c < r.count { w = max(w, cellW(r[c])) }
-            return min(220, ceil(w) + 20)   // 超过 220 的格子在格内折行
+            return min(cap, ceil(w) + 20)   // 超过 cap 的格子在格内折行
         }
     }
     var body: some View {
-        let ws = widths
-        ScrollView(.horizontal, showsIndicators: round) {
-            VStack(spacing: 0) {
-                row(head, ws, header: true)
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
-                    Rectangle().fill(Theme.border).frame(height: 1)
-                    row(r, ws, header: false)
-                }
+        // 放得下就是一张不动的格子；放不下先收窄宽列、让字在格内折行，实在挤不下才横滑（11-27 寻：克那页表格明明差不多全露着还能左右拖）
+        ViewThatFits(in: .horizontal) {
+            grid(widths(cap: 220))
+            grid(widths(cap: 150))
+            grid(widths(cap: 110))
+            ScrollView(.horizontal, showsIndicators: round) {
+                grid(widths(cap: 220))
+                    .padding(.bottom, round ? 7 : 0)              // CC师 页：滑动条落在表格底下，不压最后一行
+                    .background(HScrollTint())                    // 放得下不让拖；CC师 页的滑动条染赤陶
             }
-            .overlay(Rectangle().stroke(Theme.border, lineWidth: 1))
-            .padding(1)
-            .padding(.bottom, round ? 7 : 0)              // CC师 页：滑动条落在表格底下，不压最后一行
-            .background(round ? HScrollTint() : nil)
         }
+    }
+    private func grid(_ ws: [CGFloat]) -> some View {
+        VStack(spacing: 0) {
+            row(head, ws, header: true)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                Rectangle().fill(Theme.border).frame(height: 1)
+                row(r, ws, header: false)
+            }
+        }
+        .overlay(Rectangle().stroke(Theme.border, lineWidth: 1))
+        .padding(1)
     }
     private func row(_ r: [String], _ ws: [CGFloat], header: Bool) -> some View {
         HStack(spacing: 0) {
