@@ -71,6 +71,15 @@ extension Animation {
     static let plusPanel = Animation.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)
 }
 
+/// 「+」的点击区：打字时只认上半截（11-27 寻：键盘候选字就在「+」正下方，选字老按到「+」）。
+/// 上沿、左右各往外让一点，补回点不着的下半截
+struct PlusHit: Shape {
+    var typing: Bool
+    func path(in r: CGRect) -> Path {
+        Path(typing ? CGRect(x: r.minX - 6, y: r.minY - 10, width: r.width + 12, height: r.height * 0.5 + 10) : r)
+    }
+}
+
 struct AttachPanel: View {
     var max: Int                              // 还能加几张
     var live = true                           // 克那边带 Live 视频与原图；CC师 只要静图

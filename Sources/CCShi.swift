@@ -1170,6 +1170,7 @@ struct CCShiSessionScreen: View {
                     Image("plus").renderingMode(.template).resizable().frame(width: 17, height: 17).foregroundColor(Theme.text)
                         .rotationEffect(.degrees(plusOpen ? 45 : 0))   // 开着时转成 ×，再点收起
                         .frame(width: 36, height: 36).background(Theme.attachBg, in: Circle())
+                        .contentShape(PlusHit(typing: focused))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, -4)
