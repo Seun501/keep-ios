@@ -626,6 +626,7 @@ struct ChatScreen: View {
             if plusOpen && !UIDevice.isPad { withAnimation(.plusPanel) { plusOpen = false } }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in kbUp = false; syncAvoid() }
+        .onChange(of: plusOpen) { _ in ScrollObserver.panelMoved("chat") }   // 开合面板：原本在底就跟着钉底（11-28 寻）
         .tint(Theme.scrollTint)                       // 光标、选中把手同滚动条色
         .simultaneousGesture(DragGesture(minimumDistance: 20, coordinateSpace: .global).onEnded { v in
             if v.startLocation.x < 24, v.translation.width > 60, !drawerOn { drawerOn = true }

@@ -243,6 +243,11 @@ struct ScrollObserver: UIViewRepresentable {
     var onChange: (_ offsetY: CGFloat, _ contentH: CGFloat, _ viewportH: CGFloat) -> Void
     final class WeakBox { weak var sv: UIScrollView?; init(_ s: UIScrollView) { sv = s } }
     static var registry: [String: WeakBox] = [:]
+    final class WeakCoord { weak var c: Coordinator?; init(_ c: Coordinator) { self.c = c } }
+    static var coords: [String: WeakCoord] = [:]
+    /// 「+」面板开合（11-28 寻录屏：单开面板消息流不上抬；开合过后再起键盘也不抬）：
+    /// 原本在底才钉底——和起键盘同一套跟随窗口；面板停稳后把「底边以下量」重记一次，下次起键盘按真数判
+    static func panelMoved(_ name: String, dur: Double = 0.3) { coords[name]?.c?.panelMoved(dur) }
     static let followsKeyboard: Set<String> = ["chat", "ccsess"]   // 键盘起收时底边跟着走的滚动区
     static var note = ""               // 预览截图里的调试字（键盘跟随钩子跑没跑）
     static var trail: [String] = []    // 预览截图里：偏移跳动的轨迹（寻验 85：收键盘后一秒消息流往下挪一点）
@@ -277,7 +282,7 @@ struct ScrollObserver: UIViewRepresentable {
             while let cur = s, !(cur is UIScrollView) { s = cur.superview }
             guard let sv = s as? UIScrollView, obs.isEmpty else { return }
             self.sv = sv; self.name = name; self.bounce = bounce
-            if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv) }
+            if let name { ScrollObserver.registry[name] = ScrollObserver.WeakBox(sv); ScrollObserver.coords[name] = ScrollObserver.WeakCoord(self) }
             sv.delaysContentTouches = false          // 长按选字第一次就成
             sv.contentInsetAdjustmentBehavior = .never   // 系统往底部塞的 ~18pt 内边距不要（网页无此空）
             sv.contentInset = .zero
@@ -404,6 +409,31 @@ struct ScrollObserver: UIViewRepresentable {
             let pb = sv.layer.presentation()?.bounds ?? sv.bounds                                   // 屏上正画着的框高 / 偏移
             let pf = sv.layer.presentation().map { sv.superview?.layer.convert($0.frame, to: nil) ?? $0.frame } ?? sv.convert(sv.bounds, to: nil)
             hideSamples.append(String(format: "%.2f: pres h=%.0f y=%.0f top=%.0f bot=%.0f · model h=%.0f y=%.0f", t, pb.height, pb.origin.y, pf.minY, pf.maxY, sv.bounds.height, sv.contentOffset.y))
+        }
+        private var panelLogged = 0
+        private var panelSamples: [String] = []
+        func panelMoved(_ dur: Double) {
+            guard let sv else { return }
+            if lastDist < 40 { followUntil = max(followUntil, CACurrentMediaTime() + dur + 0.3); followPin() }   // 和键盘同拍时别把键盘那段跟随窗口缩短
+            // 量尺（11-28 寻录屏：面板开合一帧跳到位、没有滑）：屏上正画着的视口高在 0/0.1/0.2/0.35 秒各是多少，一次会话记三回
+            if panelLogged < 3 {
+                panelLogged += 1
+                panelSamples = []
+                for t in [0.0, 0.1, 0.2, 0.35] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self, weak sv] in
+                        guard let self, let sv else { return }
+                        let ph = sv.layer.presentation()?.bounds.height ?? -1
+                        self.panelSamples.append(String(format: "%.2f: pres h=%.0f model h=%.0f", t, ph, sv.bounds.height))
+                        if t == 0.35 { PushRegistrar.diag("plus-panel \(self.name ?? "") d=\(Int(self.lastDist)) | " + self.panelSamples.joined(separator: " | ")) }
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + dur + 0.15) { [weak self] in
+                guard let self, let sv = self.sv, !self.kbBusy else { return }
+                let inset = sv.adjustedContentInset
+                let vh = sv.bounds.height - inset.top - inset.bottom
+                self.lastDist = max(0, sv.contentSize.height - (sv.contentOffset.y + inset.top) - vh); self.lastH = vh
+            }
         }
         private func startFollow(_ dur: Double) { followUntil = CACurrentMediaTime() + dur + 0.3; pins = 0 }
         private func followPin() {

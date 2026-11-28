@@ -67,8 +67,9 @@ final class RecentPhotos: ObservableObject {
 }
 
 extension Animation {
-    /// 「+」面板开合、输入框里添图都用键盘那条曲线（11-27 寻：开面板时输入框先冲过头再回、收键盘和起面板各走各的，看着跳）
-    static let plusPanel = Animation.interpolatingSpring(mass: 3, stiffness: 1000, damping: 500)
+    /// 「+」面板开合、输入框里添图：0.3 秒缓出（11-27 寻：原先的弹簧开面板时输入框先冲过头再回；
+    /// 11-28 寻录屏：换成「键盘弹簧」mass 3／stiffness 1000／damping 500 后开合一帧跳到位，闪）
+    static let plusPanel = Animation.easeOut(duration: 0.3)
 }
 
 /// 「+」的点击区：打字时只认上半截（11-27 寻：键盘候选字就在「+」正下方，选字老按到「+」）。

@@ -847,6 +847,7 @@ struct CCShiSessionScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in   // 手机屏小：键盘起来就收「+」面板，跟键盘同一拍同曲线（寻 11-25：先收面板再起键盘，输入框先掉后弹）；iPad 不收
             if plusOpen && !UIDevice.isPad { withAnimation(.plusPanel) { plusOpen = false } }
         }
+        .onChange(of: plusOpen) { _ in ScrollObserver.panelMoved("ccsess") }   // 开合面板：原本在底就跟着钉底（11-28 寻）
         .background { if showBack { EdgeSwipe(onBack: onBack) } }   // iPad 分栏没有返回：左边缘留给拉会话栏
         .overlay(alignment: .topTrailing) {
             if infoOpen {
